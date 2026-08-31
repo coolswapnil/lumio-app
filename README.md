@@ -1,5 +1,8 @@
 # Lumio — Universal Save for Later App
 
+[![Build APK](https://github.com/YOUR_USERNAME/lumio-app/actions/workflows/build-apk.yml/badge.svg)](https://github.com/YOUR_USERNAME/lumio-app/actions/workflows/build-apk.yml)
+[![Latest Release](https://img.shields.io/github/v/release/YOUR_USERNAME/lumio-app?label=Download%20APK)](https://github.com/YOUR_USERNAME/lumio-app/releases/latest)
+
 A personal knowledge hub for Android built with React Native (Expo). Save **anything** — links, videos, recipes, books, movies, workouts, travel destinations, restaurants, tools, and ideas — all in one place with AI-powered summaries and a built-in map.
 
 ---
@@ -54,38 +57,45 @@ API keys are stored **encrypted on-device** using Expo SecureStore and never sen
 - [Expo CLI](https://docs.expo.dev/get-started/installation/)
 
 ```bash
-npm install -g expo-cli eas-cli
+npm install -g expo-cli
 ```
 
 ### Install & Run
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/albo-app.git
-cd albo-app
+git clone https://github.com/YOUR_USERNAME/lumio-app.git
+cd lumio-app
 npm install
 npx expo start --android
 ```
 
-### Build APK (Android)
+### Build APK via GitHub Actions (recommended � no Android SDK needed)
 
-Using [EAS Build](https://docs.expo.dev/build/introduction/) (free tier available):
+The repo includes a ready-made workflow at `.github/workflows/build-apk.yml`.
 
+**Push your code to GitHub:**
 ```bash
-# Login to Expo
-eas login
-
-# Build preview APK
-eas build --platform android --profile preview
+git remote add origin https://github.com/YOUR_USERNAME/lumio-app.git
+git push -u origin master
 ```
 
-The APK download link will be printed when the build completes.
-
-### Build locally (without EAS)
-
+**Tag a release to trigger the APK build:**
 ```bash
-# Requires Android SDK + JDK installed
-npx expo run:android
+git tag v1.0.0
+git push origin v1.0.0
 ```
+
+GitHub Actions will:
+- Compile the APK on a free Ubuntu runner
+- Create a **GitHub Release** with `lumio-v1.0.0.apk` attached as a download
+
+**Download & sideload:**
+1. Go to the **Releases** tab on your repo
+2. Download `lumio-vX.X.X.apk`
+3. On Android: Settings ? Security ? enable **Install unknown apps** ? open APK
+
+You can also trigger a build manually:  
+**Actions tab ? Build Android APK ? Run workflow**
 
 ---
 
