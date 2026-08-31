@@ -81,15 +81,25 @@ jobs:
           #    but the easiest way is to add the local maven repo that expo-modules
           #    publishes to during the build, AND add the includeBuild path.
           #
-          #    expo-modules-core includes its own gradle plugin via includeBuild.
-          #    We prepend that includeBuild to settings.gradle pluginManagement.
-          EXPO_MODULES_CORE_DIR=$(node --print "require.resolve('expo-modules-core/package.json')" | sed 's|/package.json||')
-          echo "expo-modules-core dir: $EXPO_MODULES_CORE_DIR"
+          #    The plugin is registered by useExpoModules() but that runs too late
+          #    for the plugins{} block. We add a resolutionStrategy to map the
+          #    plugin id to the expo-modules-core artifact which contains it.
+          #
+          #    Find the expo-module-gradle-plugin package path
+          PLUGIN_PKG=$(node --print "require.resolve('expo-module-gradle-plugin/package.json')" 2>/dev/null | sed 's|/package.json||' || echo "")
+          if [ -z "$PLUGIN_PKG" ]; then
+            # Fallback: find it inside expo-modules-core
+            PLUGIN_PKG=$(find node_modules -path "*/expo-module-gradle-plugin/package.json" | head -1 | sed 's|/package.json||' || echo "")
+          fi
+          echo "expo-module-gradle-plugin path: $PLUGIN_PKG"
 
-          # Insert includeBuild into the pluginManagement block so Gradle can
-          # find expo-module-gradle-plugin before evaluating module build.gradle files
-          INCLUDE_LINE="  includeBuild(new File(\"${EXPO_MODULES_CORE_DIR}/android\"))"
-          sed -i "s|pluginManagement {|pluginManagement {\n${INCLUDE_LINE}|" android/settings.gradle
+          if [ -n "$PLUGIN_PKG" ]; then
+            # Add includeBuild pointing to the plugin package itself
+            INCLUDE_LINE="  includeBuild(new File(\"${PLUGIN_PKG}\"))"
+            sed -i "s|pluginManagement {|pluginManagement {\n${INCLUDE_LINE}|" android/settings.gradle
+          else
+            echo "WARNING: expo-module-gradle-plugin package not found"
+          fi
           echo "=== patched settings.gradle (first 10 lines) ==="
           head -10 android/settings.gradle
 
