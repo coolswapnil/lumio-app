@@ -31,16 +31,13 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
-        working-directory: lumio-app
 
       - name: Generate icon assets
-        working-directory: lumio-app
         run: |
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
       - name: Expo prebuild
-        working-directory: lumio-app
         run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean --no-install
         env:
           CI: '1'
@@ -49,30 +46,22 @@ jobs:
       # regenerates the wrapper every run with an older default version which
       # breaks expo-module-gradle-plugin on AGP 8.x.
       - name: Pin Gradle wrapper to 8.6
-        working-directory: lumio-app/android
         run: |
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.6-bin.zip|' \
-            gradle/wrapper/gradle-wrapper.properties
-          cat gradle/wrapper/gradle-wrapper.properties
+            android/gradle/wrapper/gradle-wrapper.properties
+          cat android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Make gradlew executable
-        run: chmod +x lumio-app/android/gradlew
+        run: chmod +x android/gradlew
 
       # ── Decode keystore from secret ───────────────────────────────────────────
-      # Add these four secrets to your repo (Settings → Secrets → Actions):
-      #   KEYSTORE_BASE64   – base64-encoded .jks / .keystore file
-      #                       generate with: base64 -w 0 lumio-release.keystore
-      #   KEY_ALIAS         – alias used when creating the keystore
-      #   KEY_PASSWORD      – key password
-      #   KEYSTORE_PASSWORD – keystore (store) password
       - name: Decode release keystore
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
-            > lumio-app/android/app/lumio-release.keystore
+            > android/app/lumio-release.keystore
 
       # ── Pre-bundle JS so Gradle doesn't need Metro at build time ─────────────
       - name: Bundle JavaScript
-        working-directory: lumio-app
         run: |
           mkdir -p android/app/src/main/assets
           npx expo export:embed \
@@ -89,8 +78,8 @@ jobs:
 
       # ── Build signed release APK ──────────────────────────────────────────────
       - name: Build release APK
-        working-directory: lumio-app/android
         run: |
+          cd android
           ./gradlew assembleRelease \
             --no-daemon \
             -Dfile.encoding=UTF-8 \
@@ -115,7 +104,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
           mkdir -p release-apks
-          APK=$(find lumio-app/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -n "$APK" ]; then
             cp "$APK" "release-apks/lumio-${VERSION}.apk"
             echo "APK: $(du -sh release-apks/lumio-${VERSION}.apk)"
