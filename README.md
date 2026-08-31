@@ -1,4 +1,4 @@
-# Albo — Universal Save for Later App
+# Lumio — Universal Save for Later App
 
 A personal knowledge hub for Android built with React Native (Expo). Save **anything** — links, videos, recipes, books, movies, workouts, travel destinations, restaurants, tools, and ideas — all in one place with AI-powered summaries and a built-in map.
 

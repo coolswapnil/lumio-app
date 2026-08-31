@@ -1,8 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import type { AISettings, AppSettings } from '../types';
 
-const SETTINGS_KEY = 'albo_app_settings';
-const AI_KEY = 'albo_ai_settings';
+const SETTINGS_KEY = 'lumio_app_settings';
+const AI_KEY = 'lumio_ai_settings';
 
 export async function getAppSettings(): Promise<AppSettings> {
   try {

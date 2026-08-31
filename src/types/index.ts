@@ -1,4 +1,4 @@
-// Type definitions for Albo app
+// Type definitions for Lumio app
 
 export type ContentType =
   | 'link'

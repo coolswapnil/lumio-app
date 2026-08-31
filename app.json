@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Albo",
-    "slug": "albo-app",
+    "name": "Lumio",
+    "slug": "lumio-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "scheme": "albo",
+    "scheme": "lumio",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -15,14 +15,14 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.albo.savelater"
+      "bundleIdentifier": "com.lumio.savelater"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       },
-      "package": "com.albo.savelater",
+      "package": "com.lumio.savelater",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -46,7 +46,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Albo to use your location to save places."
+          "locationAlwaysAndWhenInUsePermission": "Allow Lumio to use your location to save places."
         }
       ],
       [

@@ -4,7 +4,7 @@ let db: SQLite.SQLiteDatabase | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!db) {
-    db = await SQLite.openDatabaseAsync('albo.db');
+    db = await SQLite.openDatabaseAsync('lumio.db');
   }
   return db;
 }

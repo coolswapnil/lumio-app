@@ -48,7 +48,7 @@ export default function LibraryScreen() {
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View>
           <Text style={[styles.logoText, { color: colors.text }]}>
-            <Text style={{ color: '#3b82f6' }}>Albo</Text>
+            <Text style={{ color: '#3b82f6' }}>Lumio</Text>
           </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {counts.all ?? 0} saved {(counts.all ?? 0) === 1 ? 'item' : 'items'}

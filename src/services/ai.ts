@@ -245,7 +245,7 @@ export async function chatWithAI(
     {
       role: 'system',
       content:
-        'You are a helpful assistant for Albo, a personal save-for-later app. ' +
+        'You are a helpful assistant for Lumio, a personal save-for-later app. ' +
         'Help users organize, recall, and act on their saved content.' +
         (context ? `\n\nCurrent context:\n${context}` : ''),
     },

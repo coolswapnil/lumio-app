@@ -224,7 +224,7 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ABOUT</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Albo</Text>
+            <Text style={[styles.rowLabel, { color: colors.text }]}>Lumio</Text>
             <Text style={[styles.rowSub, { color: colors.textMuted }]}>v1.0.0</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
