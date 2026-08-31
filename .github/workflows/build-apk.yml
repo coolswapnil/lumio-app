@@ -84,51 +84,9 @@ jobs:
       # ── 9. Configure signing in build.gradle ──────────────────────────────
       - name: Configure signing
         run: |
-          GRADLE_FILE="android/app/build.gradle"
-          KEYSTORE_PATH="$(pwd)/lumio-release.keystore"
-
-          # Inject signingConfigs block before the existing android { block
-          python3 - "$GRADLE_FILE" "$KEYSTORE_PATH" << 'PYEOF'
-import sys, re
-
-gradle_file = sys.argv[1]
-keystore_path = sys.argv[2]
-
-with open(gradle_file, 'r') as f:
-    content = f.read()
-
-signing_block = f"""
-signingConfigs {{
-    release {{
-        storeFile file("{keystore_path}")
-        storePassword "lumio1234"
-        keyAlias "lumio-release"
-        keyPassword "lumio1234"
-    }}
-}}
-"""
-
-# Insert signingConfigs inside the android { block
-content = re.sub(
-    r'(android\s*\{)',
-    r'\1' + signing_block,
-    content,
-    count=1
-)
-
-# Wire it to the release buildType
-content = re.sub(
-    r'(buildTypes\s*\{[^}]*release\s*\{)',
-    r'\1\n            signingConfig signingConfigs.release',
-    content,
-    count=1
-)
-
-with open(gradle_file, 'w') as f:
-    f.write(content)
-
-print("Signing configured in build.gradle")
-PYEOF
+          python3 scripts/patch_signing.py \
+            android/app/build.gradle \
+            "$(pwd)/lumio-release.keystore"
 
       # ── 10. Configure ABI splits ──────────────────────────────────────────
       - name: Configure ABI splits in build.gradle
