@@ -62,16 +62,9 @@ jobs:
           echo "Keystore generated at android/app/lumio-release.keystore"
 
           # 2. Write signing config into gradle.properties (React Native standard)
-          cat >> android/gradle.properties << 'EOF'
-MYAPP_RELEASE_STORE_FILE=lumio-release.keystore
-MYAPP_RELEASE_KEY_ALIAS=lumio-release
-MYAPP_RELEASE_STORE_PASSWORD=lumio1234
-MYAPP_RELEASE_KEY_PASSWORD=lumio1234
-EOF
-          echo "gradle.properties updated"
+          python3 scripts/write_gradle_properties.py android/gradle.properties
 
-          # 3. Patch app/build.gradle to reference gradle.properties vars.
-          #    expo prebuild generates a signingConfigs section — we just fill it in.
+          # 3. Verify/patch app/build.gradle signingConfigs block
           python3 scripts/patch_signing.py android/app/build.gradle
 
       # ── Pre-bundle JS so Gradle doesn't need to spawn Metro ──────────────────
