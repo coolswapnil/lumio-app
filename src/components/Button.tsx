@@ -35,7 +35,7 @@ export function Button({
   const { colors } = useTheme();
 
   const bgColors: Record<string, string> = {
-    primary: colors.primary ?? '#3b82f6',
+    primary: '#3b82f6',
     secondary: colors.surfaceSecondary,
     danger: colors.danger,
     ghost: 'transparent',
@@ -45,7 +45,7 @@ export function Button({
     primary: '#ffffff',
     secondary: colors.text,
     danger: '#ffffff',
-    ghost: colors.primary ?? '#3b82f6',
+    ghost: '#3b82f6',
   };
 
   const paddingMap: Record<string, number> = { sm: 8, md: 12, lg: 16 };
