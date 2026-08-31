@@ -115,16 +115,22 @@ jobs:
         run: python3 scripts/patch_abi_splits.py android/app/build.gradle
 
       # ── 12. Build release APKs ────────────────────────────────────────────
-      #        -PbundleInRelease=false tells Gradle not to re-run Metro since
-      #        we already placed the bundle in assets/ above.
       - name: Build release APKs
         run: |
           cd android
+          # Capture output so we can print the key error lines on failure
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace \
             -Dfile.encoding=UTF-8 \
-            -PbundleInRelease=false
+            -PbundleInRelease=false \
+            2>&1 | tee /tmp/gradle_output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== GRADLE FAILURE — key lines ==="
+            grep -E "^> Task|FAILED|Exception|error:|Caused by|Could not|> Could" /tmp/gradle_output.txt | head -60 || true
+            exit $EXIT_CODE
+          fi
         env:
           GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
           CI: 'true'

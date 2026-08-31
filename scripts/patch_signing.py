@@ -15,8 +15,9 @@ keystore_path = sys.argv[2]
 with open(gradle_file, 'r') as f:
     content = f.read()
 
-signing_config = (
-    '\nsigningConfigs {\n'
+# ── 1. Build the signingConfigs block text ────────────────────────────────────
+signing_block = (
+    'signingConfigs {\n'
     '    release {\n'
     '        storeFile file("' + keystore_path + '")\n'
     '        storePassword "lumio1234"\n'
@@ -26,18 +27,34 @@ signing_config = (
     '}\n'
 )
 
-# Insert signingConfigs block inside the android { } block
-content = re.sub(r'(android\s*\{)', r'\1' + signing_config, content, count=1)
-
-# Wire signingConfig to the release buildType
+# ── 2. Insert signingConfigs inside android { } — before buildTypes ───────────
+# re.DOTALL makes . match newlines so [^}] is no longer needed.
+# Strategy: find "android {" and inject the block right after the opening brace.
 content = re.sub(
-    r'(buildTypes\s*\{[^}]*release\s*\{)',
+    r'(android\s*\{)',
+    r'\1\n    ' + signing_block,
+    content,
+    count=1,
+    flags=re.DOTALL,
+)
+
+# ── 3. Wire signingConfig to the release buildType ────────────────────────────
+# Match "release {" inside buildTypes, spanning multiple lines with re.DOTALL.
+content = re.sub(
+    r'(buildTypes\s*\{.*?release\s*\{)',
     r'\1\n            signingConfig signingConfigs.release',
     content,
     count=1,
+    flags=re.DOTALL,
 )
 
 with open(gradle_file, 'w') as f:
     f.write(content)
 
-print("Signing configured in", gradle_file)
+print("Signing configured successfully in", gradle_file)
+
+# Print a snippet to verify injection (first 60 lines)
+lines = content.splitlines()
+print("--- build.gradle (first 60 lines) ---")
+for i, line in enumerate(lines[:60], 1):
+    print(f"{i:3}: {line}")
