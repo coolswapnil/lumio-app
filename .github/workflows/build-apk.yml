@@ -54,12 +54,20 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── Decode keystore from secret ───────────────────────────────────────────
-      - name: Decode release keystore
+      # ── Generate keystore on the runner using keytool ─────────────────────────
+      # Java 17 is already installed above so keytool is available.
+      # The same keystore is re-created each run from the two password secrets —
+      # no base64 encoding/decoding needed.
+      - name: Generate release keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" \
-            | tr -d '\n\r ' \
-            | base64 --decode > android/app/lumio-release.keystore
+          keytool -genkey -v \
+            -keystore android/app/lumio-release.keystore \
+            -alias "${{ secrets.KEY_ALIAS }}" \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.KEY_PASSWORD }}" \
+            -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
           echo "Keystore size: $(wc -c < android/app/lumio-release.keystore) bytes"
 
       # ── Pre-bundle JS so Gradle doesn't need Metro at build time ─────────────
