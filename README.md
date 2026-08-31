@@ -93,10 +93,20 @@ GitHub Actions will automatically:
 3. Compile the APK using Gradle on an Ubuntu runner
 4. Create a **GitHub Release** with `lumio-v1.0.0.apk` attached
 
+### Which APK to download
+
+| File | Best for | Size |
+|---|---|---|
+| `lumio-vX.X.X-arm64-v8a.apk` | **Recommended** - Most phones (2018+, 64-bit ARM) | Smallest |
+| `lumio-vX.X.X-armeabi-v7a.apk` | Older phones (32-bit ARM, pre-2018) | Small |
+| `lumio-vX.X.X-universal.apk` | Any Android device - use if unsure | Largest |
+
+> Not sure? Download the **universal** APK - it works on all Android devices.
+
 ### Download and install
 
 1. Go to the **Releases** tab: `github.ibm.com/Swapnil-Jagtap1/lumio-app/releases`
-2. Download `lumio-vX.X.X.apk`
+2. Download the APK for your device from **Assets**
 3. On your Android device: **Settings > Security > Install unknown apps** - enable for your browser or Files app
 4. Open the downloaded APK and tap **Install**
 

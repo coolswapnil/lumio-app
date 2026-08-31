@@ -3,53 +3,69 @@ name: Build Android APK
 on:
   push:
     tags:
-      - 'v*'          # triggers on version tags like v1.0.0, v1.1.0
-  workflow_dispatch:  # allows manual trigger from GitHub Actions tab
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build APK
+    name: Build APKs (arm64 + armv7 + universal)
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout code ─────────────────────────────────────────────────
+      # ── 1. Checkout ───────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Setup Node.js ─────────────────────────────────────────────────
+      # ── 2. Node.js ────────────────────────────────────────────────────────
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      # ── 3. Setup Java 17 (required for Android Gradle builds) ────────────
+      # ── 3. Java 17 ────────────────────────────────────────────────────────
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ── 4. Setup Android SDK ─────────────────────────────────────────────
+      # ── 4. Android SDK ────────────────────────────────────────────────────
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ── 5. Install npm dependencies ───────────────────────────────────────
-      - name: Install dependencies
+      # ── 5. Install dependencies ───────────────────────────────────────────
+      - name: Install npm dependencies
         run: npm ci
 
-      # ── 6. Generate native Android project via Expo prebuild ─────────────
-      #       No Expo account or EXPO_TOKEN needed for prebuild
-      - name: Expo prebuild (generate android/ folder)
+      # ── 6. Expo prebuild (generates android/ folder) ─────────────────────
+      - name: Expo prebuild
         run: npx expo prebuild --platform android --clean --non-interactive
 
       # ── 7. Make gradlew executable ────────────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── 8. Build release APK via Gradle ──────────────────────────────────
-      #       assembleRelease produces an unsigned APK (fine for sideloading)
-      - name: Build release APK
+      # ── 8. Enable ABI splits in build.gradle ─────────────────────────────
+      #  Injects splits config so Gradle produces one APK per ABI
+      - name: Configure ABI splits
+        run: |
+          cat >> android/app/build.gradle << 'EOF'
+
+          android {
+              splits {
+                  abi {
+                      enable true
+                      reset()
+                      include "arm64-v8a", "armeabi-v7a", "x86_64"
+                      universalApk true
+                  }
+              }
+          }
+          EOF
+
+      # ── 9. Build all APK variants ─────────────────────────────────────────
+      - name: Build release APKs
         run: |
           cd android
           ./gradlew assembleRelease \
@@ -59,26 +75,56 @@ jobs:
         env:
           GRADLE_OPTS: '-Xmx4g'
 
-      # ── 9. Locate & rename the APK ────────────────────────────────────────
-      - name: Rename APK
+      # ── 10. Collect and rename APKs ───────────────────────────────────────
+      - name: Collect APKs
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
-          APK_SRC=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
-          echo "Found APK: $APK_SRC"
-          cp "$APK_SRC" "lumio-${VERSION}.apk"
-          echo "APK_PATH=lumio-${VERSION}.apk" >> "$GITHUB_ENV"
-          echo "APK_NAME=lumio-${VERSION}.apk" >> "$GITHUB_ENV"
+          APK_DIR="android/app/build/outputs/apk/release"
+          mkdir -p release-apks
 
-      # ── 10. Upload APK as a workflow artifact (always) ───────────────────
-      #        Available in Actions tab → run → Artifacts, even without a tag
-      - name: Upload APK artifact
+          echo "=== APKs found ==="
+          find "$APK_DIR" -name "*.apk" | sort
+
+          # arm64-v8a  (modern 64-bit Android — most phones 2018+)
+          ARM64=$(find "$APK_DIR" -name "*arm64-v8a*.apk" | head -1)
+          if [ -n "$ARM64" ]; then
+            cp "$ARM64" "release-apks/lumio-${VERSION}-arm64-v8a.apk"
+            echo "arm64 APK: lumio-${VERSION}-arm64-v8a.apk"
+          fi
+
+          # armeabi-v7a  (32-bit ARM — older devices)
+          ARMV7=$(find "$APK_DIR" -name "*armeabi-v7a*.apk" | head -1)
+          if [ -n "$ARMV7" ]; then
+            cp "$ARMV7" "release-apks/lumio-${VERSION}-armeabi-v7a.apk"
+            echo "armv7 APK: lumio-${VERSION}-armeabi-v7a.apk"
+          fi
+
+          # Universal  (all ABIs bundled — largest, works on any device)
+          UNIVERSAL=$(find "$APK_DIR" -name "*universal*.apk" | head -1)
+          if [ -n "$UNIVERSAL" ]; then
+            cp "$UNIVERSAL" "release-apks/lumio-${VERSION}-universal.apk"
+            echo "universal APK: lumio-${VERSION}-universal.apk"
+          fi
+
+          # Fallback: if no ABI splits, grab whatever was built
+          if [ -z "$ARM64" ] && [ -z "$ARMV7" ] && [ -z "$UNIVERSAL" ]; then
+            FALLBACK=$(find "$APK_DIR" -name "*.apk" | head -1)
+            cp "$FALLBACK" "release-apks/lumio-${VERSION}-universal.apk"
+            echo "fallback APK: lumio-${VERSION}-universal.apk"
+          fi
+
+          # Export version for later steps
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      # ── 11. Upload all APKs as workflow artifacts ─────────────────────────
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_NAME }}
-          path: ${{ env.APK_PATH }}
+          name: lumio-${{ env.VERSION }}-apks
+          path: release-apks/
           retention-days: 30
 
-      # ── 11. Create GitHub Release (only on v* tags) ───────────────────────
+      # ── 12. Create GitHub Release with all 3 APKs ────────────────────────
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -88,20 +134,30 @@ jobs:
           body: |
             ## Lumio ${{ github.ref_name }}
 
-            ### Install on Android
-            1. Download **${{ env.APK_NAME }}** from the Assets section below
-            2. On your Android device: **Settings → Security → Install unknown apps** → enable for your browser/Files app
-            3. Open the downloaded APK and tap **Install**
+            ### Which APK should I download?
 
-            ### Features in this release
+            | APK | Device type | Size |
+            |---|---|---|
+            | `lumio-${{ github.ref_name }}-arm64-v8a.apk` | **Recommended** - Most Android phones (2018 and newer, 64-bit) | Smallest |
+            | `lumio-${{ github.ref_name }}-armeabi-v7a.apk` | Older Android phones (32-bit ARM, pre-2018) | Small |
+            | `lumio-${{ github.ref_name }}-universal.apk` | Any device - use this if unsure | Largest |
+
+            > **Not sure which one?** Download the **universal** APK - it works on all Android devices.
+
+            ### How to install
+            1. Download the APK for your device from **Assets** below
+            2. On your Android phone: **Settings > Security > Install unknown apps** - enable for your browser or Files app
+            3. Open the downloaded APK file and tap **Install**
+
+            ### What's in this release
             - Universal save-for-later: links, YouTube, recipes, books, movies, workouts, places, restaurants, tools, ideas
-            - Smart collections with custom icons & colors
-            - Location saving: address text + GPS coordinates → one-tap Open in Google Maps
-            - AI summarization with your own API key: OpenAI · Anthropic · Gemini · DeepSeek · Groq · Indus · IBM watsonx · Local LLM (Ollama)
-            - Full-text search, filter by type / favorites / completed
+            - Smart collections with custom icons and colors
+            - Location saving: address text + GPS coordinates, one-tap Open in Google Maps
+            - AI summarization with your own API key: OpenAI, Anthropic, Gemini, DeepSeek, Groq, Indus, IBM watsonx, Local LLM (Ollama)
+            - Full-text search and filter by type, favorites, or completed
             - Light / Dark / System theme
-            - All data stored locally on device — no account, no cloud
-          files: ${{ env.APK_PATH }}
+            - All data stored locally on device - no account, no cloud, no tracking
+          files: release-apks/*
           draft: false
           prerelease: false
         env:
