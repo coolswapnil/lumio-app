@@ -42,58 +42,24 @@ jobs:
         env:
           CI: '1'
 
-      # ── Debug: print key generated files ─────────────────────────────────────
-      - name: Print generated Android files for debugging
+      # ── Patch for Expo 51 compatibility ───────────────────────────────────────
+      # Expo 51 targets AGP 7.4.x + Gradle 8.0. The generated build.gradle has no
+      # AGP version (resolved from react-native's version catalog which pins 7.4.2).
+      # We only need to fix the ONE known issue: ExpoModulesCorePlugin.gradle uses
+      # components.release which was removed in AGP 8.x. Since the version catalog
+      # controls AGP, we do NOT touch the AGP version — we only patch the one line.
+      - name: Patch ExpoModulesCorePlugin for AGP compatibility
         run: |
-          echo "=== android/settings.gradle ==="
-          cat android/settings.gradle
-          echo ""
-          echo "=== android/build.gradle ==="
-          cat android/build.gradle
-          echo ""
-          echo "=== expo-font/android/build.gradle ==="
-          cat node_modules/expo-font/android/build.gradle || echo "NOT FOUND"
-          echo ""
-          echo "=== ExpoModulesCorePlugin.gradle (lines 80-95) ==="
-          sed -n '80,95p' node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle || echo "NOT FOUND"
-
-      # ── Patch Android project for Expo 51 + AGP 8 compatibility ──────────────
-      - name: Patch Android project files
-        run: |
-          # 1. Pin Gradle wrapper to 8.3
-          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
-            android/gradle/wrapper/gradle-wrapper.properties
-
-          # 2. Force AGP 8.1.4 in build.gradle (classpath had no version — Gradle
-          #    was picking latest 8.5+ which broke expo-modules-core)
-          sed -i "s|classpath('com.android.tools.build:gradle')|classpath('com.android.tools.build:gradle:8.1.4')|" \
-            android/build.gradle
-          echo "AGP: $(grep 'com.android.tools.build:gradle' android/build.gradle)"
-
-          # 3. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8
+          # Fix: components.release → afterEvaluate guard with findByName
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
-            sed -i "s/from components\.release/from components.findByName('release') ?: components.findByName('debug')/g" "$f"
-            echo "Patched ExpoModulesCorePlugin: $f"
+            # Wrap the publishing block in a null-safe check
+            sed -i "s/from components\.release/from (components.findByName('release') ?: components.findByName('debug'))/g" "$f"
+            echo "Patched: $f"
           done
 
-          # 4. Replace 'expo-module-gradle-plugin' in every expo module build.gradle
-          #    with explicit 'com.android.library' + android block with sdk versions.
-          #    The plugin was doing this configuration automatically; we replicate it.
-          REPLACEMENT="plugins {\n  id 'com.android.library'\n}\nandroid {\n  compileSdkVersion 34\n  defaultConfig {\n    minSdkVersion 23\n    targetSdkVersion 34\n  }\n}"
-          find node_modules -path "*/android/build.gradle" | while read f; do
-            if grep -q "expo-module-gradle-plugin" "$f"; then
-              # Replace the entire plugins{} block that contains expo-module-gradle-plugin
-              perl -i -0pe 's/plugins\s*\{[^}]*expo-module-gradle-plugin[^}]*\}/plugins {\n  id '"'"'com.android.library'"'"'\n}/g' "$f"
-              # Also handle apply plugin syntax
-              sed -i "s|apply plugin: 'expo-module-gradle-plugin'||g" "$f"
-              sed -i 's|apply plugin: "expo-module-gradle-plugin"||g' "$f"
-              # Ensure android block has compileSdkVersion if missing
-              if ! grep -q "compileSdkVersion" "$f"; then
-                sed -i "/^android {/a\\  compileSdkVersion 34\n  defaultConfig { minSdkVersion 23; targetSdkVersion 34 }" "$f"
-              fi
-              echo "Patched: $f"
-            fi
-          done
+          # Show current Gradle wrapper version (set by prebuild)
+          echo "Gradle wrapper: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
+          echo "AGP classpath: $(grep 'com.android.tools.build' android/build.gradle)"
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
