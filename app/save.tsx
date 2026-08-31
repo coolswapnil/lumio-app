@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import uuid from 'react-native-uuid';
 const uuidv4 = () => uuid.v4() as string;
 import * as Clipboard from 'expo-clipboard';
+import * as Location from 'expo-location';
 import { useTheme } from '../src/context/ThemeContext';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
@@ -38,6 +39,8 @@ export default function SaveScreen() {
   const [collectionId, setCollectionId] = useState<string | undefined>();
   const [tags, setTags] = useState('');
   const [address, setAddress] = useState('');
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>();
+  const [locationLoading, setLocationLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -53,6 +56,31 @@ export default function SaveScreen() {
       }
     });
   }, []);
+
+  const handleGetLocation = async () => {
+    setLocationLoading(true);
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission denied', 'Location permission is required to capture GPS coordinates.');
+      setLocationLoading(false);
+      return;
+    }
+    const loc = await Location.getCurrentPositionAsync({});
+    setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+    // Auto reverse-geocode to fill address if empty
+    if (!address.trim()) {
+      const geo = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+      if (geo.length > 0) {
+        const g = geo[0];
+        setAddress([g.name, g.city, g.country].filter(Boolean).join(', '));
+      }
+    }
+    setLocationLoading(false);
+  };
+
 
   const handleAISummarize = async () => {
     if (!title.trim() && !url.trim()) {
@@ -108,6 +136,8 @@ export default function SaveScreen() {
         .filter(Boolean),
       notes: notes.trim() || undefined,
       address: address.trim() || undefined,
+      latitude: coords?.lat,
+      longitude: coords?.lng,
       isCompleted: false,
       isFavorite: false,
       createdAt: now,
@@ -288,8 +318,33 @@ export default function SaveScreen() {
             placeholderTextColor={colors.placeholder}
             style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
           />
+          {/* GPS capture button */}
+          <TouchableOpacity
+            onPress={handleGetLocation}
+            disabled={locationLoading}
+            style={[styles.gpsBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+          >
+            {locationLoading ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <Ionicons name="navigate" size={15} color={coords ? '#10b981' : colors.textSecondary} />
+            )}
+            <Text style={[styles.gpsBtnText, { color: coords ? '#10b981' : colors.textSecondary }]}>
+              {coords
+                ? `GPS: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
+                : 'Capture current GPS coordinates (optional)'}
+            </Text>
+            {coords && (
+              <TouchableOpacity
+                onPress={() => setCoords(undefined)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
           <Text style={[styles.locationHint, { color: colors.textMuted }]}>
-            Copy the place name or address from the video/post and paste it here. You can open it in Google Maps later.
+            Type/paste the place name from the content. GPS coordinates are stored as extra metadata.
           </Text>
         </ScrollView>
       </View>
@@ -353,5 +408,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
+  },
+  gpsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+    marginTop: 6,
+  },
+  gpsBtnText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

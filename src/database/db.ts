@@ -36,6 +36,8 @@ export async function initDatabase(): Promise<void> {
       tags TEXT NOT NULL DEFAULT '[]',
       notes TEXT,
       address TEXT,
+      latitude REAL,
+      longitude REAL,
       is_completed INTEGER NOT NULL DEFAULT 0,
       is_favorite INTEGER NOT NULL DEFAULT 0,
       ai_summary TEXT,

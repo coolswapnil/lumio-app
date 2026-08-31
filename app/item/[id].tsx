@@ -254,18 +254,33 @@ export default function ItemDetailScreen() {
         )}
 
         {/* Location */}
-        {item.address && (
+        {(item.address || (item.latitude && item.longitude)) && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="location" size={14} color="#06b6d4" />
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>LOCATION</Text>
             </View>
-            <Text style={[styles.bodyText, { color: colors.text }]}>{item.address}</Text>
+            {item.address && (
+              <Text style={[styles.bodyText, { color: colors.text }]}>{item.address}</Text>
+            )}
+            {item.latitude && item.longitude && (
+              <Text style={[styles.meta, { color: colors.textMuted, marginTop: 2, fontFamily: 'monospace' }]}>
+                {`${item.latitude.toFixed(6)}, ${item.longitude.toFixed(6)}`}
+              </Text>
+            )}
             <TouchableOpacity
               onPress={() => {
-                const encoded = encodeURIComponent(item.address!);
-                const mapsUrl = `geo:0,0?q=${encoded}`;
-                const fallback = `https://maps.google.com/?q=${encoded}`;
+                // Prefer precise GPS coords; fall back to address text
+                let mapsUrl: string;
+                let fallback: string;
+                if (item.latitude && item.longitude) {
+                  mapsUrl = `geo:${item.latitude},${item.longitude}?q=${item.latitude},${item.longitude}`;
+                  fallback = `https://maps.google.com/?q=${item.latitude},${item.longitude}`;
+                } else {
+                  const encoded = encodeURIComponent(item.address ?? '');
+                  mapsUrl = `geo:0,0?q=${encoded}`;
+                  fallback = `https://maps.google.com/?q=${encoded}`;
+                }
                 Linking.canOpenURL(mapsUrl)
                   .then((ok) => Linking.openURL(ok ? mapsUrl : fallback))
                   .catch(() => Linking.openURL(fallback));

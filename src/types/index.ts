@@ -33,7 +33,9 @@ export interface SavedItem {
   collectionId?: string;
   tags: string[];
   notes?: string;
-  address?: string;   // Place name / address text from saved content
+  address?: string;       // Place name / address text from saved content
+  latitude?: number;      // GPS latitude (optional, from expo-location)
+  longitude?: number;     // GPS longitude (optional, from expo-location)
   isCompleted: boolean;
   isFavorite: boolean;
   aiSummary?: string;

@@ -21,12 +21,18 @@ import type { SavedItem } from '../../src/types';
 
 dayjs.extend(relativeTime);
 
-function openInGoogleMaps(address: string) {
-  // Deep-link into the Google Maps Android app (or fall back to browser)
-  const encoded = encodeURIComponent(address);
-  const mapsUrl = `geo:0,0?q=${encoded}`;
-  const fallbackUrl = `https://maps.google.com/?q=${encoded}`;
-
+function openInGoogleMaps(item: SavedItem) {
+  // Prefer GPS coords for precision; fall back to address text search
+  let mapsUrl: string;
+  let fallbackUrl: string;
+  if (item.latitude && item.longitude) {
+    mapsUrl = `geo:${item.latitude},${item.longitude}?q=${item.latitude},${item.longitude}`;
+    fallbackUrl = `https://maps.google.com/?q=${item.latitude},${item.longitude}`;
+  } else {
+    const encoded = encodeURIComponent(item.address ?? '');
+    mapsUrl = `geo:0,0?q=${encoded}`;
+    fallbackUrl = `https://maps.google.com/?q=${encoded}`;
+  }
   Linking.canOpenURL(mapsUrl)
     .then((supported) => Linking.openURL(supported ? mapsUrl : fallbackUrl))
     .catch(() => Linking.openURL(fallbackUrl));
@@ -38,9 +44,9 @@ export default function LocationsScreen() {
   const router = useRouter();
   const [search, setSearch] = useState('');
 
-  // Only items that have an address stored
+  // Only items that have an address or GPS coords stored
   const locationItems = useMemo(() => {
-    const withLocation = items.filter((item) => item.address?.trim());
+    const withLocation = items.filter((item) => item.address?.trim() || (item.latitude && item.longitude));
     if (!search.trim()) return withLocation;
     const q = search.trim().toLowerCase();
     return withLocation.filter(
@@ -75,12 +81,24 @@ export default function LocationsScreen() {
           </Text>
 
           {/* Address row */}
-          <View style={styles.addressRow}>
-            <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
-            <Text style={[styles.addressText, { color: colors.textSecondary }]} numberOfLines={2}>
-              {item.address}
-            </Text>
-          </View>
+          {item.address && (
+            <View style={styles.addressRow}>
+              <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+              <Text style={[styles.addressText, { color: colors.textSecondary }]} numberOfLines={2}>
+                {item.address}
+              </Text>
+            </View>
+          )}
+
+          {/* GPS badge */}
+          {item.latitude && item.longitude && (
+            <View style={styles.gpsBadgeRow}>
+              <Ionicons name="navigate" size={11} color="#10b981" />
+              <Text style={[styles.gpsBadgeText, { color: '#10b981' }]}>
+                {`${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}`}
+              </Text>
+            </View>
+          )}
 
           {/* Date */}
           <Text style={[styles.dateText, { color: colors.textMuted }]}>
@@ -90,7 +108,7 @@ export default function LocationsScreen() {
 
         {/* Open in Maps button */}
         <TouchableOpacity
-          onPress={() => openInGoogleMaps(item.address!)}
+          onPress={() => openInGoogleMaps(item)}
           style={[styles.mapsBtn, { backgroundColor: '#34a85320' }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -221,6 +239,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   addressText: { fontSize: 13, flex: 1, lineHeight: 18 },
+  gpsBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 1,
+  },
+  gpsBadgeText: { fontSize: 11, fontFamily: 'monospace' },
   dateText: { fontSize: 11, marginTop: 2 },
   mapsBtn: {
     flexDirection: 'column',

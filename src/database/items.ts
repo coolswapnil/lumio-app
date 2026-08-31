@@ -13,6 +13,8 @@ function rowToItem(row: Record<string, unknown>): SavedItem {
     tags: JSON.parse((row.tags as string) || '[]'),
     notes: row.notes as string | undefined,
     address: row.address as string | undefined,
+    latitude: row.latitude as number | undefined,
+    longitude: row.longitude as number | undefined,
     isCompleted: Boolean(row.is_completed),
     isFavorite: Boolean(row.is_favorite),
     aiSummary: row.ai_summary as string | undefined,
@@ -81,26 +83,28 @@ export async function saveItem(item: SavedItem): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
     `INSERT OR REPLACE INTO saved_items
-      (id, title, description, url, image_url, content_type, collection_id, tags, notes,
-       address, is_completed, is_favorite, ai_summary, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      item.id,
-      item.title,
-      item.description ?? null,
-      item.url ?? null,
-      item.imageUrl ?? null,
-      item.contentType,
-      item.collectionId ?? null,
-      JSON.stringify(item.tags),
-      item.notes ?? null,
-      item.address ?? null,
-      item.isCompleted ? 1 : 0,
-      item.isFavorite ? 1 : 0,
-      item.aiSummary ?? null,
-      item.createdAt,
-      item.updatedAt,
-    ]
+     (id, title, description, url, image_url, content_type, collection_id, tags, notes,
+      address, latitude, longitude, is_completed, is_favorite, ai_summary, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+   [
+     item.id,
+     item.title,
+     item.description ?? null,
+     item.url ?? null,
+     item.imageUrl ?? null,
+     item.contentType,
+     item.collectionId ?? null,
+     JSON.stringify(item.tags),
+     item.notes ?? null,
+     item.address ?? null,
+     item.latitude ?? null,
+     item.longitude ?? null,
+     item.isCompleted ? 1 : 0,
+     item.isFavorite ? 1 : 0,
+     item.aiSummary ?? null,
+     item.createdAt,
+     item.updatedAt,
+   ]
   );
 }
 
@@ -118,6 +122,8 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
   if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes ?? null); }
   if (updates.address !== undefined) { fields.push('address = ?'); values.push(updates.address ?? null); }
+  if (updates.latitude !== undefined) { fields.push('latitude = ?'); values.push(updates.latitude ?? null); }
+  if (updates.longitude !== undefined) { fields.push('longitude = ?'); values.push(updates.longitude ?? null); }
   if (updates.isCompleted !== undefined) { fields.push('is_completed = ?'); values.push(updates.isCompleted ? 1 : 0); }
   if (updates.isFavorite !== undefined) { fields.push('is_favorite = ?'); values.push(updates.isFavorite ? 1 : 0); }
   if (updates.aiSummary !== undefined) { fields.push('ai_summary = ?'); values.push(updates.aiSummary ?? null); }
