@@ -5,10 +5,8 @@ import {
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
-  Alert,
-  Platform,
 } from 'react-native';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Callout } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -80,7 +78,6 @@ export default function MapScreen() {
       ) : (
         <MapView
           style={styles.map}
-          provider={PROVIDER_GOOGLE}
           region={region}
           onRegionChangeComplete={setRegion}
           showsUserLocation={userLocation !== null}

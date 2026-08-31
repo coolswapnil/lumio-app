@@ -30,11 +30,7 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ],
-      "config": {
-        "googleMaps": {
-          "apiKey": ""
-        }
-      }
+      "config": {}
     },
     "web": {
       "favicon": "./assets/favicon.png",

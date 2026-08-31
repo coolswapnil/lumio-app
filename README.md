@@ -125,10 +125,13 @@ albo-app/
 
 ---
 
-## Adding Google Maps (required for Map tab)
+## Map Feature — No API Key Required
 
-1. Get a [Google Maps API key](https://console.cloud.google.com/apis/credentials)
-2. Add it to `app.json` under `expo.android.config.googleMaps.apiKey`
+The map tab works **out of the box with zero configuration**:
+- **Android** — uses the device's built-in map renderer (default `react-native-maps` provider, OpenStreetMap-based)
+- **iOS** — uses Apple Maps natively
+
+GPS geotagging and reverse geocoding (address → name lookup) use `expo-location`, which is also completely free with no key needed.
 
 ---
 
