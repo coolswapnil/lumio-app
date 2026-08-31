@@ -37,7 +37,9 @@ export default function SettingsScreen() {
   const selectedProvider = AI_PROVIDERS.find((p) => p.id === aiSettings.provider);
 
   const handleSaveAI = async () => {
-    if (!aiSettings.apiKey?.trim()) {
+    const isLocal = aiSettings.provider === 'local';
+    // Local LLM: API key is optional (Ollama doesn't need one)
+    if (!isLocal && !aiSettings.apiKey?.trim()) {
       Alert.alert('Missing API Key', 'Please enter your API key.');
       return;
     }
@@ -48,10 +50,11 @@ export default function SettingsScreen() {
     setSaving(true);
     await saveAISettings({
       provider: aiSettings.provider as AIProvider,
-      apiKey: aiSettings.apiKey,
+      apiKey: aiSettings.apiKey ?? '',
       model: aiSettings.model?.trim() || undefined,
       watsonxProjectId: aiSettings.watsonxProjectId,
       watsonxRegion: aiSettings.watsonxRegion,
+      localBaseUrl: aiSettings.localBaseUrl,
     });
     setSaving(false);
     setSaved(true);
@@ -200,6 +203,36 @@ export default function SettingsScreen() {
             </>
           )}
 
+          {/* Local LLM / Indus: base URL field */}
+          {(aiSettings.provider === 'local' || aiSettings.provider === 'indus') && (
+            <>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 14 }]}>
+                {aiSettings.provider === 'local' ? 'Server Base URL' : 'API Base URL'}
+              </Text>
+              <TextInput
+                value={aiSettings.localBaseUrl}
+                onChangeText={(v) => setAiSettings((s) => ({ ...s, localBaseUrl: v }))}
+                placeholder={
+                  aiSettings.provider === 'local'
+                    ? 'http://localhost:11434/v1'
+                    : 'https://api.indusai.in/v1'
+                }
+                placeholderTextColor={colors.placeholder}
+                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+              {aiSettings.provider === 'local' && (
+                <Text style={[styles.helpNote, { color: colors.textMuted }]}>
+                  Ollama default: http://localhost:11434/v1{'\n'}
+                  LM Studio default: http://localhost:1234/v1{'\n'}
+                  API key is optional for local servers.
+                </Text>
+              )}
+            </>
+          )}
+
           <View style={styles.aiButtons}>
             <Button
               title={saved ? '✓ Saved!' : 'Save API Key'}
@@ -315,5 +348,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 14,
     lineHeight: 16,
+  },
+  helpNote: {
+    fontSize: 11,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    lineHeight: 17,
   },
 });

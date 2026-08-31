@@ -12,21 +12,28 @@ export interface AISummarizeResult {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// OpenAI
+// Shared helper: OpenAI-compatible chat completions endpoint
+// Used by: OpenAI, DeepSeek, Groq, Indus, Local LLM (Ollama/LM Studio)
 // ────────────────────────────────────────────────────────────────────────────
-async function callOpenAI(
+async function callOpenAICompatible(
+  baseUrl: string,
   apiKey: string,
   model: string,
   messages: AIMessage[]
 ): Promise<string> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  // Local LLM (Ollama) may not require a key, but include if provided
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
-      model: model || 'gpt-4o-mini',
+      model,
       messages,
       max_tokens: 512,
       temperature: 0.3,
@@ -34,7 +41,8 @@ async function callOpenAI(
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`);
+    const errText = await response.text().catch(() => '');
+    throw new Error(`AI API error (${response.status}): ${errText.slice(0, 120)}`);
   }
   const data = (await response.json()) as {
     choices: Array<{ message: { content: string } }>;
@@ -43,7 +51,23 @@ async function callOpenAI(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Anthropic
+// OpenAI
+// ────────────────────────────────────────────────────────────────────────────
+async function callOpenAI(
+  apiKey: string,
+  model: string,
+  messages: AIMessage[]
+): Promise<string> {
+  return callOpenAICompatible(
+    'https://api.openai.com/v1',
+    apiKey,
+    model || 'gpt-4o-mini',
+    messages
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Anthropic Claude
 // ────────────────────────────────────────────────────────────────────────────
 async function callAnthropic(
   apiKey: string,
@@ -69,7 +93,8 @@ async function callAnthropic(
   });
 
   if (!response.ok) {
-    throw new Error(`Anthropic API error: ${response.status}`);
+    const errText = await response.text().catch(() => '');
+    throw new Error(`Anthropic API error (${response.status}): ${errText.slice(0, 120)}`);
   }
   const data = (await response.json()) as {
     content: Array<{ text: string }>;
@@ -87,15 +112,12 @@ async function callWatsonx(
   region: string,
   messages: AIMessage[]
 ): Promise<string> {
-  // Get IAM token first
-  const tokenResponse = await fetch(
-    'https://iam.cloud.ibm.com/identity/token',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${encodeURIComponent(apiKey)}`,
-    }
-  );
+  // Exchange API key for IAM bearer token
+  const tokenResponse = await fetch('https://iam.cloud.ibm.com/identity/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=${encodeURIComponent(apiKey)}`,
+  });
   if (!tokenResponse.ok) {
     throw new Error(`IBM IAM token error: ${tokenResponse.status}`);
   }
@@ -138,7 +160,7 @@ async function callGemini(
   model: string,
   messages: AIMessage[]
 ): Promise<string> {
-  const geminiModel = model || 'gemini-1.5-flash';
+  const geminiModel = model || 'gemini-2.0-flash';
   const contents = messages
     .filter((m) => m.role !== 'system')
     .map((m) => ({
@@ -165,7 +187,69 @@ async function callGemini(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Unified call
+// DeepSeek  (OpenAI-compatible)
+// ────────────────────────────────────────────────────────────────────────────
+async function callDeepSeek(
+  apiKey: string,
+  model: string,
+  messages: AIMessage[]
+): Promise<string> {
+  return callOpenAICompatible(
+    'https://api.deepseek.com/v1',
+    apiKey,
+    model || 'deepseek-chat',
+    messages
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Groq  (OpenAI-compatible, very fast inference)
+// ────────────────────────────────────────────────────────────────────────────
+async function callGroq(
+  apiKey: string,
+  model: string,
+  messages: AIMessage[]
+): Promise<string> {
+  return callOpenAICompatible(
+    'https://api.groq.com/openai/v1',
+    apiKey,
+    model || 'llama-3.3-70b-versatile',
+    messages
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Indus AI  (OpenAI-compatible, base URL required)
+// ────────────────────────────────────────────────────────────────────────────
+async function callIndus(
+  apiKey: string,
+  model: string,
+  baseUrl: string,
+  messages: AIMessage[]
+): Promise<string> {
+  const url = (baseUrl || 'https://api.indusai.in/v1').replace(/\/$/, '');
+  return callOpenAICompatible(url, apiKey, model || 'indus-1', messages);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Local LLM — Ollama / LM Studio / any OpenAI-compatible local server
+//
+// Ollama default:    http://localhost:11434/v1   (no key needed)
+// LM Studio default: http://localhost:1234/v1    (no key needed)
+// Custom server:     user-provided base URL
+// ────────────────────────────────────────────────────────────────────────────
+async function callLocalLLM(
+  apiKey: string,
+  model: string,
+  baseUrl: string,
+  messages: AIMessage[]
+): Promise<string> {
+  const url = (baseUrl || 'http://localhost:11434/v1').replace(/\/$/, '');
+  return callOpenAICompatible(url, apiKey, model || 'llama3.2', messages);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Unified dispatcher
 // ────────────────────────────────────────────────────────────────────────────
 async function callAI(
   settings: AISettings,
@@ -174,8 +258,27 @@ async function callAI(
   switch (settings.provider) {
     case 'openai':
       return callOpenAI(settings.apiKey, settings.model ?? 'gpt-4o-mini', messages);
+
     case 'anthropic':
       return callAnthropic(settings.apiKey, settings.model ?? 'claude-3-haiku-20240307', messages);
+
+    case 'gemini':
+      return callGemini(settings.apiKey, settings.model ?? 'gemini-2.0-flash', messages);
+
+    case 'deepseek':
+      return callDeepSeek(settings.apiKey, settings.model ?? 'deepseek-chat', messages);
+
+    case 'groq':
+      return callGroq(settings.apiKey, settings.model ?? 'llama-3.3-70b-versatile', messages);
+
+    case 'indus':
+      return callIndus(
+        settings.apiKey,
+        settings.model ?? 'indus-1',
+        settings.localBaseUrl ?? 'https://api.indusai.in/v1',
+        messages
+      );
+
     case 'watsonx':
       return callWatsonx(
         settings.apiKey,
@@ -184,8 +287,15 @@ async function callAI(
         settings.watsonxRegion ?? 'us-south',
         messages
       );
-    case 'gemini':
-      return callGemini(settings.apiKey, settings.model ?? 'gemini-1.5-flash', messages);
+
+    case 'local':
+      return callLocalLLM(
+        settings.apiKey,
+        settings.model ?? 'llama3.2',
+        settings.localBaseUrl ?? 'http://localhost:11434/v1',
+        messages
+      );
+
     default:
       throw new Error('Unknown AI provider');
   }
@@ -231,7 +341,7 @@ export async function summarizeItem(
       return JSON.parse(jsonMatch[0]) as AISummarizeResult;
     }
   } catch {
-    // Fallback if parsing fails
+    // Fallback if JSON parsing fails
   }
   return { summary: raw, suggestedTags: [] };
 }

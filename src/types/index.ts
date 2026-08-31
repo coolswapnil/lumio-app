@@ -13,7 +13,15 @@ export type ContentType =
   | 'idea'
   | 'travel';
 
-export type AIProvider = 'openai' | 'anthropic' | 'watsonx' | 'gemini';
+export type AIProvider =
+  | 'openai'
+  | 'anthropic'
+  | 'watsonx'
+  | 'gemini'
+  | 'deepseek'
+  | 'groq'
+  | 'indus'
+  | 'local';
 
 export interface SavedItem {
   id: string;
@@ -50,8 +58,11 @@ export interface AISettings {
   provider: AIProvider;
   apiKey: string;
   model?: string;
+  // IBM watsonx extras
   watsonxProjectId?: string;
   watsonxRegion?: string;
+  // Local LLM (Ollama / LM Studio / any OpenAI-compatible server)
+  localBaseUrl?: string;
 }
 
 export interface AppSettings {
