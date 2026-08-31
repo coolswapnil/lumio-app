@@ -86,32 +86,12 @@ jobs:
           EXPO_MODULES_CORE_DIR=$(node --print "require.resolve('expo-modules-core/package.json')" | sed 's|/package.json||')
           echo "expo-modules-core dir: $EXPO_MODULES_CORE_DIR"
 
-          python3 - <<PYEOF
-import pathlib, re
-
-settings_path = pathlib.Path('android/settings.gradle')
-content = settings_path.read_text()
-
-# We need to add includeBuild for expo-module-gradle-plugin inside the
-# existing pluginManagement block (which starts at line 1)
-expo_core = '${EXPO_MODULES_CORE_DIR}'
-
-include_line = f"""  includeBuild(new File("{expo_core}/android"))"""
-
-# Insert after the opening 'pluginManagement {' line
-patched = content.replace(
-    'pluginManagement {\n',
-    f'pluginManagement {{\n{include_line}\n',
-    1
-)
-
-if patched != content:
-    settings_path.write_text(patched)
-    print("Patched settings.gradle with expo-modules-core includeBuild")
-else:
-    print("WARNING: pluginManagement block not found or already patched")
-    print("First 5 lines:", content.splitlines()[:5])
-PYEOF
+          # Insert includeBuild into the pluginManagement block so Gradle can
+          # find expo-module-gradle-plugin before evaluating module build.gradle files
+          INCLUDE_LINE="  includeBuild(new File(\"${EXPO_MODULES_CORE_DIR}/android\"))"
+          sed -i "s|pluginManagement {|pluginManagement {\n${INCLUDE_LINE}|" android/settings.gradle
+          echo "=== patched settings.gradle (first 10 lines) ==="
+          head -10 android/settings.gradle
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
