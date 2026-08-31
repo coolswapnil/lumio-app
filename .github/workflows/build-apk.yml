@@ -57,8 +57,10 @@ jobs:
       # ── Decode keystore from secret ───────────────────────────────────────────
       - name: Decode release keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
-            > android/app/lumio-release.keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" \
+            | tr -d '\n\r ' \
+            | base64 --decode > android/app/lumio-release.keystore
+          echo "Keystore size: $(wc -c < android/app/lumio-release.keystore) bytes"
 
       # ── Pre-bundle JS so Gradle doesn't need Metro at build time ─────────────
       - name: Bundle JavaScript
