@@ -8,96 +8,76 @@ on:
 
 jobs:
   build:
-    name: Build APKs (arm64 + armv7 + universal)
+    name: Build APK (universal)
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout ───────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
 
-      # ── 2. Node.js 22 ─────────────────────────────────────────────────────
       - name: Setup Node.js 22
         uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
 
-      # ── 3. Java 17 ────────────────────────────────────────────────────────
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ── 4. Android SDK ────────────────────────────────────────────────────
-      - name: Setup Android SDK
-        run: |
-          echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "build-tools;34.0.0" "platforms;android-34" "platform-tools" > /dev/null 2>&1 || true
-          echo "SDK setup complete"
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-      # ── 5. Install npm dependencies ───────────────────────────────────────
       - name: Install npm dependencies
         run: npm install
 
-      # ── 5b. Generate app icon / splash PNG assets ─────────────────────────
       - name: Generate icon assets
         run: |
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
-          npm install canvas --no-save --ignore-scripts=false > /dev/null 2>&1 && \
-            node scripts/generate-icons.js && \
-            echo "Icons generated" || \
-            echo "Icon generation skipped (canvas build failed — using placeholder PNGs)"
+          npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
-      # ── 6. Expo prebuild ──────────────────────────────────────────────────
-      - name: Expo prebuild (generate android/ folder)
-        run: |
-          EXPO_NO_DOTENV=1 npx expo prebuild \
-            --platform android \
-            --clean \
-            --no-install
+      - name: Expo prebuild
+        run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean --no-install
         env:
           CI: '1'
 
-      # ── 7. Make gradlew executable ────────────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── 8. Generate release keystore (self-signed, CI-only) ───────────────
-      #        Produces a valid signed APK without requiring a pre-existing key.
-      #        For Play Store submission a real keystore should be used instead.
-      - name: Generate release keystore
+      # ── Signing: write keystore + wire via gradle.properties ──────────────────
+      # This is the correct Expo/React Native way to configure release signing.
+      # gradle.properties is read by the app/build.gradle storeFile reference
+      # that expo prebuild generates. No Python patching of build.gradle needed.
+      - name: Generate keystore and configure signing
         run: |
+          # 1. Generate self-signed keystore
           keytool -genkeypair \
             -alias lumio-release \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -keystore lumio-release.keystore \
-            -storepass lumio1234 \
-            -keypass lumio1234 \
-            -dname "CN=Lumio App, OU=Dev, O=Lumio, L=Mumbai, S=MH, C=IN" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore android/app/lumio-release.keystore \
+            -storepass lumio1234 -keypass lumio1234 \
+            -dname "CN=Lumio, O=Lumio, C=IN" \
             -storetype PKCS12
-          echo "Keystore generated"
+          echo "Keystore generated at android/app/lumio-release.keystore"
 
-      # ── 9. Configure signing in build.gradle ──────────────────────────────
-      - name: Configure signing
-        run: |
-          python3 scripts/patch_signing.py \
-            android/app/build.gradle \
-            "$(pwd)/lumio-release.keystore"
+          # 2. Write signing config into gradle.properties (React Native standard)
+          cat >> android/gradle.properties << 'EOF'
+MYAPP_RELEASE_STORE_FILE=lumio-release.keystore
+MYAPP_RELEASE_KEY_ALIAS=lumio-release
+MYAPP_RELEASE_STORE_PASSWORD=lumio1234
+MYAPP_RELEASE_KEY_PASSWORD=lumio1234
+EOF
+          echo "gradle.properties updated"
 
-      # ── 10. Pre-bundle JavaScript (expo export:embed) ─────────────────────
-      #        Uses Expo's own bundler command which correctly resolves
-      #        expo-router's entry point and reads metro.config.js from the
-      #        expo prebuild output. Gradle then picks up the pre-built bundle
-      #        via -PbundleInRelease=false and skips its own Metro invocation.
-      - name: Bundle JavaScript with Expo
+          # 3. Patch app/build.gradle to reference gradle.properties vars.
+          #    expo prebuild generates a signingConfigs section — we just fill it in.
+          python3 scripts/patch_signing.py android/app/build.gradle
+
+      # ── Pre-bundle JS so Gradle doesn't need to spawn Metro ──────────────────
+      - name: Bundle JavaScript
         run: |
           mkdir -p android/app/src/main/assets
-          # expo export:embed wraps react-native bundle but uses Expo's metro config.
-          # --entry-file is required; expo-router's entry is node_modules/expo-router/entry.js
           npx expo export:embed \
             --platform android \
             --entry-file node_modules/expo-router/entry.js \
@@ -105,111 +85,66 @@ jobs:
             --assets-dest android/app/src/main/res \
             --dev false \
             --reset-cache
-          echo "Bundle size: $(du -sh android/app/src/main/assets/index.android.bundle)"
+          echo "Bundle: $(du -sh android/app/src/main/assets/index.android.bundle)"
         env:
           NODE_ENV: production
           EXPO_NO_DOTENV: '1'
 
-      # ── 11. Configure ABI splits ──────────────────────────────────────────
-      - name: Configure ABI splits in build.gradle
-        run: python3 scripts/patch_abi_splits.py android/app/build.gradle
-
-      # ── 12. Build release APKs ────────────────────────────────────────────
-      - name: Build release APKs
+      # ── Build ─────────────────────────────────────────────────────────────────
+      - name: Build release APK
         run: |
           cd android
-          # Capture output so we can print the key error lines on failure
           ./gradlew assembleRelease \
             --no-daemon \
-            --stacktrace \
             -Dfile.encoding=UTF-8 \
             -PbundleInRelease=false \
-            2>&1 | tee /tmp/gradle_output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== GRADLE FAILURE — key lines ==="
-            grep -E "^> Task|FAILED|Exception|error:|Caused by|Could not|> Could" /tmp/gradle_output.txt | head -60 || true
-            exit $EXIT_CODE
+            2>&1 | tee /tmp/gradle.log
+          CODE=${PIPESTATUS[0]}
+          if [ $CODE -ne 0 ]; then
+            echo "=== GRADLE ERROR SUMMARY ==="
+            grep -E "FAILED|Exception|> Task|Caused by|error:" /tmp/gradle.log | head -40 || true
+            exit $CODE
           fi
         env:
           GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
           CI: 'true'
 
-      # ── 13. List built APKs ───────────────────────────────────────────────
-      - name: List output APKs
-        run: |
-          echo "=== All APKs built ==="
-          find android/app/build/outputs/apk -name "*.apk" | sort
-
-      # ── 14. Collect and rename APKs ───────────────────────────────────────
       - name: Collect APKs
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
-          # Search both release and debug output dirs
-          APK_DIR="android/app/build/outputs/apk"
           mkdir -p release-apks
-
-          ARM64=$(find "$APK_DIR" -name "*arm64-v8a*.apk" | head -1)
-          [ -n "$ARM64" ] && cp "$ARM64" "release-apks/lumio-${VERSION}-arm64-v8a.apk" && echo "Copied arm64"
-
-          ARMV7=$(find "$APK_DIR" -name "*armeabi-v7a*.apk" | head -1)
-          [ -n "$ARMV7" ] && cp "$ARMV7" "release-apks/lumio-${VERSION}-armeabi-v7a.apk" && echo "Copied armv7"
-
-          UNIVERSAL=$(find "$APK_DIR" -name "*universal*.apk" | head -1)
-          [ -n "$UNIVERSAL" ] && cp "$UNIVERSAL" "release-apks/lumio-${VERSION}-universal.apk" && echo "Copied universal"
-
-          # Fallback: grab any APK found
-          if [ -z "$ARM64" ] && [ -z "$ARMV7" ] && [ -z "$UNIVERSAL" ]; then
-            FALLBACK=$(find "$APK_DIR" -name "*.apk" | head -1)
-            [ -n "$FALLBACK" ] && cp "$FALLBACK" "release-apks/lumio-${VERSION}-universal.apk" && echo "Copied fallback"
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -n "$APK" ]; then
+            cp "$APK" "release-apks/lumio-${VERSION}.apk"
+            echo "APK: $(du -sh release-apks/lumio-${VERSION}.apk)"
+          else
+            echo "ERROR: No APK found!" && exit 1
           fi
-
-          echo "=== Release APKs ==="
-          ls -lh release-apks/
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      # ── 14. Upload APKs as workflow artifacts ─────────────────────────────
-      - name: Upload APK artifacts
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lumio-${{ env.VERSION }}-apks
+          name: lumio-${{ env.VERSION }}
           path: release-apks/
           retention-days: 30
 
-      # ── 15. Create GitHub Release ─────────────────────────────────────────
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION="${GITHUB_REF_NAME}"
-          API_BASE="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
-
-          echo "Creating release ${VERSION}..."
-
-          RELEASE_RESPONSE=$(curl -s -X POST \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${API_BASE}/releases" \
-            -d "{
-              \"tag_name\": \"${VERSION}\",
-              \"name\": \"Lumio ${VERSION}\",
-              \"body\": \"## Lumio ${VERSION}\n\n### Which APK should I download?\n\n| APK | Best for |\n|---|---|\n| \`lumio-${VERSION}-arm64-v8a.apk\` | **Recommended** — most phones 2018+ (64-bit ARM) |\n| \`lumio-${VERSION}-armeabi-v7a.apk\` | Older phones pre-2018 (32-bit ARM) |\n| \`lumio-${VERSION}-universal.apk\` | Any Android device — use if unsure |\n\n### How to install\n1. Download the APK from Assets below\n2. On your Android phone: Settings → Security → Install unknown apps → enable\n3. Open the downloaded APK and tap Install\",
-              \"draft\": false,
-              \"prerelease\": false
-            }")
-
-          RELEASE_ID=$(echo "$RELEASE_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-          echo "Release ID: $RELEASE_ID"
-          echo "RELEASE_ID=${RELEASE_ID}" >> "$GITHUB_ENV"
-
-          for APK in release-apks/*.apk; do
-            APK_NAME=$(basename "$APK")
-            echo "Uploading ${APK_NAME}..."
-            curl -s -X POST \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Content-Type: application/vnd.android.package-archive" \
-              --data-binary @"$APK" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=${APK_NAME}"
-            echo "Uploaded ${APK_NAME}"
-          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
+          BODY="## Lumio ${VERSION}\n\nSideload APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets\n2. Phone: Settings → Security → Install unknown apps → enable\n3. Open the APK and tap Install"
+          RESP=$(curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/json" "${API}/releases" \
+            -d "{\"tag_name\":\"${VERSION}\",\"name\":\"Lumio ${VERSION}\",\"body\":\"${BODY}\",\"draft\":false,\"prerelease\":false}")
+          RELEASE_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "Release $RELEASE_ID created"
+          APK="release-apks/lumio-${VERSION}.apk"
+          curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"$APK" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=lumio-${VERSION}.apk"
+          echo "APK uploaded to release"
