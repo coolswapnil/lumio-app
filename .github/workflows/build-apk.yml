@@ -64,19 +64,54 @@ jobs:
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
 
-          # 2. Force AGP 8.1.4 in build.gradle — the classpath has no version so
-          #    Gradle picks the latest (8.5+) which breaks expo-modules-core.
-          #    8.1.4 is the last version where components.release still works.
+          # 2. Force AGP 8.1.4 in build.gradle
           sed -i "s|classpath('com.android.tools.build:gradle')|classpath('com.android.tools.build:gradle:8.1.4')|" \
             android/build.gradle
           echo "AGP: $(grep 'com.android.tools.build:gradle' android/build.gradle)"
 
-          # 3. Patch ExpoModulesCorePlugin.gradle line 85 —
-          #    components.release was removed in AGP 8.x, use findByName as fallback
+          # 3. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
             sed -i "s/from components\.release/from components.findByName('release') ?: components.findByName('debug')/g" "$f"
             echo "Patched: $f"
           done
+
+          # 4. Register expo-module-gradle-plugin in pluginManagement so the
+          #    plugins{} block in expo-font and other modules can resolve it.
+          #    The plugin JAR lives inside expo-modules-core/android build output,
+          #    but the easiest way is to add the local maven repo that expo-modules
+          #    publishes to during the build, AND add the includeBuild path.
+          #
+          #    expo-modules-core includes its own gradle plugin via includeBuild.
+          #    We prepend that includeBuild to settings.gradle pluginManagement.
+          EXPO_MODULES_CORE_DIR=$(node --print "require.resolve('expo-modules-core/package.json')" | sed 's|/package.json||')
+          echo "expo-modules-core dir: $EXPO_MODULES_CORE_DIR"
+
+          python3 - <<PYEOF
+import pathlib, re
+
+settings_path = pathlib.Path('android/settings.gradle')
+content = settings_path.read_text()
+
+# We need to add includeBuild for expo-module-gradle-plugin inside the
+# existing pluginManagement block (which starts at line 1)
+expo_core = '${EXPO_MODULES_CORE_DIR}'
+
+include_line = f"""  includeBuild(new File("{expo_core}/android"))"""
+
+# Insert after the opening 'pluginManagement {' line
+patched = content.replace(
+    'pluginManagement {\n',
+    f'pluginManagement {{\n{include_line}\n',
+    1
+)
+
+if patched != content:
+    settings_path.write_text(patched)
+    print("Patched settings.gradle with expo-modules-core includeBuild")
+else:
+    print("WARNING: pluginManagement block not found or already patched")
+    print("First 5 lines:", content.splitlines()[:5])
+PYEOF
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
