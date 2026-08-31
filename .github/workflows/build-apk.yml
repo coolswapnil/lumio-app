@@ -42,42 +42,33 @@ jobs:
         env:
           CI: '1'
 
+      # ── Debug: print key generated files ─────────────────────────────────────
+      - name: Print generated Android files for debugging
+        run: |
+          echo "=== android/settings.gradle ==="
+          cat android/settings.gradle
+          echo ""
+          echo "=== android/build.gradle ==="
+          cat android/build.gradle
+          echo ""
+          echo "=== expo-font/android/build.gradle ==="
+          cat node_modules/expo-font/android/build.gradle || echo "NOT FOUND"
+          echo ""
+          echo "=== ExpoModulesCorePlugin.gradle (lines 80-95) ==="
+          sed -n '80,95p' node_modules/expo-modules-core/android/ExpoModulesCorePlugin.gradle || echo "NOT FOUND"
+
       # ── Patch Android project for Expo 51 + AGP 8 compatibility ──────────────
       - name: Patch Android project files
         run: |
           # 1. Pin Gradle to 8.3
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
-          echo "Gradle: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
 
-          # 2. Patch ExpoModulesCorePlugin.gradle line 85 —
-          #    components.release was removed in AGP 8.x, use findByName
+          # 2. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
             sed -i "s/components\.release/components.findByName('release')/g" "$f"
-            echo "Patched: $f"
+            echo "Patched components.release in: $f"
           done
-
-          # 3. Patch every expo module build.gradle that uses expo-module-gradle-plugin.
-          #    The plugin is declared in plugins{} block syntax (line 3 of expo-font etc.)
-          #    We replace the entire plugins block referencing it with the standard
-          #    com.android.library plugin that AGP provides natively.
-          find node_modules -path "*/android/build.gradle" | while read f; do
-            if grep -q "expo-module-gradle-plugin" "$f"; then
-              # Remove apply plugin lines (old syntax)
-              sed -i "/apply plugin: 'expo-module-gradle-plugin'/d" "$f"
-              sed -i "/apply plugin: \"expo-module-gradle-plugin\"/d" "$f"
-              # Remove plugins{} block lines referencing expo-module-gradle-plugin (new syntax)
-              sed -i "/id 'expo-module-gradle-plugin'/d" "$f"
-              sed -i '/id "expo-module-gradle-plugin"/d' "$f"
-              # If the plugins{} block is now empty, remove it
-              sed -i '/^plugins {$/,/^}$/{/^plugins {$/{N;/^plugins {\n}$/d}}' "$f" || true
-              echo "Patched expo-module-gradle-plugin from: $f"
-            fi
-          done
-
-          # 4. Show settings.gradle for debug
-          echo "=== settings.gradle (first 30 lines) ==="
-          head -30 android/settings.gradle
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
