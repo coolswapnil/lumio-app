@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build APK (debug sideload)
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -31,22 +31,48 @@ jobs:
 
       - name: Install npm dependencies
         run: npm install
+        working-directory: lumio-app
 
       - name: Generate icon assets
+        working-directory: lumio-app
         run: |
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
       - name: Expo prebuild
+        working-directory: lumio-app
         run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean --no-install
         env:
           CI: '1'
 
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
+      # Expo 51 requires Gradle 8.6 — pin it here because prebuild --clean
+      # regenerates the wrapper every run with an older default version which
+      # breaks expo-module-gradle-plugin on AGP 8.x.
+      - name: Pin Gradle wrapper to 8.6
+        working-directory: lumio-app/android
+        run: |
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.6-bin.zip|' \
+            gradle/wrapper/gradle-wrapper.properties
+          cat gradle/wrapper/gradle-wrapper.properties
 
-      # ── Pre-bundle JS so Gradle doesn't need to spawn Metro ──────────────────
+      - name: Make gradlew executable
+        run: chmod +x lumio-app/android/gradlew
+
+      # ── Decode keystore from secret ───────────────────────────────────────────
+      # Add these four secrets to your repo (Settings → Secrets → Actions):
+      #   KEYSTORE_BASE64   – base64-encoded .jks / .keystore file
+      #                       generate with: base64 -w 0 lumio-release.keystore
+      #   KEY_ALIAS         – alias used when creating the keystore
+      #   KEY_PASSWORD      – key password
+      #   KEYSTORE_PASSWORD – keystore (store) password
+      - name: Decode release keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
+            > lumio-app/android/app/lumio-release.keystore
+
+      # ── Pre-bundle JS so Gradle doesn't need Metro at build time ─────────────
       - name: Bundle JavaScript
+        working-directory: lumio-app
         run: |
           mkdir -p android/app/src/main/assets
           npx expo export:embed \
@@ -61,18 +87,17 @@ jobs:
           NODE_ENV: production
           EXPO_NO_DOTENV: '1'
 
-      # ── Build ─────────────────────────────────────────────────────────────────
-      # assembleDebug: auto-signed with the debug keystore — no keystore setup
-      # needed. Produces a fully installable sideload APK (Settings → Unknown
-      # sources → install). For personal / beta distribution this is identical
-      # to a release APK in every way that matters.
-      - name: Build debug APK
+      # ── Build signed release APK ──────────────────────────────────────────────
+      - name: Build release APK
+        working-directory: lumio-app/android
         run: |
-          cd android
-          ./gradlew assembleDebug \
+          ./gradlew assembleRelease \
             --no-daemon \
             -Dfile.encoding=UTF-8 \
-            -PbundleInRelease=false \
+            -Pandroid.injected.signing.store.file="$(pwd)/app/lumio-release.keystore" \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
             2>&1 | tee /tmp/gradle.log
           CODE=${PIPESTATUS[0]}
           if [ $CODE -ne 0 ]; then
@@ -90,7 +115,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
           mkdir -p release-apks
-          APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -1)
+          APK=$(find lumio-app/android/app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -n "$APK" ]; then
             cp "$APK" "release-apks/lumio-${VERSION}.apk"
             echo "APK: $(du -sh release-apks/lumio-${VERSION}.apk)"
@@ -113,7 +138,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
-          BODY="## Lumio ${VERSION}\n\nSideload APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets below\n2. Phone: Settings \u2192 Security \u2192 Install unknown apps \u2192 enable for your file manager\n3. Open the APK and tap Install"
+          BODY="## Lumio ${VERSION}\n\nSigned release APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets below\n2. Phone: Settings \u2192 Security \u2192 Install unknown apps \u2192 enable for your file manager\n3. Open the APK and tap Install"
           RESP=$(curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Content-Type: application/json" "${API}/releases" \
             -d "{\"tag_name\":\"${VERSION}\",\"name\":\"Lumio ${VERSION}\",\"body\":\"${BODY}\",\"draft\":false,\"prerelease\":false}")
