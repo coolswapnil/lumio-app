@@ -60,14 +60,22 @@ jobs:
       # ── Patch Android project for Expo 51 + AGP 8 compatibility ──────────────
       - name: Patch Android project files
         run: |
-          # 1. Pin Gradle to 8.3
+          # 1. Pin Gradle wrapper to 8.3
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
 
-          # 2. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8
+          # 2. Force AGP 8.1.4 in build.gradle — the classpath has no version so
+          #    Gradle picks the latest (8.5+) which breaks expo-modules-core.
+          #    8.1.4 is the last version where components.release still works.
+          sed -i "s|classpath('com.android.tools.build:gradle')|classpath('com.android.tools.build:gradle:8.1.4')|" \
+            android/build.gradle
+          echo "AGP: $(grep 'com.android.tools.build:gradle' android/build.gradle)"
+
+          # 3. Patch ExpoModulesCorePlugin.gradle line 85 —
+          #    components.release was removed in AGP 8.x, use findByName as fallback
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
-            sed -i "s/components\.release/components.findByName('release')/g" "$f"
-            echo "Patched components.release in: $f"
+            sed -i "s/from components\.release/from components.findByName('release') ?: components.findByName('debug')/g" "$f"
+            echo "Patched: $f"
           done
 
       - name: Make gradlew executable
