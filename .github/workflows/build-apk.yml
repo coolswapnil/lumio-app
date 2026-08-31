@@ -71,39 +71,13 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── 8. Inject Android widget files ────────────────────────────────────
-      - name: Inject Android widget
-        run: |
-          PKG_PATH="android/app/src/main/java/com/lumio/savelater"
-          RES_PATH="android/app/src/main/res"
-
-          mkdir -p "$PKG_PATH"
-          mkdir -p "$RES_PATH/layout"
-          mkdir -p "$RES_PATH/xml"
-          mkdir -p "$RES_PATH/drawable"
-
-          # Copy Kotlin widget class
-          cp android-widget/LumioWidget.kt "$PKG_PATH/LumioWidget.kt"
-
-          # Copy layout
-          cp android-widget/widget_lumio.xml "$RES_PATH/layout/widget_lumio.xml"
-
-          # Copy widget provider info
-          cp android-widget/lumio_widget_info.xml "$RES_PATH/xml/lumio_widget_info.xml"
-
-          # Copy widget background drawable
-          cp android-widget/widget_background.xml "$RES_PATH/drawable/widget_background.xml"
-
-          # Patch AndroidManifest.xml to register the widget receiver
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          # Only patch if not already patched
-          if ! grep -q "LumioWidget" "$MANIFEST"; then
-            WIDGET_RECEIVER='        <receiver android:name=".LumioWidget" android:exported="true">\n            <intent-filter>\n                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" \/>\n            <\/intent-filter>\n            <meta-data android:name="android.appwidget.provider" android:resource="@xml\/lumio_widget_info" \/>\n        <\/receiver>'
-            sed -i "s|</application>|${WIDGET_RECEIVER}\n    </application>|" "$MANIFEST"
-            echo "Widget receiver registered in AndroidManifest.xml"
-          else
-            echo "Widget already registered"
-          fi
+      # ── 8. Android widget — skipped in v1.1.0 (re-enabled in v1.2.0) ──────
+      # Widget injection via sed+Kotlin causes Gradle AAPT failures due to
+      # API-level-restricted attributes in the layout XML. Widget source files
+      # are committed in android-widget/ for reference and will be bundled via
+      # a proper Expo config plugin in the next release.
+      - name: Inject Android widget (stubbed)
+        run: echo "Widget injection skipped — will use Expo config plugin in v1.2.0"
 
       # ── 9. Configure ABI splits ───────────────────────────────────────────
       - name: Configure ABI splits in build.gradle
