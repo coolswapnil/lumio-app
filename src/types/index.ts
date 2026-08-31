@@ -33,9 +33,7 @@ export interface SavedItem {
   collectionId?: string;
   tags: string[];
   notes?: string;
-  latitude?: number;
-  longitude?: number;
-  address?: string;
+  address?: string;   // Place name / address text from saved content
   isCompleted: boolean;
   isFavorite: boolean;
   aiSummary?: string;

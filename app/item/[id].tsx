@@ -254,18 +254,27 @@ export default function ItemDetailScreen() {
         )}
 
         {/* Location */}
-        {item.latitude && item.longitude && (
+        {item.address && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="location" size={14} color="#06b6d4" />
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>LOCATION</Text>
             </View>
-            {item.address && (
-              <Text style={[styles.bodyText, { color: colors.text }]}>{item.address}</Text>
-            )}
-            <Text style={[styles.meta, { color: colors.textMuted, marginTop: 4 }]}>
-              {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
-            </Text>
+            <Text style={[styles.bodyText, { color: colors.text }]}>{item.address}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                const encoded = encodeURIComponent(item.address!);
+                const mapsUrl = `geo:0,0?q=${encoded}`;
+                const fallback = `https://maps.google.com/?q=${encoded}`;
+                Linking.canOpenURL(mapsUrl)
+                  .then((ok) => Linking.openURL(ok ? mapsUrl : fallback))
+                  .catch(() => Linking.openURL(fallback));
+              }}
+              style={styles.openMapsBtn}
+            >
+              <Ionicons name="navigate" size={16} color="#34a853" />
+              <Text style={styles.openMapsBtnText}>Open in Google Maps</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -391,4 +400,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionBtnText: { fontSize: 15, fontWeight: '600' },
+  openMapsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: '#34a85318',
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  openMapsBtnText: {
+    color: '#34a853',
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

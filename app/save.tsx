@@ -10,14 +10,12 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import uuid from 'react-native-uuid';
 const uuidv4 = () => uuid.v4() as string;
 import * as Clipboard from 'expo-clipboard';
-import * as Location from 'expo-location';
 import { useTheme } from '../src/context/ThemeContext';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
@@ -39,12 +37,9 @@ export default function SaveScreen() {
   const [contentType, setContentType] = useState<ContentType>('link');
   const [collectionId, setCollectionId] = useState<string | undefined>();
   const [tags, setTags] = useState('');
-  const [includeLocation, setIncludeLocation] = useState(false);
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>();
 
   // Auto-detect from clipboard on mount
   useEffect(() => {
@@ -58,28 +53,6 @@ export default function SaveScreen() {
       }
     });
   }, []);
-
-  const handleGetLocation = async () => {
-    setLocationLoading(true);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission denied', 'Location permission is required to pin this item.');
-      setLocationLoading(false);
-      return;
-    }
-    const loc = await Location.getCurrentPositionAsync({});
-    setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-    // Reverse geocode
-    const geo = await Location.reverseGeocodeAsync({
-      latitude: loc.coords.latitude,
-      longitude: loc.coords.longitude,
-    });
-    if (geo.length > 0) {
-      const g = geo[0];
-      setAddress([g.name, g.city, g.country].filter(Boolean).join(', '));
-    }
-    setLocationLoading(false);
-  };
 
   const handleAISummarize = async () => {
     if (!title.trim() && !url.trim()) {
@@ -134,9 +107,7 @@ export default function SaveScreen() {
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean),
       notes: notes.trim() || undefined,
-      latitude: includeLocation ? coords?.lat : undefined,
-      longitude: includeLocation ? coords?.lng : undefined,
-      address: includeLocation ? address.trim() || undefined : undefined,
+      address: address.trim() || undefined,
       isCompleted: false,
       isFavorite: false,
       createdAt: now,
@@ -309,44 +280,17 @@ export default function SaveScreen() {
           </ScrollView>
 
           {/* Location */}
-          <View style={styles.locationRow}>
-            <View style={styles.locationLeft}>
-              <Ionicons name="location" size={18} color={includeLocation ? '#3b82f6' : colors.textMuted} />
-              <Text style={[styles.locationLabel, { color: colors.text }]}>Pin Location</Text>
-            </View>
-            <Switch
-              value={includeLocation}
-              onValueChange={setIncludeLocation}
-              trackColor={{ false: colors.border, true: '#3b82f6' }}
-              thumbColor="#ffffff"
-            />
-          </View>
-
-          {includeLocation && (
-            <View style={styles.locationDetails}>
-              <TextInput
-                value={address}
-                onChangeText={setAddress}
-                placeholder="Address or place name"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-              />
-              <TouchableOpacity
-                onPress={handleGetLocation}
-                disabled={locationLoading}
-                style={[styles.locBtn, { borderColor: colors.border, backgroundColor: colors.surfaceSecondary }]}
-              >
-                {locationLoading ? (
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                ) : (
-                  <Ionicons name="navigate" size={16} color={colors.textSecondary} />
-                )}
-                <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '500' }}>
-                  {coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : 'Use current location'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          <Text style={[styles.label, { color: colors.textSecondary }]}>LOCATION / PLACE</Text>
+          <TextInput
+            value={address}
+            onChangeText={setAddress}
+            placeholder="e.g. Eiffel Tower, Paris or paste from content"
+            placeholderTextColor={colors.placeholder}
+            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
+          />
+          <Text style={[styles.locationHint, { color: colors.textMuted }]}>
+            Copy the place name or address from the video/post and paste it here. You can open it in Google Maps later.
+          </Text>
         </ScrollView>
       </View>
     </KeyboardAvoidingView>
@@ -405,27 +349,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  locationLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  locationLabel: { fontSize: 15, fontWeight: '500' },
-  locationDetails: { gap: 8, marginTop: -4 },
-  locBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 8,
+  locationHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
   },
 });

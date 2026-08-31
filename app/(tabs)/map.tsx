@@ -1,119 +1,158 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
+  FlatList,
   StyleSheet,
   SafeAreaView,
   TouchableOpacity,
+  Linking,
+  Alert,
 } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
-import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
+import { SearchBar } from '../../src/components/SearchBar';
 import { CONTENT_TYPE_CONFIG } from '../../src/constants';
 import type { SavedItem } from '../../src/types';
 
-export default function MapScreen() {
-  const { colors, isDark } = useTheme();
+dayjs.extend(relativeTime);
+
+function openInGoogleMaps(address: string) {
+  // Deep-link into the Google Maps Android app (or fall back to browser)
+  const encoded = encodeURIComponent(address);
+  const mapsUrl = `geo:0,0?q=${encoded}`;
+  const fallbackUrl = `https://maps.google.com/?q=${encoded}`;
+
+  Linking.canOpenURL(mapsUrl)
+    .then((supported) => Linking.openURL(supported ? mapsUrl : fallbackUrl))
+    .catch(() => Linking.openURL(fallbackUrl));
+}
+
+export default function LocationsScreen() {
+  const { colors } = useTheme();
   const { items } = useData();
   const router = useRouter();
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [region, setRegion] = useState({
-    latitude: 20.5937,
-    longitude: 78.9629,
-    latitudeDelta: 30,
-    longitudeDelta: 30,
-  });
+  const [search, setSearch] = useState('');
 
-  // Items that have location data
-  const mappedItems = items.filter((item) => item.latitude && item.longitude);
+  // Only items that have an address stored
+  const locationItems = useMemo(() => {
+    const withLocation = items.filter((item) => item.address?.trim());
+    if (!search.trim()) return withLocation;
+    const q = search.trim().toLowerCase();
+    return withLocation.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.address!.toLowerCase().includes(q) ||
+        item.tags.some((t) => t.includes(q))
+    );
+  }, [items, search]);
 
-  useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({});
-        const coords = {
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        };
-        setUserLocation(coords);
-        setRegion({ ...coords, latitudeDelta: 0.1, longitudeDelta: 0.1 });
-      }
-    })();
-  }, []);
+  const renderItem = ({ item }: { item: SavedItem }) => {
+    const config = CONTENT_TYPE_CONFIG[item.contentType];
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/item/${item.id}`)}
+        activeOpacity={0.75}
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      >
+        {/* Left accent */}
+        <View style={[styles.accentBar, { backgroundColor: config.color }]} />
 
-  const focusOnItem = (item: SavedItem) => {
-    if (!item.latitude || !item.longitude) return;
-    setRegion({
-      latitude: item.latitude,
-      longitude: item.longitude,
-      latitudeDelta: 0.02,
-      longitudeDelta: 0.02,
-    });
+        <View style={styles.cardBody}>
+          {/* Type badge */}
+          <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
+            <Ionicons name={config.icon as any} size={11} color={config.color} />
+            <Text style={[styles.typeLabel, { color: config.color }]}>{config.label}</Text>
+          </View>
+
+          {/* Title */}
+          <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
+            {item.title}
+          </Text>
+
+          {/* Address row */}
+          <View style={styles.addressRow}>
+            <Ionicons name="location-outline" size={13} color={colors.textSecondary} />
+            <Text style={[styles.addressText, { color: colors.textSecondary }]} numberOfLines={2}>
+              {item.address}
+            </Text>
+          </View>
+
+          {/* Date */}
+          <Text style={[styles.dateText, { color: colors.textMuted }]}>
+            {dayjs(item.createdAt).fromNow()}
+          </Text>
+        </View>
+
+        {/* Open in Maps button */}
+        <TouchableOpacity
+          onPress={() => openInGoogleMaps(item.address!)}
+          style={[styles.mapsBtn, { backgroundColor: '#34a85320' }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="navigate" size={16} color="#34a853" />
+          <Text style={[styles.mapsBtnText, { color: '#34a853' }]}>Maps</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Map</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          {mappedItems.length} {mappedItems.length === 1 ? 'place' : 'places'} saved
-        </Text>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>Locations</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {locationItems.length} saved {locationItems.length === 1 ? 'place' : 'places'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push('/save')}
+          style={[styles.addBtn, { backgroundColor: '#3b82f6' }]}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      {mappedItems.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="map-outline" size={56} color={colors.textMuted} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No places saved yet</Text>
-          <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
-            Save restaurants, travel destinations, and places to see them on the map.
-          </Text>
-          <TouchableOpacity onPress={() => router.push('/save')} style={styles.emptyBtn}>
-            <Text style={styles.emptyBtnText}>Save a place</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <MapView
-          style={styles.map}
-          region={region}
-          onRegionChangeComplete={setRegion}
-          showsUserLocation={userLocation !== null}
-          showsMyLocationButton
-          userInterfaceStyle={isDark ? 'dark' : 'light'}
-        >
-          {mappedItems.map((item) => {
-            const config = CONTENT_TYPE_CONFIG[item.contentType];
-            return (
-              <Marker
-                key={item.id}
-                coordinate={{ latitude: item.latitude!, longitude: item.longitude! }}
-                pinColor={config.color}
-                onCalloutPress={() => router.push(`/item/${item.id}`)}
-              >
-                <View style={[styles.markerPin, { backgroundColor: config.color }]}>
-                  <Ionicons name={config.icon as any} size={14} color="#fff" />
-                </View>
-                <Callout tooltip>
-                  <View style={[styles.callout, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.calloutTitle, { color: colors.text }]} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                    {item.address ? (
-                      <Text style={[styles.calloutAddress, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {item.address}
-                      </Text>
-                    ) : null}
-                    <Text style={[styles.calloutTap, { color: '#3b82f6' }]}>Tap to view</Text>
-                  </View>
-                </Callout>
-              </Marker>
-            );
-          })}
-        </MapView>
-      )}
+      {/* Search */}
+      <View style={styles.searchContainer}>
+        <SearchBar
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search places, addresses…"
+        />
+      </View>
+
+      {/* List */}
+      <FlatList
+        data={locationItems}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={[styles.list, locationItems.length === 0 && styles.emptyList]}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons name="location-outline" size={52} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {search ? 'No places match your search' : 'No locations saved yet'}
+            </Text>
+            <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
+              {search
+                ? 'Try a different search term'
+                : 'When you save a YouTube video, Instagram reel, or any content with a place — add the location name and it appears here.'}
+            </Text>
+            {!search && (
+              <TouchableOpacity onPress={() => router.push('/save')} style={styles.emptyBtn}>
+                <Text style={styles.emptyBtnText}>Save a place</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -121,51 +160,94 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
   },
   title: { fontSize: 24, fontWeight: '800' },
-  subtitle: { fontSize: 13, marginTop: 2 },
-  map: { flex: 1 },
+  subtitle: { fontSize: 12, marginTop: 1 },
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
+  emptyList: { flex: 1 },
+  card: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  accentBar: {
+    width: 4,
+    alignSelf: 'stretch',
+  },
+  cardBody: {
+    flex: 1,
+    padding: 12,
+    gap: 4,
+  },
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    gap: 3,
+    marginBottom: 2,
+  },
+  typeLabel: { fontSize: 10, fontWeight: '700' },
+  cardTitle: { fontSize: 15, fontWeight: '600' },
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 2,
+  },
+  addressText: { fontSize: 13, flex: 1, lineHeight: 18 },
+  dateText: { fontSize: 11, marginTop: 2 },
+  mapsBtn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    gap: 4,
+    alignSelf: 'stretch',
+  },
+  mapsBtnText: { fontSize: 10, fontWeight: '700' },
   empty: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    gap: 10,
+    paddingTop: 60,
+    paddingHorizontal: 32,
+    gap: 8,
   },
-  emptyTitle: { fontSize: 20, fontWeight: '700', marginTop: 12 },
-  emptyDesc: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', marginTop: 12, textAlign: 'center' },
+  emptyDesc: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
   emptyBtn: {
     backgroundColor: '#3b82f6',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 10,
     marginTop: 12,
   },
   emptyBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  markerPin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 4,
-  },
-  callout: {
-    width: 200,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 3,
-  },
-  calloutTitle: { fontSize: 13, fontWeight: '600' },
-  calloutAddress: { fontSize: 11 },
-  calloutTap: { fontSize: 11, fontWeight: '600', marginTop: 4 },
 });

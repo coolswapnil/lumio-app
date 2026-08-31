@@ -12,8 +12,6 @@ function rowToItem(row: Record<string, unknown>): SavedItem {
     collectionId: row.collection_id as string | undefined,
     tags: JSON.parse((row.tags as string) || '[]'),
     notes: row.notes as string | undefined,
-    latitude: row.latitude as number | undefined,
-    longitude: row.longitude as number | undefined,
     address: row.address as string | undefined,
     isCompleted: Boolean(row.is_completed),
     isFavorite: Boolean(row.is_favorite),
@@ -84,8 +82,8 @@ export async function saveItem(item: SavedItem): Promise<void> {
   await db.runAsync(
     `INSERT OR REPLACE INTO saved_items
       (id, title, description, url, image_url, content_type, collection_id, tags, notes,
-       latitude, longitude, address, is_completed, is_favorite, ai_summary, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       address, is_completed, is_favorite, ai_summary, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       item.id,
       item.title,
@@ -96,8 +94,6 @@ export async function saveItem(item: SavedItem): Promise<void> {
       item.collectionId ?? null,
       JSON.stringify(item.tags),
       item.notes ?? null,
-      item.latitude ?? null,
-      item.longitude ?? null,
       item.address ?? null,
       item.isCompleted ? 1 : 0,
       item.isFavorite ? 1 : 0,
@@ -121,8 +117,6 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.collectionId !== undefined) { fields.push('collection_id = ?'); values.push(updates.collectionId ?? null); }
   if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
   if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes ?? null); }
-  if (updates.latitude !== undefined) { fields.push('latitude = ?'); values.push(updates.latitude ?? null); }
-  if (updates.longitude !== undefined) { fields.push('longitude = ?'); values.push(updates.longitude ?? null); }
   if (updates.address !== undefined) { fields.push('address = ?'); values.push(updates.address ?? null); }
   if (updates.isCompleted !== undefined) { fields.push('is_completed = ?'); values.push(updates.isCompleted ? 1 : 0); }
   if (updates.isFavorite !== undefined) { fields.push('is_favorite = ?'); values.push(updates.isFavorite ? 1 : 0); }

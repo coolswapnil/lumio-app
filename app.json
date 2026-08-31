@@ -24,8 +24,6 @@
       },
       "package": "com.lumio.savelater",
       "permissions": [
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
         "INTERNET",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
@@ -39,12 +37,6 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow Lumio to use your location to save places."
-        }
-      ],
       [
         "expo-secure-store"
       ]
