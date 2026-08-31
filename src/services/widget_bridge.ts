@@ -21,7 +21,8 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
-const WIDGET_COUNT_FILE = `${FileSystem.documentDirectory}widget_count.txt`;
+// documentDirectory is null in web environments; safe to use on Android
+const WIDGET_COUNT_FILE = `${FileSystem.documentDirectory ?? ''}widget_count.txt`;
 
 /**
  * Call this after every save/delete so the widget count stays fresh.

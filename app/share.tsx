@@ -28,7 +28,6 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import uuid from 'react-native-uuid';
-const uuidv4 = () => uuid.v4() as string;
 import { useTheme } from '../src/context/ThemeContext';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
@@ -37,6 +36,14 @@ import { summarizeItem } from '../src/services/ai';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../src/constants';
 import type { ContentType, SavedItem } from '../src/types';
 import { Button } from '../src/components/Button';
+
+const uuidv4 = () => uuid.v4() as string;
+
+/** Safely coerce a string | string[] | undefined param to a plain string */
+function asString(v: string | string[] | undefined): string {
+  if (!v) return '';
+  return Array.isArray(v) ? v[0] ?? '' : v;
+}
 
 /** Guess content type from URL/text heuristics */
 function guessContentType(url: string, text: string): ContentType {
@@ -56,11 +63,11 @@ export default function ShareScreen() {
   const { colors } = useTheme();
   const { collections, refreshAll } = useData();
   const router = useRouter();
-  const params = useLocalSearchParams<{ url?: string; text?: string; title?: string }>();
+  const params = useLocalSearchParams();
 
-  const sharedUrl = params.url ?? '';
-  const sharedText = params.text ?? '';
-  const sharedTitle = params.title ?? '';
+  const sharedUrl = asString(params.url as string | string[] | undefined);
+  const sharedText = asString(params.text as string | string[] | undefined);
+  const sharedTitle = asString(params.title as string | string[] | undefined);
 
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');

@@ -20,7 +20,7 @@ import type { AISettings, AIProvider } from '../../src/types';
 import { Button } from '../../src/components/Button';
 
 export default function SettingsScreen() {
-  const { colors, isDark, settings, updateSettings } = useTheme();
+  const { colors, settings, updateSettings } = useTheme();
   const { items, collections } = useData();
   const [exporting, setExporting] = useState<'json' | 'csv' | null>(null);
   const [aiSettings, setAiSettings] = useState<Partial<AISettings>>({
@@ -73,8 +73,9 @@ export default function SettingsScreen() {
       } else {
         await exportAsCSV(items, collections);
       }
-    } catch (err: any) {
-      Alert.alert('Export failed', err?.message ?? 'Unknown error');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      Alert.alert('Export failed', msg);
     }
     setExporting(null);
   };

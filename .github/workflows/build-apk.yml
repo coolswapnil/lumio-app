@@ -24,7 +24,7 @@ jobs:
 
       # ── 3. Java 17 ────────────────────────────────────────────────────────
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -48,10 +48,13 @@ jobs:
       # ── 5b. Generate app icon / splash PNG assets ─────────────────────────
       - name: Generate icon assets
         run: |
-          # canvas has native bindings — install build deps first
-          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev 2>/dev/null || true
-          npm install canvas --no-save 2>/dev/null || true
-          node scripts/generate-icons.js || echo "Icon generation skipped (canvas unavailable)"
+          # canvas needs system libs — install them first, then canvas itself
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
+          # canvas is NOT in package.json (native bindings, CI-only install)
+          npm install canvas --no-save --ignore-scripts=false > /dev/null 2>&1 && \
+            node scripts/generate-icons.js && \
+            echo "Icons generated" || \
+            echo "Icon generation skipped (canvas build failed — using placeholder PNGs)"
 
       # ── 6. Expo prebuild ──────────────────────────────────────────────────
       - name: Expo prebuild (generate android/ folder)

@@ -70,7 +70,7 @@ export async function exportAsJSON(
   const json = JSON.stringify(payload, null, 2);
   const timestamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const fileName = `lumio-backup-${timestamp}.json`;
-  const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+  const fileUri = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
 
   await FileSystem.writeAsStringAsync(fileUri, json, { encoding: FileSystem.EncodingType.UTF8 });
 
@@ -96,7 +96,7 @@ export async function exportAsCSV(
 
   const timestamp = new Date().toISOString().slice(0, 10);
   const fileName = `lumio-export-${timestamp}.csv`;
-  const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+  const fileUri = `${FileSystem.cacheDirectory ?? ''}${fileName}`;
 
   await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
 
