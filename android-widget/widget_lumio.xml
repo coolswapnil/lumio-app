@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  widget_lumio.xml
+  Copy to: android/app/src/main/res/layout/widget_lumio.xml after expo prebuild.
+  
+  2×1 home screen widget for Lumio.
+  Background: rounded card with dark navy, matching the app's dark theme.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="8dp"
+    android:background="@drawable/widget_background">
+
+    <!-- Logo / app icon tap area -->
+    <LinearLayout
+        android:id="@+id/widget_logo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingEnd="10dp">
+
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="Lumio" />
+
+        <TextView
+            android:id="@+id/widget_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 saved"
+            android:textSize="9sp"
+            android:textColor="#94a3b8"
+            android:paddingTop="2dp" />
+
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="#334155"
+        android:layout_marginVertical="6dp" />
+
+    <!-- Save button -->
+    <LinearLayout
+        android:id="@+id/widget_save_btn"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingStart="10dp"
+        android:background="@android:color/transparent"
+        android:clickable="true">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@android:drawable/ic_input_add"
+            android:tint="#3b82f6"
+            android:contentDescription="Save" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save to Lumio"
+            android:textSize="13sp"
+            android:textColor="#e2e8f0"
+            android:textStyle="bold"
+            android:paddingStart="6dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

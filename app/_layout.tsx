@@ -26,6 +26,13 @@ function AppContent() {
             animation: 'slide_from_bottom',
           }}
         />
+        <Stack.Screen
+          name="share"
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
         <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="collection/[id]" options={{ headerShown: false }} />
       </Stack>

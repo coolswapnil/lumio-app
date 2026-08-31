@@ -45,6 +45,14 @@ jobs:
       - name: Install npm dependencies
         run: npm install
 
+      # ── 5b. Generate app icon / splash PNG assets ─────────────────────────
+      - name: Generate icon assets
+        run: |
+          # canvas has native bindings — install build deps first
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev 2>/dev/null || true
+          npm install canvas --no-save 2>/dev/null || true
+          node scripts/generate-icons.js || echo "Icon generation skipped (canvas unavailable)"
+
       # ── 6. Expo prebuild ──────────────────────────────────────────────────
       - name: Expo prebuild (generate android/ folder)
         run: |
@@ -60,7 +68,41 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── 8. Configure ABI splits ───────────────────────────────────────────
+      # ── 8. Inject Android widget files ────────────────────────────────────
+      - name: Inject Android widget
+        run: |
+          PKG_PATH="android/app/src/main/java/com/lumio/savelater"
+          RES_PATH="android/app/src/main/res"
+
+          mkdir -p "$PKG_PATH"
+          mkdir -p "$RES_PATH/layout"
+          mkdir -p "$RES_PATH/xml"
+          mkdir -p "$RES_PATH/drawable"
+
+          # Copy Kotlin widget class
+          cp android-widget/LumioWidget.kt "$PKG_PATH/LumioWidget.kt"
+
+          # Copy layout
+          cp android-widget/widget_lumio.xml "$RES_PATH/layout/widget_lumio.xml"
+
+          # Copy widget provider info
+          cp android-widget/lumio_widget_info.xml "$RES_PATH/xml/lumio_widget_info.xml"
+
+          # Copy widget background drawable
+          cp android-widget/widget_background.xml "$RES_PATH/drawable/widget_background.xml"
+
+          # Patch AndroidManifest.xml to register the widget receiver
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          # Only patch if not already patched
+          if ! grep -q "LumioWidget" "$MANIFEST"; then
+            WIDGET_RECEIVER='        <receiver android:name=".LumioWidget" android:exported="true">\n            <intent-filter>\n                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" \/>\n            <\/intent-filter>\n            <meta-data android:name="android.appwidget.provider" android:resource="@xml\/lumio_widget_info" \/>\n        <\/receiver>'
+            sed -i "s|</application>|${WIDGET_RECEIVER}\n    </application>|" "$MANIFEST"
+            echo "Widget receiver registered in AndroidManifest.xml"
+          else
+            echo "Widget already registered"
+          fi
+
+      # ── 9. Configure ABI splits ───────────────────────────────────────────
       - name: Configure ABI splits in build.gradle
         run: |
           GRADLE_FILE="android/app/build.gradle"

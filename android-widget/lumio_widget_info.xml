@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  lumio_widget_info.xml
+  Copy to: android/app/src/main/res/xml/lumio_widget_info.xml after expo prebuild.
+  
+  Defines widget cell size (2 columns × 1 row) and metadata.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_lumio"
+    android:resizeMode="horizontal"
+    android:widgetCategory="home_screen"
+    android:description="@string/app_name" />

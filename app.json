@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumio",
     "slug": "lumio-app",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -23,6 +23,7 @@
         "backgroundColor": "#0f172a"
       },
       "package": "com.lumio.savelater",
+      "versionCode": 2,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -30,7 +31,24 @@
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
       ],
-      "config": {}
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [
+            { "scheme": "lumio" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        },
+        {
+          "action": "SEND",
+          "data": [
+            { "mimeType": "text/plain" },
+            { "mimeType": "text/html" }
+          ],
+          "category": ["DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -39,6 +57,7 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
+      "expo-file-system",
       [
         "expo-location",
         {

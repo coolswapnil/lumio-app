@@ -8,17 +8,21 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
-  Switch,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useData } from '../../src/context/DataContext';
 import { getAISettings, saveAISettings, clearAISettings } from '../../src/services/settings';
+import { exportAsJSON, exportAsCSV } from '../../src/services/export';
 import { AI_PROVIDERS } from '../../src/constants';
 import type { AISettings, AIProvider } from '../../src/types';
 import { Button } from '../../src/components/Button';
 
 export default function SettingsScreen() {
   const { colors, isDark, settings, updateSettings } = useTheme();
+  const { items, collections } = useData();
+  const [exporting, setExporting] = useState<'json' | 'csv' | null>(null);
   const [aiSettings, setAiSettings] = useState<Partial<AISettings>>({
     provider: 'openai',
     apiKey: '',
@@ -59,6 +63,20 @@ export default function SettingsScreen() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleExport = async (format: 'json' | 'csv') => {
+    setExporting(format);
+    try {
+      if (format === 'json') {
+        await exportAsJSON(items, collections);
+      } else {
+        await exportAsCSV(items, collections);
+      }
+    } catch (err: any) {
+      Alert.alert('Export failed', err?.message ?? 'Unknown error');
+    }
+    setExporting(null);
   };
 
   const handleClearAI = () => {
@@ -253,17 +271,59 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
+        {/* Export / Backup */}
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>EXPORT & BACKUP</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.exportDesc, { color: colors.textSecondary }]}>
+            {items.length} item{items.length !== 1 ? 's' : ''} · {collections.length} collection{collections.length !== 1 ? 's' : ''}
+          </Text>
+          <View style={styles.exportButtons}>
+            <TouchableOpacity
+              onPress={() => handleExport('json')}
+              disabled={!!exporting}
+              style={[styles.exportBtn, { backgroundColor: '#3b82f610', borderColor: '#3b82f6' }]}
+            >
+              {exporting === 'json'
+                ? <ActivityIndicator size="small" color="#3b82f6" />
+                : <Ionicons name="code-download" size={18} color="#3b82f6" />}
+              <Text style={[styles.exportBtnText, { color: '#3b82f6' }]}>
+                {exporting === 'json' ? 'Exporting…' : 'Export JSON'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleExport('csv')}
+              disabled={!!exporting}
+              style={[styles.exportBtn, { backgroundColor: '#10b98110', borderColor: '#10b981' }]}
+            >
+              {exporting === 'csv'
+                ? <ActivityIndicator size="small" color="#10b981" />
+                : <Ionicons name="document-text" size={18} color="#10b981" />}
+              <Text style={[styles.exportBtnText, { color: '#10b981' }]}>
+                {exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={[styles.exportNote, { color: colors.textMuted }]}>
+            JSON backup is fully importable. CSV is spreadsheet-compatible.
+          </Text>
+        </View>
+
         {/* About */}
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ABOUT</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.row}>
             <Text style={[styles.rowLabel, { color: colors.text }]}>Lumio</Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>v1.0.0</Text>
+            <Text style={[styles.rowSub, { color: colors.textMuted }]}>v1.1.0</Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.row}>
             <Text style={[styles.rowLabel, { color: colors.text }]}>Data Storage</Text>
             <Text style={[styles.rowSub, { color: colors.textMuted }]}>Local only (SQLite)</Text>
+          </View>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={styles.row}>
+            <Text style={[styles.rowLabel, { color: colors.text }]}>Share from any app</Text>
+            <Text style={[styles.rowSub, { color: colors.textMuted }]}>Share sheet → Lumio</Text>
           </View>
         </View>
       </ScrollView>
@@ -354,5 +414,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 10,
     lineHeight: 17,
+  },
+  exportDesc: {
+    fontSize: 13,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 4,
+  },
+  exportButtons: {
+    flexDirection: 'row',
+    padding: 14,
+    paddingTop: 10,
+    gap: 10,
+  },
+  exportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    gap: 7,
+  },
+  exportBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  exportNote: {
+    fontSize: 11,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    lineHeight: 16,
   },
 });

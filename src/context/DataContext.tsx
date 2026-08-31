@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { initDatabase } from '../database/db';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
+import { syncWidgetCount } from '../services/widget_bridge';
 import type { SavedItem, Collection, FilterOption, SortOption } from '../types';
 
 interface DataContextValue {
@@ -52,6 +53,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     ]);
     setItems(fetchedItems);
     setCounts(fetchedCounts);
+    // Keep Android widget count in sync
+    syncWidgetCount(fetchedCounts.all ?? 0);
   }, [filter, sort, searchQuery]);
 
   const refreshCollections = useCallback(async () => {
