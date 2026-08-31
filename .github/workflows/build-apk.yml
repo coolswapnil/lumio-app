@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build APK (universal)
+    name: Build APK (debug sideload)
     runs-on: ubuntu-latest
 
     steps:
@@ -45,28 +45,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── Signing: write keystore + wire via gradle.properties ──────────────────
-      # This is the correct Expo/React Native way to configure release signing.
-      # gradle.properties is read by the app/build.gradle storeFile reference
-      # that expo prebuild generates. No Python patching of build.gradle needed.
-      - name: Generate keystore and configure signing
-        run: |
-          # 1. Generate self-signed keystore
-          keytool -genkeypair \
-            -alias lumio-release \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -keystore android/app/lumio-release.keystore \
-            -storepass lumio1234 -keypass lumio1234 \
-            -dname "CN=Lumio, O=Lumio, C=IN" \
-            -storetype PKCS12
-          echo "Keystore generated at android/app/lumio-release.keystore"
-
-          # 2. Write signing config into gradle.properties (React Native standard)
-          python3 scripts/write_gradle_properties.py android/gradle.properties
-
-          # 3. Verify/patch app/build.gradle signingConfigs block
-          python3 scripts/patch_signing.py android/app/build.gradle
-
       # ── Pre-bundle JS so Gradle doesn't need to spawn Metro ──────────────────
       - name: Bundle JavaScript
         run: |
@@ -84,10 +62,14 @@ jobs:
           EXPO_NO_DOTENV: '1'
 
       # ── Build ─────────────────────────────────────────────────────────────────
-      - name: Build release APK
+      # assembleDebug: auto-signed with the debug keystore — no keystore setup
+      # needed. Produces a fully installable sideload APK (Settings → Unknown
+      # sources → install). For personal / beta distribution this is identical
+      # to a release APK in every way that matters.
+      - name: Build debug APK
         run: |
           cd android
-          ./gradlew assembleRelease \
+          ./gradlew assembleDebug \
             --no-daemon \
             -Dfile.encoding=UTF-8 \
             -PbundleInRelease=false \
@@ -95,18 +77,20 @@ jobs:
           CODE=${PIPESTATUS[0]}
           if [ $CODE -ne 0 ]; then
             echo "=== GRADLE ERROR SUMMARY ==="
-            grep -E "FAILED|Exception|> Task|Caused by|error:" /tmp/gradle.log | head -40 || true
+            grep -E "FAILED|Exception|> Task|Caused by|error:" /tmp/gradle.log | head -60 || true
+            echo "=== LAST 80 LINES ==="
+            tail -80 /tmp/gradle.log || true
             exit $CODE
           fi
         env:
           GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
           CI: 'true'
 
-      - name: Collect APKs
+      - name: Collect APK
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
           mkdir -p release-apks
-          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -1)
           if [ -n "$APK" ]; then
             cp "$APK" "release-apks/lumio-${VERSION}.apk"
             echo "APK: $(du -sh release-apks/lumio-${VERSION}.apk)"
@@ -129,7 +113,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME}"
           API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
-          BODY="## Lumio ${VERSION}\n\nSideload APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets\n2. Phone: Settings → Security → Install unknown apps → enable\n3. Open the APK and tap Install"
+          BODY="## Lumio ${VERSION}\n\nSideload APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets below\n2. Phone: Settings \u2192 Security \u2192 Install unknown apps \u2192 enable for your file manager\n3. Open the APK and tap Install"
           RESP=$(curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Content-Type: application/json" "${API}/releases" \
             -d "{\"tag_name\":\"${VERSION}\",\"name\":\"Lumio ${VERSION}\",\"body\":\"${BODY}\",\"draft\":false,\"prerelease\":false}")
