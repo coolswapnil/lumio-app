@@ -42,31 +42,41 @@ jobs:
         env:
           CI: '1'
 
-      # ── Patch Android project for AGP 8.x compatibility ──────────────────────
-      # Expo 51 ships gradle plugin classpath entries that AGP 8.3+ no longer
-      # auto-discovers. We pin Gradle to 8.6, downgrade AGP to 8.3.2 (last
-      # version fully compatible with expo-modules-core 1.x), and patch the
-      # SoftwareComponent 'release' lookup that was removed in AGP 8.x.
-      - name: Patch Gradle wrapper to 8.6
+      # ── Patch Android project for Expo 51 + AGP 8 compatibility ──────────────
+      - name: Patch Android project files
         run: |
-          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.6-bin.zip|' \
+          # 1. Pin Gradle to 8.3
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
+          echo "Gradle: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
 
-      - name: Patch AGP version to 8.3.2
-        run: |
-          # android/build.gradle — downgrade AGP to last version that supports
-          # the legacy SoftwareComponent 'release' property used by expo-modules-core
-          sed -i "s|com.android.tools.build:gradle:[^'\"]*|com.android.tools.build:gradle:8.3.2|g" \
-            android/build.gradle
-          grep 'com.android.tools.build' android/build.gradle
+          # 2. Patch ExpoModulesCorePlugin.gradle line 85 —
+          #    components.release was removed in AGP 8.x, use findByName
+          find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
+            sed -i "s/components\.release/components.findByName('release')/g" "$f"
+            echo "Patched: $f"
+          done
+
+          # 3. Patch every expo module build.gradle that uses expo-module-gradle-plugin
+          #    Replace the old apply-style with the explicit classpath plugin
+          find node_modules -path "*/android/build.gradle" | while read f; do
+            if grep -q "expo-module-gradle-plugin" "$f"; then
+              # Remove the plugin apply line entirely — AGP + expo-modules-core
+              # handles the configuration automatically via settings.gradle include
+              sed -i "/apply plugin: 'expo-module-gradle-plugin'/d" "$f"
+              sed -i "/apply plugin: \"expo-module-gradle-plugin\"/d" "$f"
+              echo "Removed expo-module-gradle-plugin apply from: $f"
+            fi
+          done
+
+          # 4. Show android/settings.gradle for debug
+          echo "=== settings.gradle (first 30 lines) ==="
+          head -30 android/settings.gradle
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── Generate keystore on the runner using keytool ─────────────────────────
-      # Java 17 is already installed above so keytool is available.
-      # The same keystore is re-created each run from the two password secrets —
-      # no base64 encoding/decoding needed.
+      # ── Generate release keystore on the runner ───────────────────────────────
       - name: Generate release keystore
         run: |
           keytool -genkey -v \
@@ -77,9 +87,9 @@ jobs:
             -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
             -keypass "${{ secrets.KEY_PASSWORD }}" \
             -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
-          echo "Keystore size: $(wc -c < android/app/lumio-release.keystore) bytes"
+          echo "Keystore: $(wc -c < android/app/lumio-release.keystore) bytes"
 
-      # ── Pre-bundle JS so Gradle doesn't need Metro at build time ─────────────
+      # ── Pre-bundle JS ─────────────────────────────────────────────────────────
       - name: Bundle JavaScript
         run: |
           mkdir -p android/app/src/main/assets
