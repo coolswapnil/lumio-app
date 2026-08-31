@@ -1,7 +1,7 @@
 # Lumio - Universal Save for Later App
 
-[![Build APK](https://github.ibm.com/Swapnil-Jagtap1/lumio-app/actions/workflows/build-apk.yml/badge.svg)](https://github.ibm.com/Swapnil-Jagtap1/lumio-app/actions/workflows/build-apk.yml)
-[![Latest Release](https://img.shields.io/github/v/release/Swapnil-Jagtap1/lumio-app?label=Download%20APK)](https://github.ibm.com/Swapnil-Jagtap1/lumio-app/releases/latest)
+[![Build APK](https://github.com/coolswapnil/lumio-app/actions/workflows/build-apk.yml/badge.svg)](https://github.com/coolswapnil/lumio-app/actions/workflows/build-apk.yml)
+[![Latest Release](https://img.shields.io/github/v/release/coolswapnil/lumio-app?label=Download%20APK)](https://github.com/coolswapnil/lumio-app/releases/latest)
 
 A personal knowledge hub for Android built with React Native (Expo). Save **anything** - links, videos, recipes, books, movies, workouts, travel destinations, restaurants, tools, and ideas - all in one place with AI-powered summaries and location tracking.
 
@@ -67,7 +67,7 @@ npm install -g expo-cli
 ### Install and run locally
 
 ```bash
-git clone https://github.ibm.com/Swapnil-Jagtap1/lumio-app.git
+git clone https://github.com/coolswapnil/lumio-app.git
 cd lumio-app
 npm install
 npx expo start --android
@@ -105,7 +105,7 @@ GitHub Actions will automatically:
 
 ### Download and install
 
-1. Go to the **Releases** tab: `github.ibm.com/Swapnil-Jagtap1/lumio-app/releases`
+1. Go to the **Releases** tab: `github.com/coolswapnil/lumio-app/releases`
 2. Download the APK for your device from **Assets**
 3. On your Android device: **Settings > Security > Install unknown apps** - enable for your browser or Files app
 4. Open the downloaded APK and tap **Install**
