@@ -88,48 +88,58 @@ jobs:
             android/app/build.gradle \
             "$(pwd)/lumio-release.keystore"
 
-      # ── 10. Configure ABI splits ──────────────────────────────────────────
-      - name: Configure ABI splits in build.gradle
+      # ── 10. Pre-bundle JavaScript (Metro) ────────────────────────────────
+      #        Run Metro bundler explicitly so Gradle finds a pre-built bundle
+      #        and skips its own Metro spawn (which fails in CI without a server).
+      - name: Bundle JavaScript with Metro
         run: |
-          GRADLE_FILE="android/app/build.gradle"
-          cat >> "$GRADLE_FILE" << 'GRADLE_EOF'
+          mkdir -p android/app/src/main/assets
+          # expo-router uses node_modules/expo-router/entry as the entry point
+          ENTRY="node_modules/expo-router/entry.js"
+          [ ! -f "$ENTRY" ] && ENTRY="node_modules/expo-router/entry"
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file "$ENTRY" \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res \
+            --reset-cache
+          echo "Bundle: $(du -sh android/app/src/main/assets/index.android.bundle)"
+        env:
+          NODE_ENV: production
+          EXPO_NO_DOTENV: '1'
 
-          android {
-              splits {
-                  abi {
-                      enable true
-                      reset()
-                      include "arm64-v8a", "armeabi-v7a", "x86_64"
-                      universalApk true
-                  }
-              }
-          }
-          GRADLE_EOF
-          echo "ABI splits configured"
+      # ── 11. Configure ABI splits ──────────────────────────────────────────
+      - name: Configure ABI splits in build.gradle
+        run: python3 scripts/patch_abi_splits.py android/app/build.gradle
 
-      # ── 11. Build release APKs ────────────────────────────────────────────
+      # ── 12. Build release APKs ────────────────────────────────────────────
+      #        -PbundleInRelease=false tells Gradle not to re-run Metro since
+      #        we already placed the bundle in assets/ above.
       - name: Build release APKs
         run: |
           cd android
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace \
-            -Dfile.encoding=UTF-8
+            -Dfile.encoding=UTF-8 \
+            -PbundleInRelease=false
         env:
           GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
           CI: 'true'
 
-      # ── 12. List built APKs ───────────────────────────────────────────────
+      # ── 13. List built APKs ───────────────────────────────────────────────
       - name: List output APKs
         run: |
           echo "=== All APKs built ==="
           find android/app/build/outputs/apk -name "*.apk" | sort
 
-      # ── 13. Collect and rename APKs ───────────────────────────────────────
+      # ── 14. Collect and rename APKs ───────────────────────────────────────
       - name: Collect APKs
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
-          APK_DIR="android/app/build/outputs/apk/release"
+          # Search both release and debug output dirs
+          APK_DIR="android/app/build/outputs/apk"
           mkdir -p release-apks
 
           ARM64=$(find "$APK_DIR" -name "*arm64-v8a*.apk" | head -1)
@@ -141,7 +151,7 @@ jobs:
           UNIVERSAL=$(find "$APK_DIR" -name "*universal*.apk" | head -1)
           [ -n "$UNIVERSAL" ] && cp "$UNIVERSAL" "release-apks/lumio-${VERSION}-universal.apk" && echo "Copied universal"
 
-          # Fallback: if ABI splits didn't produce separate APKs
+          # Fallback: grab any APK found
           if [ -z "$ARM64" ] && [ -z "$ARMV7" ] && [ -z "$UNIVERSAL" ]; then
             FALLBACK=$(find "$APK_DIR" -name "*.apk" | head -1)
             [ -n "$FALLBACK" ] && cp "$FALLBACK" "release-apks/lumio-${VERSION}-universal.apk" && echo "Copied fallback"
