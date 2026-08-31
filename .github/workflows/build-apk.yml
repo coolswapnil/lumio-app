@@ -64,7 +64,8 @@ jobs:
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
 
-          # 2. Force AGP 8.1.4 in build.gradle
+          # 2. Force AGP 8.1.4 in build.gradle (classpath had no version — Gradle
+          #    was picking latest 8.5+ which broke expo-modules-core)
           sed -i "s|classpath('com.android.tools.build:gradle')|classpath('com.android.tools.build:gradle:8.1.4')|" \
             android/build.gradle
           echo "AGP: $(grep 'com.android.tools.build:gradle' android/build.gradle)"
@@ -72,36 +73,27 @@ jobs:
           # 3. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
             sed -i "s/from components\.release/from components.findByName('release') ?: components.findByName('debug')/g" "$f"
-            echo "Patched: $f"
+            echo "Patched ExpoModulesCorePlugin: $f"
           done
 
-          # 4. Register expo-module-gradle-plugin in pluginManagement so the
-          #    plugins{} block in expo-font and other modules can resolve it.
-          #    The plugin JAR lives inside expo-modules-core/android build output,
-          #    but the easiest way is to add the local maven repo that expo-modules
-          #    publishes to during the build, AND add the includeBuild path.
-          #
-          #    The plugin is registered by useExpoModules() but that runs too late
-          #    for the plugins{} block. We add a resolutionStrategy to map the
-          #    plugin id to the expo-modules-core artifact which contains it.
-          #
-          #    Find the expo-module-gradle-plugin package path
-          PLUGIN_PKG=$(node --print "require.resolve('expo-module-gradle-plugin/package.json')" 2>/dev/null | sed 's|/package.json||' || echo "")
-          if [ -z "$PLUGIN_PKG" ]; then
-            # Fallback: find it inside expo-modules-core
-            PLUGIN_PKG=$(find node_modules -path "*/expo-module-gradle-plugin/package.json" | head -1 | sed 's|/package.json||' || echo "")
-          fi
-          echo "expo-module-gradle-plugin path: $PLUGIN_PKG"
-
-          if [ -n "$PLUGIN_PKG" ]; then
-            # Add includeBuild pointing to the plugin package itself
-            INCLUDE_LINE="  includeBuild(new File(\"${PLUGIN_PKG}\"))"
-            sed -i "s|pluginManagement {|pluginManagement {\n${INCLUDE_LINE}|" android/settings.gradle
-          else
-            echo "WARNING: expo-module-gradle-plugin package not found"
-          fi
-          echo "=== patched settings.gradle (first 10 lines) ==="
-          head -10 android/settings.gradle
+          # 4. Replace 'expo-module-gradle-plugin' in every expo module build.gradle
+          #    with explicit 'com.android.library' + android block with sdk versions.
+          #    The plugin was doing this configuration automatically; we replicate it.
+          REPLACEMENT="plugins {\n  id 'com.android.library'\n}\nandroid {\n  compileSdkVersion 34\n  defaultConfig {\n    minSdkVersion 23\n    targetSdkVersion 34\n  }\n}"
+          find node_modules -path "*/android/build.gradle" | while read f; do
+            if grep -q "expo-module-gradle-plugin" "$f"; then
+              # Replace the entire plugins{} block that contains expo-module-gradle-plugin
+              perl -i -0pe 's/plugins\s*\{[^}]*expo-module-gradle-plugin[^}]*\}/plugins {\n  id '"'"'com.android.library'"'"'\n}/g' "$f"
+              # Also handle apply plugin syntax
+              sed -i "s|apply plugin: 'expo-module-gradle-plugin'||g" "$f"
+              sed -i 's|apply plugin: "expo-module-gradle-plugin"||g' "$f"
+              # Ensure android block has compileSdkVersion if missing
+              if ! grep -q "compileSdkVersion" "$f"; then
+                sed -i "/^android {/a\\  compileSdkVersion 34\n  defaultConfig { minSdkVersion 23; targetSdkVersion 34 }" "$f"
+              fi
+              echo "Patched: $f"
+            fi
+          done
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
