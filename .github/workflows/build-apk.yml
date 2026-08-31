@@ -23,7 +23,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # ── 3. Setup Java (required for Android builds) ──────────────────────
+      # ── 3. Setup Java 17 (required for Android Gradle builds) ────────────
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -34,69 +34,73 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ── 5. Install Expo CLI & dependencies ───────────────────────────────
+      # ── 5. Install npm dependencies ───────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Expo CLI
-        run: npm install -g expo-cli@latest
+      # ── 6. Generate native Android project via Expo prebuild ─────────────
+      #       No Expo account or EXPO_TOKEN needed for prebuild
+      - name: Expo prebuild (generate android/ folder)
+        run: npx expo prebuild --platform android --clean --non-interactive
 
-      # ── 6. Setup EAS CLI (for local builds) ──────────────────────────────
-      - name: Install EAS CLI
-        run: npm install -g eas-cli@latest
+      # ── 7. Make gradlew executable ────────────────────────────────────────
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
 
-      # ── 7. Export the app bundle (prebuild) ──────────────────────────────
-      - name: Expo prebuild (generate native Android project)
-        run: npx expo prebuild --platform android --clean
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      # ── 8. Build debug APK (no signing required) ─────────────────────────
-      - name: Build debug APK
+      # ── 8. Build release APK via Gradle ──────────────────────────────────
+      #       assembleRelease produces an unsigned APK (fine for sideloading)
+      - name: Build release APK
         run: |
           cd android
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -Dfile.encoding=UTF-8
         env:
-          GRADLE_OPTS: '-Xmx4g -Dfile.encoding=UTF-8'
+          GRADLE_OPTS: '-Xmx4g'
 
-      # ── 9. Rename APK with version tag ───────────────────────────────────
+      # ── 9. Locate & rename the APK ────────────────────────────────────────
       - name: Rename APK
         run: |
-          VERSION=${GITHUB_REF_NAME:-dev}
+          VERSION="${GITHUB_REF_NAME:-dev}"
           APK_SRC=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          echo "Found APK: $APK_SRC"
           cp "$APK_SRC" "lumio-${VERSION}.apk"
-          echo "APK_PATH=lumio-${VERSION}.apk" >> $GITHUB_ENV
+          echo "APK_PATH=lumio-${VERSION}.apk" >> "$GITHUB_ENV"
+          echo "APK_NAME=lumio-${VERSION}.apk" >> "$GITHUB_ENV"
 
-      # ── 10. Upload APK as workflow artifact ──────────────────────────────
+      # ── 10. Upload APK as a workflow artifact (always) ───────────────────
+      #        Available in Actions tab → run → Artifacts, even without a tag
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lumio-apk
+          name: ${{ env.APK_NAME }}
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      # ── 11. Create GitHub Release with APK (only on version tags) ────────
+      # ── 11. Create GitHub Release (only on v* tags) ───────────────────────
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: Lumio ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
           body: |
             ## Lumio ${{ github.ref_name }}
 
-            ### Install
-            1. Download **lumio-${{ github.ref_name }}.apk** below
-            2. On your Android device: Settings → Security → enable **Install unknown apps**
-            3. Open the downloaded APK and install
+            ### Install on Android
+            1. Download **${{ env.APK_NAME }}** from the Assets section below
+            2. On your Android device: **Settings → Security → Install unknown apps** → enable for your browser/Files app
+            3. Open the downloaded APK and tap **Install**
 
-            ### What's included
-            - Universal save-for-later for links, videos, recipes, books, movies, workouts, places, restaurants, tools and ideas
+            ### Features in this release
+            - Universal save-for-later: links, YouTube, recipes, books, movies, workouts, places, restaurants, tools, ideas
             - Smart collections with custom icons & colors
-            - Location saving with GPS + Google Maps deep-link
-            - AI summarization (OpenAI, Anthropic, Gemini, DeepSeek, Groq, Indus, IBM watsonx, Local LLM)
-            - Full-text search and filter
+            - Location saving: address text + GPS coordinates → one-tap Open in Google Maps
+            - AI summarization with your own API key: OpenAI · Anthropic · Gemini · DeepSeek · Groq · Indus · IBM watsonx · Local LLM (Ollama)
+            - Full-text search, filter by type / favorites / completed
             - Light / Dark / System theme
-            - All data stored locally on device (SQLite)
+            - All data stored locally on device — no account, no cloud
           files: ${{ env.APK_PATH }}
           draft: false
           prerelease: false
