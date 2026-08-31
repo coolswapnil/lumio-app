@@ -57,19 +57,25 @@ jobs:
             echo "Patched: $f"
           done
 
-          # 3. Patch every expo module build.gradle that uses expo-module-gradle-plugin
-          #    Replace the old apply-style with the explicit classpath plugin
+          # 3. Patch every expo module build.gradle that uses expo-module-gradle-plugin.
+          #    The plugin is declared in plugins{} block syntax (line 3 of expo-font etc.)
+          #    We replace the entire plugins block referencing it with the standard
+          #    com.android.library plugin that AGP provides natively.
           find node_modules -path "*/android/build.gradle" | while read f; do
             if grep -q "expo-module-gradle-plugin" "$f"; then
-              # Remove the plugin apply line entirely — AGP + expo-modules-core
-              # handles the configuration automatically via settings.gradle include
+              # Remove apply plugin lines (old syntax)
               sed -i "/apply plugin: 'expo-module-gradle-plugin'/d" "$f"
               sed -i "/apply plugin: \"expo-module-gradle-plugin\"/d" "$f"
-              echo "Removed expo-module-gradle-plugin apply from: $f"
+              # Remove plugins{} block lines referencing expo-module-gradle-plugin (new syntax)
+              sed -i "/id 'expo-module-gradle-plugin'/d" "$f"
+              sed -i '/id "expo-module-gradle-plugin"/d' "$f"
+              # If the plugins{} block is now empty, remove it
+              sed -i '/^plugins {$/,/^}$/{/^plugins {$/{N;/^plugins {\n}$/d}}' "$f" || true
+              echo "Patched expo-module-gradle-plugin from: $f"
             fi
           done
 
-          # 4. Show android/settings.gradle for debug
+          # 4. Show settings.gradle for debug
           echo "=== settings.gradle (first 30 lines) ==="
           head -30 android/settings.gradle
 
