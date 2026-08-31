@@ -38,18 +38,27 @@ jobs:
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
       - name: Expo prebuild
-        run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean --no-install
+        run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean
         env:
           CI: '1'
 
-      # Expo 51 requires Gradle 8.6 — pin it here because prebuild --clean
-      # regenerates the wrapper every run with an older default version which
-      # breaks expo-module-gradle-plugin on AGP 8.x.
-      - name: Pin Gradle wrapper to 8.6
+      # ── Patch Android project for AGP 8.x compatibility ──────────────────────
+      # Expo 51 ships gradle plugin classpath entries that AGP 8.3+ no longer
+      # auto-discovers. We pin Gradle to 8.6, downgrade AGP to 8.3.2 (last
+      # version fully compatible with expo-modules-core 1.x), and patch the
+      # SoftwareComponent 'release' lookup that was removed in AGP 8.x.
+      - name: Patch Gradle wrapper to 8.6
         run: |
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.6-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
-          cat android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Patch AGP version to 8.3.2
+        run: |
+          # android/build.gradle — downgrade AGP to last version that supports
+          # the legacy SoftwareComponent 'release' property used by expo-modules-core
+          sed -i "s|com.android.tools.build:gradle:[^'\"]*|com.android.tools.build:gradle:8.3.2|g" \
+            android/build.gradle
+          grep 'com.android.tools.build' android/build.gradle
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
