@@ -28,7 +28,11 @@ export function isValidUrl(value: string): boolean {
   if (!value.trim()) return false;
   try {
     const url = new URL(value.trim());
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    // Reject hostnames that are only dots or contain consecutive dots
+    const hostname = url.hostname;
+    if (!hostname || /\.\./.test(hostname) || /^\.|\.$/.test(hostname)) return false;
+    return true;
   } catch {
     return false;
   }

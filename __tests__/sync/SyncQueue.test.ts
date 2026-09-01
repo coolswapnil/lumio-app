@@ -145,7 +145,11 @@ mockDb.getFirstAsync = jest.fn(async (sql: string, params: unknown[] = []) => {
 beforeEach(() => {
   mockStore.length = 0;
   autoId = 1;
-  jest.clearAllMocks();
+  // Clear call counts only — do NOT use clearAllMocks/resetAllMocks as they
+  // wipe the mock implementations assigned after the initial jest.fn() calls.
+  mockDb.runAsync.mockClear();
+  mockDb.getAllAsync.mockClear();
+  mockDb.getFirstAsync.mockClear();
 });
 
 describe('SyncQueue — enqueue', () => {

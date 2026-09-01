@@ -57,14 +57,15 @@ export function getUserMessage(error: unknown): string {
     if (msg.includes('network') || msg.includes('fetch')) {
       return 'Network error. Check your connection and try again.';
     }
-    if (msg.includes('401') || msg.includes('403') || msg.includes('API')) {
-      return 'Invalid API key or insufficient permissions.';
-    }
+    // Check specific status codes before the generic API keyword check
     if (msg.includes('429')) {
       return 'Rate limit reached. Please wait a moment and try again.';
     }
     if (msg.includes('500') || msg.includes('502') || msg.includes('503')) {
       return 'The AI service is temporarily unavailable. Try again later.';
+    }
+    if (msg.includes('401') || msg.includes('403') || msg.includes('API')) {
+      return 'Invalid API key or insufficient permissions.';
     }
   }
   return 'An unexpected error occurred. Please try again.';
