@@ -37,95 +37,15 @@ jobs:
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
-      # Pin the Gradle wrapper inside react-native BEFORE prebuild copies it
-      - name: Pin react-native Gradle wrapper to 8.3
-        run: |
-          find node_modules/react-native -name "gradle-wrapper.properties" | while read f; do
-            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' "$f"
-            echo "Pinned: $f"
-          done
-
       - name: Expo prebuild
         run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean
         env:
           CI: '1'
 
-      # After prebuild, patch the generated android project
-      - name: Patch generated Android project
-        run: |
-          # 1. Re-pin Gradle wrapper
-          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
-            android/gradle/wrapper/gradle-wrapper.properties
-          echo "Gradle: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
-
-          # 2. Find the expo-module-gradle-plugin Gradle project and register it
-          #    in pluginManagement so it resolves before any module's plugins{} block.
-          #    Search all likely locations in node_modules.
-          PLUGIN_DIR=""
-          for candidate in $(find node_modules -type f \( -name "build.gradle" -o -name "build.gradle.kts" \) \
-              -path "*/expo-module-gradle-plugin/*" 2>/dev/null); do
-            PLUGIN_DIR="$(dirname $candidate)"
-            break
-          done
-
-          # If not found by name, search by plugin id declaration inside gradle files
-          if [ -z "$PLUGIN_DIR" ]; then
-            for candidate in $(find node_modules -type f -name "*.gradle" | \
-                xargs grep -rl 'id.*=.*"expo-module-gradle-plugin"' 2>/dev/null | head -5); do
-              PLUGIN_DIR="$(dirname $candidate)"
-              break
-            done
-          fi
-
-          # Last resort: look for the plugin class inside expo-modules-core
-          if [ -z "$PLUGIN_DIR" ]; then
-            for candidate in $(find node_modules/expo-modules-core -type f \
-                \( -name "build.gradle" -o -name "build.gradle.kts" \) 2>/dev/null | head -5); do
-              dir="$(dirname $candidate)"
-              if grep -q "expo-module-gradle-plugin\|ExpoModuleGradlePlugin\|expo\.modules\." "$candidate" 2>/dev/null; then
-                PLUGIN_DIR="$dir"
-                break
-              fi
-            done
-          fi
-
-          echo "expo-module-gradle-plugin dir: ${PLUGIN_DIR:-NOT FOUND}"
-          ls node_modules/expo-modules-core/android/ 2>/dev/null || true
-
-          if [ -n "$PLUGIN_DIR" ]; then
-            sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"$(realpath $PLUGIN_DIR)\")|" \
-              android/settings.gradle
-            echo "Added includeBuild for plugin"
-          else
-            # Fallback: the plugin is registered by useExpoModules() which runs
-            # from autolinking.gradle. In some Expo 51 versions the plugin id
-            # 'expo-module-gradle-plugin' maps to expo-modules-core itself.
-            # Add expo-modules-core/android as the includeBuild.
-            CORE_ANDROID="$(pwd)/node_modules/expo-modules-core/android"
-            if [ -f "$CORE_ANDROID/build.gradle" ]; then
-              sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${CORE_ANDROID}\")|" \
-                android/settings.gradle
-              echo "Fallback: added expo-modules-core/android as includeBuild"
-            else
-              echo "FATAL: cannot find expo-module-gradle-plugin anywhere"
-              find node_modules -name "*.gradle" | xargs grep -l "expo-module-gradle-plugin" 2>/dev/null | head -20 || true
-              exit 1
-            fi
-          fi
-
-          echo "=== settings.gradle first 10 lines ==="
-          head -10 android/settings.gradle
-
-          # 3. Patch ExpoModulesCorePlugin.gradle — components.release removed in AGP 8+
-          find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
-            sed -i "s/from components\.release/from (components.findByName('release') ?: components.findByName('debug'))/g" "$f"
-            echo "Patched: $f"
-          done
-
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # Generate release keystore on the runner
+      # Generate release keystore on the runner using keytool (Java 17 is already installed)
       - name: Generate release keystore
         run: |
           keytool -genkey -v \
