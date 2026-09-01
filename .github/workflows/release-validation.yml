@@ -28,7 +28,7 @@ jobs:
     name: Dependency Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
 
       - uses: actions/setup-node@v4.4.0
         with:
@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
@@ -129,7 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
@@ -157,7 +157,7 @@ jobs:
       - lint-gate
       - test-gate
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
 
       - uses: actions/setup-node@v4.4.0
         with:
