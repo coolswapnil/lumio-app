@@ -138,7 +138,7 @@ jobs:
       - name: Unit tests — zero failures required
         run: npm run test:coverage -- --coverageReporters=text --coverageReporters=lcov
       - name: Upload test coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: release-coverage-${{ github.ref_name }}
@@ -255,7 +255,7 @@ jobs:
           echo "APK verified: $(du -sh $APK)"
 
       - name: Upload release gate APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-gate-apk-${{ github.ref_name }}
           path: android/app/build/outputs/apk/release/
