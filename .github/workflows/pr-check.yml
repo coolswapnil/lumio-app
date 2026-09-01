@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package.json
 
       # Must succeed with zero flags — no --force, no --legacy-peer-deps.
       - name: npm install (strict)
@@ -139,6 +140,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package.json
       - run: npm install
       - run: npm run typecheck
 
@@ -153,6 +155,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package.json
       - run: npm install
       - run: npm run lint
 
@@ -167,6 +170,7 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: package.json
       - run: npm install
       - name: Run tests with coverage
         run: npm run test:coverage -- --coverageReporters=text --coverageReporters=lcov
