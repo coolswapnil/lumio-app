@@ -69,41 +69,23 @@ jobs:
           #    The plugin lives at: node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin
           #    OR: node_modules/@expo/gradle-plugin  (depending on expo version)
           #    We find it dynamically.
-          PLUGIN_DIR=""
-          # Try common locations for expo-module-gradle-plugin
-          for candidate in \
-            "node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin" \
-            "node_modules/@expo/gradle-plugin" \
-            "node_modules/expo-module-gradle-plugin"; do
-            if [ -f "${candidate}/build.gradle" ] || [ -f "${candidate}/build.gradle.kts" ]; then
-              PLUGIN_DIR="$candidate"
-              echo "Found plugin at: $PLUGIN_DIR"
-              break
-            fi
-          done
-
-          if [ -n "$PLUGIN_DIR" ]; then
-            ABS_PLUGIN_DIR="$(pwd)/${PLUGIN_DIR}"
-            # Prepend includeBuild inside pluginManagement block
-            sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${ABS_PLUGIN_DIR}\")|" \
-              android/settings.gradle
-            echo "Added includeBuild to pluginManagement"
-          else
-            echo "Plugin dir not found — trying autolinking path via node"
-            # Ask node to find expo-modules-autolinking
-            AUTOLINKING_DIR=$(node --print "path.dirname(require.resolve('expo-modules-autolinking/package.json'))" 2>/dev/null || echo "")
-            if [ -n "$AUTOLINKING_DIR" ]; then
-              PLUGIN_DIR="${AUTOLINKING_DIR}/android/expo-module-gradle-plugin"
-              if [ -d "$PLUGIN_DIR" ]; then
-                sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${PLUGIN_DIR}\")|" \
-                  android/settings.gradle
-                echo "Added includeBuild via autolinking path: $PLUGIN_DIR"
-              else
-                echo "Plugin not found at autolinking path either: $PLUGIN_DIR"
-                ls "${AUTOLINKING_DIR}/android/" 2>/dev/null || true
-              fi
-            fi
-          fi
+          # Find expo-module-gradle-plugin — search all of node_modules
+          echo "=== Searching for expo-module-gradle-plugin ==="
+          find node_modules -name "build.gradle" -o -name "build.gradle.kts" | \
+            xargs grep -l "expo-module-gradle-plugin\|id.*expo.module" 2>/dev/null | head -10 || true
+          echo "=== All dirs containing expo-module-gradle-plugin string ==="
+          find node_modules -name "*.gradle" | \
+            xargs grep -rl "id.*expo-module-gradle-plugin\|expo\.modules\.plugin" 2>/dev/null | head -5 || true
+          echo "=== expo-modules-autolinking android dir ==="
+          ls node_modules/expo-modules-autolinking/android/ 2>/dev/null || echo "not found"
+          echo "=== expo-modules-core android dir ==="
+          ls node_modules/expo-modules-core/android/ 2>/dev/null | head -20 || true
+          echo "=== Looking for settings.gradle in node_modules ==="
+          find node_modules -name "settings.gradle" | head -5 || true
+          echo "=== Looking for any dir named expo-module-gradle-plugin ==="
+          find node_modules -type d -name "expo-module-gradle-plugin" 2>/dev/null || echo "not found"
+          echo "=== Looking for ExpoModulesPlugin or similar ==="
+          find node_modules -type d -name "*gradle*plugin*" 2>/dev/null | head -10 || true
 
           echo "=== settings.gradle first 8 lines ==="
           head -8 android/settings.gradle
