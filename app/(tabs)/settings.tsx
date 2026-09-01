@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
@@ -314,7 +315,9 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.row}>
             <Text style={[styles.rowLabel, { color: colors.text }]}>Lumio</Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>v1.1.0</Text>
+            <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              v{Constants.expoConfig?.version ?? '—'}
+            </Text>
           </View>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.row}>
