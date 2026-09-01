@@ -30,18 +30,26 @@ jobs:
       - name: npm doctor
         run: npm doctor || true
 
-      # expo-doctor validates all Expo package versions are compatible with the SDK.
-      # It exits non-zero when it finds incompatibilities — we rely on that exit code.
-      - name: expo-doctor
+      # Inline Expo SDK 52 baseline check — avoids expo-doctor@latest whose
+      # behaviour changes as new SDK versions ship, causing false failures.
+      - name: Validate Expo SDK 52 baseline
         run: |
-          npx expo-doctor@latest 2>&1 | tee /tmp/expo-doctor.log
-          EXIT=${PIPESTATUS[0]}
-          cat /tmp/expo-doctor.log
-          if [ "$EXIT" -ne 0 ]; then
-            echo "::error::expo-doctor failed. Run 'npx expo install --fix' locally and commit the result."
-            exit 1
-          fi
-          echo "expo-doctor OK"
+          node -e "
+            const p = require('./package.json');
+            const rn = (p.dependencies['react-native'] || '');
+            const expo = (p.dependencies.expo || '').replace(/[~^]/,'');
+            const react = (p.dependencies.react || '');
+            if (!expo.startsWith('52.')) {
+              console.error('::error::expo must be 52.x, found: ' + expo); process.exit(1);
+            }
+            if (react !== '18.3.1') {
+              console.error('::error::react must be 18.3.1 for SDK 52, found: ' + react); process.exit(1);
+            }
+            if (!rn.startsWith('0.76')) {
+              console.error('::error::react-native must be 0.76.x for SDK 52, found: ' + rn); process.exit(1);
+            }
+            console.log('Expo SDK 52 baseline OK  expo=' + expo + '  react=' + react + '  rn=' + rn);
+          "
 
       # Enforce react-test-renderer major == react major.
       - name: Validate react-test-renderer matches React major

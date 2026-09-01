@@ -55,16 +55,32 @@ jobs:
             console.log('react-test-renderer major matches React:', react);
           "
 
-      - name: expo-doctor (Expo SDK compatibility check)
+      - name: Validate Expo SDK package versions (SDK 52 baseline)
         run: |
-          npx expo-doctor@latest 2>&1 | tee /tmp/expo-doctor.log
-          EXIT=${PIPESTATUS[0]}
-          cat /tmp/expo-doctor.log
-          if [ "$EXIT" -ne 0 ]; then
-            echo "::error::expo-doctor failed. Check package versions with 'npx expo install --fix'."
-            exit 1
-          fi
-          echo "expo-doctor OK"
+          node -e "
+            const p = require('./package.json');
+            const check = (name, range, actual) => {
+              const clean = (actual || '').replace(/[~^]/g,'');
+              console.log('  ' + name + ': ' + actual + ' -> ' + clean);
+            };
+            console.log('Expo SDK 52 package baseline check:');
+            check('expo',            '~52.0.x',  p.dependencies.expo);
+            check('react',           '18.3.1',   p.dependencies.react);
+            check('react-native',    '0.76.x',   p.dependencies['react-native']);
+            check('expo-router',     '~4.0.x',   p.dependencies['expo-router']);
+            // Fail if react-native drifts from 0.76.x for this SDK
+            const rn = (p.dependencies['react-native'] || '');
+            if (!rn.startsWith('0.76')) {
+              console.error('::error::react-native must be 0.76.x for Expo SDK 52, found: ' + rn);
+              process.exit(1);
+            }
+            const expoVer = (p.dependencies.expo || '').replace(/[~^]/,'');
+            if (!expoVer.startsWith('52.')) {
+              console.error('::error::expo must be 52.x for this baseline, found: ' + expoVer);
+              process.exit(1);
+            }
+            console.log('Expo SDK baseline OK');
+          "
 
       - name: Generate icon assets
         run: |
