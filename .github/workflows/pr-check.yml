@@ -128,54 +128,39 @@ jobs:
           npm audit --json --audit-level=moderate > /tmp/audit.json 2>&1
           set -e
 
-          node -e "
-            const fs = require('fs');
-            let report;
-            try {
-              report = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8'));
-            } catch(e) {
-              console.error('::error::Failed to parse npm audit JSON:', e.message);
-              console.log(fs.readFileSync('/tmp/audit.json', 'utf8').slice(0, 2000));
-              process.exit(1);
+          # Write the audit parser to a temp file to avoid YAML/shell quoting issues
+          cat > /tmp/audit-check.js << 'EOF'
+          const fs = require('fs');
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8'));
+          } catch(e) {
+            const raw = fs.readFileSync('/tmp/audit.json', 'utf8');
+            console.error('::error::Failed to parse npm audit JSON:', e.message);
+            console.log(raw.slice(0, 2000));
+            process.exit(1);
+          }
+          const vulns = report.vulnerabilities || {};
+          const exempt = new Set([
+            'ws', 'braces', 'micromatch', 'postcss', 'cross-spawn',
+            'path-to-regexp', 'ip', 'tar', 'express', '@babel/core'
+          ]);
+          const blocking = [];
+          for (const [name, info] of Object.entries(vulns)) {
+            if (exempt.has(name) || info.severity === 'low') {
+              console.log('SKIP: ' + name + ' [' + info.severity + ']');
+              continue;
             }
+            blocking.push(name + ' [' + info.severity + ']');
+          }
+          if (blocking.length > 0) {
+            console.error('::error::npm audit FAILED -- unexempt findings: ' + blocking.join(', '));
+            process.exit(1);
+          }
+          console.log('npm audit OK: ' + Object.keys(vulns).length + ' finding(s), all exempt or low.');
+          EOF
 
-            const vulns = report.vulnerabilities || {};
-            // Packages whose vulnerabilities are suppressed by the overrides block in
-            // package.json or are only reachable via build-toolchain (never in prod bundle)
-            const exempt = new Set([
-              'ws',          // react-native dev server only; overridden to 8.21.3
-              'braces',      // jest transitive; overridden to 3.0.3
-              'micromatch',  // jest transitive; overridden to 4.0.8
-              'postcss',     // @expo/metro-config; overridden to 8.5.26
-              'cross-spawn', // build tool; overridden to 7.0.6
-              'path-to-regexp', // express/metro; overridden to 0.1.13
-              'ip',          // @expo/cli transitive; no patched 2.x release upstream
-              'tar',         // @expo/cli; >=6.2.1 is safe, overridden
-              'express',     // metro dev server only; not in production bundle
-              '@babel/core', // build tool; GHSA-4x5r is low severity
-            ]);
-
-            const blocking = [];
-            for (const [name, info] of Object.entries(vulns)) {
-              if (exempt.has(name)) {
-                console.log('EXEMPT: ' + name + ' [' + info.severity + ']');
-                continue;
-              }
-              if (info.severity === 'low') {
-                console.log('SKIP (low): ' + name);
-                continue;
-              }
-              blocking.push(name + ' [' + info.severity + ']');
-            }
-
-            if (blocking.length > 0) {
-              console.error('::error::npm audit FAILED -- ' + blocking.length + ' unexempt finding(s):');
-              blocking.forEach(function(v) { console.error('  ' + v); });
-              process.exit(1);
-            }
-
-            console.log('npm audit OK: ' + Object.keys(vulns).length + ' total finding(s), all exempt or low.');
-          "
+          node /tmp/audit-check.js
 
       # Scan source files for hardcoded secrets.
       - name: Scan for hardcoded secrets
