@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "expo": "~52.0.30",
-    "expo-asset": "~11.0.4",
+    "expo-asset": "~57.0.15",
     "expo-font": "~13.0.3",
     "expo-router": "~4.0.17",
     "expo-sqlite": "~15.1.2",
