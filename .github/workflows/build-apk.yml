@@ -37,44 +37,87 @@ jobs:
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
-      # ── Pin Gradle wrapper BEFORE prebuild ────────────────────────────────────
-      # RN 0.74.4+ ships a gradle-wrapper.properties pointing to Gradle 8.8.
-      # expo-module-gradle-plugin (used by Expo 51 modules) is incompatible with
-      # Gradle 8.8. We overwrite the wrapper file in node_modules so that when
-      # expo prebuild copies it into android/, it gets Gradle 8.3 instead.
-      - name: Pin Gradle wrapper to 8.3 in react-native node_modules
+      # Pin the Gradle wrapper inside react-native BEFORE prebuild copies it
+      - name: Pin react-native Gradle wrapper to 8.3
         run: |
-          WRAPPER="node_modules/react-native/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$WRAPPER" ]; then
-            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' "$WRAPPER"
-            echo "Pinned RN gradle wrapper: $(grep distributionUrl $WRAPPER)"
-          else
-            echo "Wrapper not found at $WRAPPER — will patch after prebuild"
-          fi
+          find node_modules/react-native -name "gradle-wrapper.properties" | while read f; do
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' "$f"
+            echo "Pinned: $f"
+          done
 
       - name: Expo prebuild
         run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean
         env:
           CI: '1'
 
-      # ── Patch for Expo 51 compatibility ───────────────────────────────────────
-      - name: Patch for Expo 51 + Gradle 8.3 compatibility
+      # After prebuild, patch the generated android project
+      - name: Patch generated Android project
         run: |
-          # Always overwrite the generated wrapper — prebuild may have restored it
+          # 1. Re-pin Gradle wrapper (prebuild may re-copy from node_modules)
           sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
             android/gradle/wrapper/gradle-wrapper.properties
-          echo "Gradle wrapper: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
+          echo "Gradle: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
 
-          # Fix components.release removed in AGP 8.x (safety net)
+          # 2. The core issue: expo-module-gradle-plugin is registered via
+          #    useExpoModules() in settings.gradle, but that runs AFTER Gradle
+          #    tries to resolve the plugins{} block in each module's build.gradle.
+          #
+          #    The fix: add the includeBuild for the plugin INSIDE the
+          #    pluginManagement block at the TOP of settings.gradle, before
+          #    any other evaluation happens.
+          #
+          #    The plugin lives at: node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin
+          #    OR: node_modules/@expo/gradle-plugin  (depending on expo version)
+          #    We find it dynamically.
+          PLUGIN_DIR=""
+          # Try common locations for expo-module-gradle-plugin
+          for candidate in \
+            "node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin" \
+            "node_modules/@expo/gradle-plugin" \
+            "node_modules/expo-module-gradle-plugin"; do
+            if [ -f "${candidate}/build.gradle" ] || [ -f "${candidate}/build.gradle.kts" ]; then
+              PLUGIN_DIR="$candidate"
+              echo "Found plugin at: $PLUGIN_DIR"
+              break
+            fi
+          done
+
+          if [ -n "$PLUGIN_DIR" ]; then
+            ABS_PLUGIN_DIR="$(pwd)/${PLUGIN_DIR}"
+            # Prepend includeBuild inside pluginManagement block
+            sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${ABS_PLUGIN_DIR}\")|" \
+              android/settings.gradle
+            echo "Added includeBuild to pluginManagement"
+          else
+            echo "Plugin dir not found — trying autolinking path via node"
+            # Ask node to find expo-modules-autolinking
+            AUTOLINKING_DIR=$(node --print "path.dirname(require.resolve('expo-modules-autolinking/package.json'))" 2>/dev/null || echo "")
+            if [ -n "$AUTOLINKING_DIR" ]; then
+              PLUGIN_DIR="${AUTOLINKING_DIR}/android/expo-module-gradle-plugin"
+              if [ -d "$PLUGIN_DIR" ]; then
+                sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${PLUGIN_DIR}\")|" \
+                  android/settings.gradle
+                echo "Added includeBuild via autolinking path: $PLUGIN_DIR"
+              else
+                echo "Plugin not found at autolinking path either: $PLUGIN_DIR"
+                ls "${AUTOLINKING_DIR}/android/" 2>/dev/null || true
+              fi
+            fi
+          fi
+
+          echo "=== settings.gradle first 8 lines ==="
+          head -8 android/settings.gradle
+
+          # 3. Patch ExpoModulesCorePlugin.gradle — components.release API removed in AGP 8+
           find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
             sed -i "s/from components\.release/from (components.findByName('release') ?: components.findByName('debug'))/g" "$f"
+            echo "Patched ExpoModulesCorePlugin: $f"
           done
-          echo "AGP classpath: $(grep 'com.android.tools.build' android/build.gradle)"
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ── Generate release keystore on the runner ───────────────────────────────
+      # Generate release keystore on the runner
       - name: Generate release keystore
         run: |
           keytool -genkey -v \
@@ -87,7 +130,7 @@ jobs:
             -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
           echo "Keystore: $(wc -c < android/app/lumio-release.keystore) bytes"
 
-      # ── Pre-bundle JS ─────────────────────────────────────────────────────────
+      # Pre-bundle JS so Gradle does not need Metro at build time
       - name: Bundle JavaScript
         run: |
           mkdir -p android/app/src/main/assets
@@ -103,7 +146,7 @@ jobs:
           NODE_ENV: production
           EXPO_NO_DOTENV: '1'
 
-      # ── Build signed release APK ──────────────────────────────────────────────
+      # Build signed release APK
       - name: Build release APK
         run: |
           cd android
