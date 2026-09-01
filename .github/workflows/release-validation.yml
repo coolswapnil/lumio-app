@@ -87,32 +87,31 @@ jobs:
       - name: npm audit (fail on unfixed moderate+)
         run: |
           set +e
-          npm audit --json --audit-level=moderate > /tmp/audit.json 2>&1
+          npm audit --json 2>/dev/null > /tmp/audit.json
           set -e
-          cat > /tmp/audit-check.js << 'EOF'
-          const fs = require('fs');
-          let report;
-          try { report = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8')); }
-          catch(e) { console.error('::error::audit parse failed:', e.message); process.exit(1); }
-          const exempt = new Set([
-            'ws','braces','micromatch','postcss','cross-spawn',
-            'path-to-regexp','undici','body-parser','qs',
-            'ip','tar','express','@babel/core','minimatch','glob',
-          ]);
-          const blocking = [];
-          for (const [name, info] of Object.entries(report.vulnerabilities || {})) {
-            if (exempt.has(name) || info.severity === 'low') {
-              console.log('SKIP: ' + name + ' [' + info.severity + ']'); continue;
-            }
-            blocking.push(name + ' [' + info.severity + ']');
+          python3 - << 'PYEOF'
+          import json, sys
+          with open('/tmp/audit.json') as f:
+              report = json.load(f)
+          exempt = {
+              'ws', 'braces', 'micromatch', 'postcss', 'cross-spawn',
+              'path-to-regexp', 'undici', 'body-parser', 'qs',
+              'ip', 'tar', 'express', '@babel/core', 'minimatch', 'glob',
           }
-          if (blocking.length > 0) {
-            console.error('::error::RELEASE BLOCKED -- audit failures: ' + blocking.join(', '));
-            process.exit(1);
-          }
-          console.log('Audit OK: all findings exempt or low severity.');
-          EOF
-          node /tmp/audit-check.js
+          vulns = report.get('vulnerabilities', {})
+          blocking = [
+              f"{name}[{info['severity']}]"
+              for name, info in vulns.items()
+              if name not in exempt and info.get('severity') != 'low'
+          ]
+          for name, info in vulns.items():
+              tag = 'BLOCKED' if name not in exempt and info.get('severity') != 'low' else 'SKIP'
+              print(f"{tag}: {name} [{info.get('severity')}]")
+          if blocking:
+              print(f"::error::RELEASE BLOCKED -- {len(blocking)} unexempt finding(s): {', '.join(blocking)}", file=sys.stderr)
+              sys.exit(1)
+          print(f"npm audit OK: {len(vulns)} finding(s), all exempt or low.")
+          PYEOF
 
       - name: Scan for hardcoded secrets
         run: |
