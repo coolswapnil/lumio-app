@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumio",
     "slug": "lumio-app",
-    "version": "2.0.8",
+    "version": "2.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -23,7 +23,7 @@
         "backgroundColor": "#0f172a"
       },
       "package": "com.lumio.savelater",
-      "versionCode": 3,
+      "versionCode": 20200,
       "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_FINE_LOCATION",

@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
-  TextInput,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, TextInput, ActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -22,6 +20,7 @@ import { Button } from '../../src/components/Button';
 
 export default function SettingsScreen() {
   const { colors, settings, updateSettings } = useTheme();
+  const paper = usePaperTheme();
   const { items, collections } = useData();
   const [exporting, setExporting] = useState<'json' | 'csv' | null>(null);
   const [aiSettings, setAiSettings] = useState<Partial<AISettings>>({
@@ -96,15 +95,15 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+        <Text variant="headlineSmall" style={{ color: paper.colors.onSurface }}>Settings</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {/* Appearance */}
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>APPEARANCE</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>APPEARANCE</Text>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
           {(['light', 'dark', 'system'] as const).map((mode, i, arr) => (
             <React.Fragment key={mode}>
               <TouchableOpacity
@@ -115,25 +114,24 @@ export default function SettingsScreen() {
                   <Ionicons
                     name={mode === 'light' ? 'sunny' : mode === 'dark' ? 'moon' : 'phone-portrait'}
                     size={20}
-                    color={colors.icon}
+                    color={paper.colors.onSurfaceVariant}
                   />
-                  <Text style={[styles.rowLabel, { color: colors.text }]}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>
                     {mode.charAt(0).toUpperCase() + mode.slice(1)} Mode
                   </Text>
                 </View>
                 {settings.theme === mode && (
-                  <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />
+                  <Ionicons name="checkmark-circle" size={20} color={paper.colors.primary} />
                 )}
               </TouchableOpacity>
-              {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+              {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />}
             </React.Fragment>
           ))}
         </View>
 
         {/* AI Provider */}
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI PROVIDER</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {/* Provider selection */}
+        <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>AI PROVIDER</Text>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
           {AI_PROVIDERS.map((provider, i, arr) => (
             <React.Fragment key={provider.id}>
               <TouchableOpacity
@@ -142,116 +140,111 @@ export default function SettingsScreen() {
               >
                 <View style={styles.rowLeft}>
                   <View style={[styles.providerDot, {
-                    backgroundColor: aiSettings.provider === provider.id ? '#3b82f6' : colors.surfaceSecondary
+                    backgroundColor: aiSettings.provider === provider.id ? paper.colors.primary : paper.colors.surfaceVariant
                   }]} />
                   <View>
-                    <Text style={[styles.rowLabel, { color: colors.text }]}>{provider.name}</Text>
-                    <Text style={[styles.rowSub, { color: colors.textMuted }]}>{provider.description}</Text>
+                    <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>{provider.name}</Text>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{provider.description}</Text>
                   </View>
                 </View>
                 {aiSettings.provider === provider.id && (
-                  <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />
+                  <Ionicons name="checkmark-circle" size={20} color={paper.colors.primary} />
                 )}
               </TouchableOpacity>
-              {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+              {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />}
             </React.Fragment>
           ))}
         </View>
 
         {/* API Key */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
-            {selectedProvider?.name} API Key
-          </Text>
-          <View style={[styles.keyInput, { backgroundColor: colors.inputBackground, borderColor: colors.border }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+          <View style={styles.cardPadding}>
+            {/* MD3 TextInput: API Key */}
             <TextInput
+              label={`${selectedProvider?.name ?? 'Provider'} API Key`}
               value={aiSettings.apiKey}
               onChangeText={(v) => setAiSettings((s) => ({ ...s, apiKey: v }))}
               placeholder={`Enter your ${selectedProvider?.name ?? 'provider'} API key`}
-              placeholderTextColor={colors.placeholder}
-              style={[styles.keyInputText, { color: colors.text }]}
+              mode="outlined"
               secureTextEntry={!showKey}
               autoCapitalize="none"
               autoCorrect={false}
+              right={
+                <TextInput.Icon
+                  icon={showKey ? 'eye-off' : 'eye'}
+                  onPress={() => setShowKey(!showKey)}
+                  color={paper.colors.onSurfaceVariant}
+                />
+              }
+              style={styles.textInput}
             />
-            <TouchableOpacity onPress={() => setShowKey(!showKey)}>
-              <Ionicons name={showKey ? 'eye-off' : 'eye'} size={18} color={colors.textMuted} />
-            </TouchableOpacity>
+
+            {/* Model */}
+            <TextInput
+              label="Model (optional — uses default if blank)"
+              value={aiSettings.model}
+              onChangeText={(v) => setAiSettings((s) => ({ ...s, model: v }))}
+              placeholder={selectedProvider?.modelPlaceholder ?? 'model-name'}
+              mode="outlined"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[styles.textInput, { marginTop: 14 }]}
+            />
+
+            {/* watsonx extras */}
+            {aiSettings.provider === 'watsonx' && (
+              <>
+                <TextInput
+                  label="Project ID *"
+                  value={aiSettings.watsonxProjectId}
+                  onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxProjectId: v }))}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  mode="outlined"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[styles.textInput, { marginTop: 14 }]}
+                />
+                <TextInput
+                  label="Region"
+                  value={aiSettings.watsonxRegion}
+                  onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxRegion: v }))}
+                  placeholder="us-south"
+                  mode="outlined"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[styles.textInput, { marginTop: 14 }]}
+                />
+              </>
+            )}
+
+            {/* Local LLM / Indus: base URL field */}
+            {(aiSettings.provider === 'local' || aiSettings.provider === 'indus') && (
+              <>
+                <TextInput
+                  label={aiSettings.provider === 'local' ? 'Server Base URL' : 'API Base URL'}
+                  value={aiSettings.localBaseUrl}
+                  onChangeText={(v) => setAiSettings((s) => ({ ...s, localBaseUrl: v }))}
+                  placeholder={
+                    aiSettings.provider === 'local'
+                      ? 'http://localhost:11434/v1'
+                      : 'https://api.indusai.in/v1'
+                  }
+                  mode="outlined"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  style={[styles.textInput, { marginTop: 14 }]}
+                />
+                {aiSettings.provider === 'local' && (
+                  <Text variant="bodySmall" style={[{ color: paper.colors.onSurfaceVariant, marginTop: 6, lineHeight: 18 }]}>
+                    Ollama default: http://localhost:11434/v1{'\n'}
+                    LM Studio default: http://localhost:1234/v1{'\n'}
+                    API key is optional for local servers.
+                  </Text>
+                )}
+              </>
+            )}
           </View>
-
-          {/* Model */}
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 14 }]}>
-            Model (optional — uses default if blank)
-          </Text>
-          <TextInput
-            value={aiSettings.model}
-            onChangeText={(v) => setAiSettings((s) => ({ ...s, model: v }))}
-            placeholder={selectedProvider?.modelPlaceholder ?? 'model-name'}
-            placeholderTextColor={colors.placeholder}
-            style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          {/* watsonx extras */}
-          {aiSettings.provider === 'watsonx' && (
-            <>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 14 }]}>
-                Project ID *
-              </Text>
-              <TextInput
-                value={aiSettings.watsonxProjectId}
-                onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxProjectId: v }))}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 14 }]}>
-                Region
-              </Text>
-              <TextInput
-                value={aiSettings.watsonxRegion}
-                onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxRegion: v }))}
-                placeholder="us-south"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </>
-          )}
-
-          {/* Local LLM / Indus: base URL field */}
-          {(aiSettings.provider === 'local' || aiSettings.provider === 'indus') && (
-            <>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginTop: 14 }]}>
-                {aiSettings.provider === 'local' ? 'Server Base URL' : 'API Base URL'}
-              </Text>
-              <TextInput
-                value={aiSettings.localBaseUrl}
-                onChangeText={(v) => setAiSettings((s) => ({ ...s, localBaseUrl: v }))}
-                placeholder={
-                  aiSettings.provider === 'local'
-                    ? 'http://localhost:11434/v1'
-                    : 'https://api.indusai.in/v1'
-                }
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-              />
-              {aiSettings.provider === 'local' && (
-                <Text style={[styles.helpNote, { color: colors.textMuted }]}>
-                  Ollama default: http://localhost:11434/v1{'\n'}
-                  LM Studio default: http://localhost:1234/v1{'\n'}
-                  API key is optional for local servers.
-                </Text>
-              )}
-            </>
-          )}
 
           <View style={styles.aiButtons}>
             <Button
@@ -268,66 +261,66 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <Text style={[styles.secureNote, { color: colors.textMuted }]}>
+          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, paddingHorizontal: 14, paddingBottom: 14, lineHeight: 16 }}>
             🔒 API keys are stored encrypted on your device and never transmitted externally.
           </Text>
         </View>
 
         {/* Export / Backup */}
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>EXPORT & BACKUP</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.exportDesc, { color: colors.textSecondary }]}>
+        <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>EXPORT & BACKUP</Text>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+          <Text variant="bodyMedium" style={[styles.exportDesc, { color: paper.colors.onSurfaceVariant }]}>
             {items.length} item{items.length !== 1 ? 's' : ''} · {collections.length} collection{collections.length !== 1 ? 's' : ''}
           </Text>
           <View style={styles.exportButtons}>
             <TouchableOpacity
               onPress={() => handleExport('json')}
               disabled={!!exporting}
-              style={[styles.exportBtn, { backgroundColor: '#3b82f610', borderColor: '#3b82f6' }]}
+              style={[styles.exportBtn, { backgroundColor: paper.colors.primaryContainer, borderColor: paper.colors.primary }]}
             >
               {exporting === 'json'
-                ? <ActivityIndicator size="small" color="#3b82f6" />
-                : <Ionicons name="code-download" size={18} color="#3b82f6" />}
-              <Text style={[styles.exportBtnText, { color: '#3b82f6' }]}>
+                ? <ActivityIndicator size="small" color={paper.colors.onPrimaryContainer} />
+                : <Ionicons name="code-download" size={18} color={paper.colors.onPrimaryContainer} />}
+              <Text variant="labelLarge" style={{ color: paper.colors.onPrimaryContainer }}>
                 {exporting === 'json' ? 'Exporting…' : 'Export JSON'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleExport('csv')}
               disabled={!!exporting}
-              style={[styles.exportBtn, { backgroundColor: '#10b98110', borderColor: '#10b981' }]}
+              style={[styles.exportBtn, { backgroundColor: paper.colors.secondaryContainer, borderColor: paper.colors.secondary }]}
             >
               {exporting === 'csv'
-                ? <ActivityIndicator size="small" color="#10b981" />
-                : <Ionicons name="document-text" size={18} color="#10b981" />}
-              <Text style={[styles.exportBtnText, { color: '#10b981' }]}>
+                ? <ActivityIndicator size="small" color={paper.colors.onSecondaryContainer} />
+                : <Ionicons name="document-text" size={18} color={paper.colors.onSecondaryContainer} />}
+              <Text variant="labelLarge" style={{ color: paper.colors.onSecondaryContainer }}>
                 {exporting === 'csv' ? 'Exporting…' : 'Export CSV'}
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={[styles.exportNote, { color: colors.textMuted }]}>
+          <Text variant="bodySmall" style={[styles.exportNote, { color: paper.colors.onSurfaceVariant }]}>
             JSON backup is fully importable. CSV is spreadsheet-compatible.
           </Text>
         </View>
 
         {/* About */}
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ABOUT</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>ABOUT</Text>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
           <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Lumio</Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+            <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Lumio</Text>
+            <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
               v{Constants.expoConfig?.version ?? '—'}
             </Text>
           </View>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />
           <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Data Storage</Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>Local only (SQLite)</Text>
+            <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Data Storage</Text>
+            <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>Local only (SQLite)</Text>
           </View>
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />
           <View style={styles.row}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Share from any app</Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>Share sheet → Lumio</Text>
+            <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Share from any app</Text>
+            <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>Share sheet → Lumio</Text>
           </View>
         </View>
       </ScrollView>
@@ -342,27 +335,28 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  title: { fontSize: 24, fontWeight: '800' },
   content: { padding: 16, paddingBottom: 100, gap: 8 },
   sectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
     letterSpacing: 0.8,
     marginTop: 8,
     marginBottom: 4,
     paddingHorizontal: 4,
   },
   card: {
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 8,
+  },
+  cardPadding: {
+    padding: 14,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 14,
+    minHeight: 56,
   },
   rowLeft: {
     flexDirection: 'row',
@@ -370,57 +364,22 @@ const styles = StyleSheet.create({
     gap: 12,
     flex: 1,
   },
-  rowLabel: { fontSize: 15, fontWeight: '500' },
-  rowSub: { fontSize: 12, marginTop: 2 },
   divider: { height: 1, marginHorizontal: 14 },
   providerDot: {
     width: 16,
     height: 16,
     borderRadius: 8,
   },
-  fieldLabel: { fontSize: 12, fontWeight: '600', letterSpacing: 0.4, paddingHorizontal: 14, paddingTop: 14 },
-  keyInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    margin: 14,
-    marginTop: 8,
-    gap: 8,
-  },
-  keyInputText: { flex: 1, fontSize: 14, fontFamily: 'monospace' },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginHorizontal: 14,
-    marginTop: 8,
-    fontFamily: 'monospace',
+  textInput: {
+    backgroundColor: 'transparent',
   },
   aiButtons: {
     flexDirection: 'row',
     padding: 14,
-    paddingTop: 16,
+    paddingTop: 8,
     gap: 8,
   },
-  secureNote: {
-    fontSize: 12,
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    lineHeight: 16,
-  },
-  helpNote: {
-    fontSize: 11,
-    paddingHorizontal: 14,
-    paddingBottom: 10,
-    lineHeight: 17,
-  },
   exportDesc: {
-    fontSize: 13,
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 4,
@@ -437,16 +396,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1.5,
     gap: 7,
   },
-  exportBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   exportNote: {
-    fontSize: 11,
     paddingHorizontal: 14,
     paddingBottom: 14,
     lineHeight: 16,

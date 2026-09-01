@@ -1,9 +1,11 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 import { DataProvider } from '../src/context/DataContext';
+import { SyncProvider } from '../src/context/SyncContext';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 function AppContent() {
   const { isDark, colors } = useTheme();
@@ -42,10 +44,14 @@ function AppContent() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <DataProvider>
-        <AppContent />
-      </DataProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <DataProvider>
+          <SyncProvider>
+            <AppContent />
+          </SyncProvider>
+        </DataProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

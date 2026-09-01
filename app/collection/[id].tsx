@@ -4,11 +4,12 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
@@ -20,6 +21,7 @@ import type { SavedItem } from '../../src/types';
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -65,11 +67,11 @@ export default function CollectionDetailScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
-          <Text style={{ color: '#3b82f6', fontSize: 16 }}>Back</Text>
+          <Ionicons name="chevron-back" size={20} color={paper.colors.primary} />
+          <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleDelete}>
-          <Ionicons name="trash-outline" size={20} color={colors.danger} />
+          <Ionicons name="trash-outline" size={20} color={paper.colors.error} />
         </TouchableOpacity>
       </View>
 
@@ -98,12 +100,12 @@ export default function CollectionDetailScreen() {
         contentContainerStyle={[styles.list, items.length === 0 && styles.emptyList]}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="bookmark-outline" size={40} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            <Ionicons name="bookmark-outline" size={40} color={paper.colors.onSurfaceVariant} />
+            <Text style={[styles.emptyText, { color: paper.colors.onSurface }]}>
               No items in this collection
             </Text>
-            <TouchableOpacity onPress={() => router.push('/save')} style={styles.addBtn}>
-              <Text style={styles.addBtnText}>Save something here</Text>
+            <TouchableOpacity onPress={() => router.push('/save')} style={[styles.addBtn, { backgroundColor: paper.colors.primary }]}>
+              <Text style={[styles.addBtnText, { color: paper.colors.onPrimary }]}>Save something here</Text>
             </TouchableOpacity>
           </View>
         }
@@ -150,11 +152,10 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 15, fontWeight: '500', marginTop: 8 },
   addBtn: {
-    backgroundColor: '#3b82f6',
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
     marginTop: 8,
   },
-  addBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  addBtnText: { fontWeight: '600', fontSize: 14 },
 });

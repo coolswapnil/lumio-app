@@ -32,7 +32,7 @@ jobs:
         run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Generate icon assets
         run: |

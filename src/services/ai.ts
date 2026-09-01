@@ -1,4 +1,5 @@
 import type { AISettings } from '../types';
+import { logError } from '../utils/errors';
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';
@@ -168,11 +169,15 @@ async function callGemini(
       parts: [{ text: m.content }],
     }));
 
+  // API key sent via header (not URL query param) to prevent exposure in logs/history
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify({ contents }),
     }
   );
@@ -340,8 +345,9 @@ export async function summarizeItem(
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]) as AISummarizeResult;
     }
-  } catch {
-    // Fallback if JSON parsing fails
+  } catch (parseErr) {
+    logError(parseErr, { action: 'parseAISummarizeResult', provider: settings.provider });
+    // Fallback: return raw text as summary
   }
   return { summary: raw, suggestedTags: [] };
 }

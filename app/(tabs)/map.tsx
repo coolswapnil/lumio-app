@@ -1,14 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Linking,
-  Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
@@ -40,6 +39,7 @@ function openInGoogleMaps(item: SavedItem) {
 
 export default function LocationsScreen() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const { items } = useData();
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -63,7 +63,7 @@ export default function LocationsScreen() {
       <TouchableOpacity
         onPress={() => router.push(`/item/${item.id}`)}
         activeOpacity={0.75}
-        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={[styles.card, { backgroundColor: paper.colors.surface, borderColor: paper.colors.outlineVariant }]}
       >
         {/* Left accent */}
         <View style={[styles.accentBar, { backgroundColor: config.color }]} />
@@ -93,8 +93,8 @@ export default function LocationsScreen() {
           {/* GPS badge */}
           {item.latitude && item.longitude && (
             <View style={styles.gpsBadgeRow}>
-              <Ionicons name="navigate" size={11} color="#10b981" />
-              <Text style={[styles.gpsBadgeText, { color: '#10b981' }]}>
+              <Ionicons name="navigate" size={11} color={paper.colors.primary} />
+              <Text style={[styles.gpsBadgeText, { color: paper.colors.primary }]}>
                 {`${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}`}
               </Text>
             </View>
@@ -109,32 +109,26 @@ export default function LocationsScreen() {
         {/* Open in Maps button */}
         <TouchableOpacity
           onPress={() => openInGoogleMaps(item)}
-          style={[styles.mapsBtn, { backgroundColor: '#34a85320' }]}
+          style={[styles.mapsBtn, { backgroundColor: paper.colors.primaryContainer }]}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="navigate" size={16} color="#34a853" />
-          <Text style={[styles.mapsBtnText, { color: '#34a853' }]}>Maps</Text>
+          <Ionicons name="navigate" size={16} color={paper.colors.onPrimaryContainer} />
+          <Text style={[styles.mapsBtnText, { color: paper.colors.onPrimaryContainer }]}>Maps</Text>
         </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View>
-          <Text style={[styles.title, { color: colors.text }]}>Locations</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          <Text variant="headlineSmall" style={{ color: paper.colors.onSurface }}>Locations</Text>
+          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
             {locationItems.length} saved {locationItems.length === 1 ? 'place' : 'places'}
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => router.push('/save')}
-          style={[styles.addBtn, { backgroundColor: '#3b82f6' }]}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       {/* Search */}
@@ -154,18 +148,18 @@ export default function LocationsScreen() {
         contentContainerStyle={[styles.list, locationItems.length === 0 && styles.emptyList]}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="location-outline" size={52} color={colors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            <Ionicons name="location-outline" size={52} color={paper.colors.onSurfaceVariant} />
+            <Text variant="titleMedium" style={{ color: paper.colors.onSurface, marginTop: 12, textAlign: 'center' }}>
               {search ? 'No places match your search' : 'No locations saved yet'}
             </Text>
-            <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
+            <Text variant="bodyMedium" style={{ color: paper.colors.onSurfaceVariant, textAlign: 'center', lineHeight: 20 }}>
               {search
                 ? 'Try a different search term'
-                : 'When you save a YouTube video, Instagram reel, or any content with a place — add the location name and it appears here.'}
+                : 'When you save content with a place — add the location name and it appears here.'}
             </Text>
             {!search && (
-              <TouchableOpacity onPress={() => router.push('/save')} style={styles.emptyBtn}>
-                <Text style={styles.emptyBtnText}>Save a place</Text>
+              <TouchableOpacity onPress={() => router.push('/save')} style={[styles.emptyBtn, { backgroundColor: paper.colors.primary }]}>
+                <Text style={{ color: paper.colors.onPrimary, fontWeight: '600', fontSize: 15 }}>Save a place</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -184,15 +178,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-  },
-  title: { fontSize: 24, fontWeight: '800' },
-  subtitle: { fontSize: 12, marginTop: 1 },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   searchContainer: {
     paddingHorizontal: 16,
@@ -268,11 +253,9 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '600', marginTop: 12, textAlign: 'center' },
   emptyDesc: { fontSize: 13, textAlign: 'center', lineHeight: 19 },
   emptyBtn: {
-    backgroundColor: '#3b82f6',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
     marginTop: 12,
   },
-  emptyBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
 });

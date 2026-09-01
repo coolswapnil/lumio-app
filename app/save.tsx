@@ -9,14 +9,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import uuid from 'react-native-uuid';
-const uuidv4 = () => uuid.v4() as string;
 import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
+import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
+import { generateId } from '../src/utils/uuid';
+import { sanitizeText, parseTags, sanitizeUrl, extractSafeUrl, LIMITS } from '../src/utils/validation';
+import { logError, getUserMessage } from '../src/utils/errors';
 import { useTheme } from '../src/context/ThemeContext';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
@@ -28,6 +30,8 @@ import { Button } from '../src/components/Button';
 
 export default function SaveScreen() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
 
@@ -44,17 +48,29 @@ export default function SaveScreen() {
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Auto-detect from clipboard on mount
+  // Ask user before reading clipboard — privacy best practice
   useEffect(() => {
-    Clipboard.getStringAsync().then((text) => {
-      if (text && (text.startsWith('http://') || text.startsWith('https://'))) {
-        setUrl(text);
-        // Auto-detect YouTube
-        if (text.includes('youtube.com') || text.includes('youtu.be')) {
-          setContentType('video');
-        }
-      }
-    });
+    Alert.alert(
+      'Paste from clipboard?',
+      'Lumio can pre-fill the URL field with your clipboard contents.',
+      [
+        { text: 'No thanks', style: 'cancel' },
+        {
+          text: 'Paste URL',
+          onPress: () => {
+            Clipboard.getStringAsync().then((text) => {
+              const safeUrl = extractSafeUrl(text ?? '');
+              if (safeUrl) {
+                setUrl(safeUrl);
+                if (safeUrl.includes('youtube.com') || safeUrl.includes('youtu.be')) {
+                  setContentType('video');
+                }
+              }
+            });
+          },
+        },
+      ]
+    );
   }, []);
 
   const handleGetLocation = async () => {
@@ -117,36 +133,45 @@ export default function SaveScreen() {
   };
 
   const handleSave = async () => {
-    if (!title.trim()) {
+    const cleanTitle = sanitizeText(title, LIMITS.TITLE);
+    if (!cleanTitle) {
       Alert.alert('Title required', 'Please enter a title for this item.');
       return;
     }
+    const cleanUrl = url.trim() ? sanitizeUrl(url) : undefined;
+    if (url.trim() && !cleanUrl) {
+      Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
+      return;
+    }
     setSaving(true);
-    const now = new Date().toISOString();
-    const item: SavedItem = {
-      id: uuidv4() as string,
-      title: title.trim(),
-      description: description.trim() || undefined,
-      url: url.trim() || undefined,
-      contentType,
-      collectionId,
-      tags: tags
-        .split(',')
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean),
-      notes: notes.trim() || undefined,
-      address: address.trim() || undefined,
-      latitude: coords?.lat,
-      longitude: coords?.lng,
-      isCompleted: false,
-      isFavorite: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await saveItem(item);
-    await refreshAll();
-    setSaving(false);
-    router.back();
+    try {
+      const now = new Date().toISOString();
+      const item: SavedItem = {
+        id: generateId(),
+        title: cleanTitle,
+        description: sanitizeText(description, LIMITS.DESCRIPTION) || undefined,
+        url: cleanUrl,
+        contentType,
+        collectionId,
+        tags: parseTags(tags),
+        notes: sanitizeText(notes, LIMITS.NOTES) || undefined,
+        address: sanitizeText(address, LIMITS.ADDRESS) || undefined,
+        latitude: coords?.lat,
+        longitude: coords?.lng,
+        isCompleted: false,
+        isFavorite: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveItem(item);
+      await refreshAll();
+      router.back();
+    } catch (err) {
+      logError(err, { screen: 'save', action: 'saveItem' });
+      Alert.alert('Save failed', getUserMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -155,10 +180,10 @@ export default function SaveScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        {/* Header — padded for status bar when presented as modal */}
+        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top > 0 ? insets.top : 14 }]}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ color: '#3b82f6', fontSize: 16 }}>Cancel</Text>
+            <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Save Item</Text>
           <Button title="Save" onPress={handleSave} loading={saving} size="sm" />
@@ -179,8 +204,8 @@ export default function SaveScreen() {
                     style={[
                       styles.typeChip,
                       {
-                        backgroundColor: isActive ? config.color : colors.surfaceSecondary,
-                        borderColor: isActive ? config.color : colors.border,
+                        backgroundColor: isActive ? config.color : paper.colors.surfaceVariant,
+                        borderColor: isActive ? config.color : paper.colors.outlineVariant,
                       },
                     ]}
                   >
@@ -221,14 +246,14 @@ export default function SaveScreen() {
           <TouchableOpacity
             onPress={handleAISummarize}
             disabled={aiLoading}
-            style={[styles.aiBtn, { borderColor: '#8b5cf6', backgroundColor: '#8b5cf610' }]}
+            style={[styles.aiBtn, { borderColor: paper.colors.tertiary, backgroundColor: paper.colors.tertiaryContainer + '40' }]}
           >
             {aiLoading ? (
-              <ActivityIndicator size="small" color="#8b5cf6" />
+              <PaperActivityIndicator size="small" color={paper.colors.tertiary} />
             ) : (
-              <Ionicons name="sparkles" size={16} color="#8b5cf6" />
+              <Ionicons name="sparkles" size={16} color={paper.colors.tertiary} />
             )}
-            <Text style={{ color: '#8b5cf6', fontWeight: '600', fontSize: 14 }}>
+            <Text style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600', fontSize: 14 }}>
               {aiLoading ? 'Analyzing…' : 'AI Auto-fill (summarize & tag)'}
             </Text>
           </TouchableOpacity>
@@ -279,12 +304,12 @@ export default function SaveScreen() {
                 style={[
                   styles.typeChip,
                   {
-                    backgroundColor: !collectionId ? '#3b82f6' : colors.surfaceSecondary,
-                    borderColor: !collectionId ? '#3b82f6' : colors.border,
+                    backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceVariant,
+                    borderColor: !collectionId ? paper.colors.primary : paper.colors.outlineVariant,
                   },
                 ]}
               >
-                <Text style={[styles.typeChipText, { color: !collectionId ? '#fff' : colors.textSecondary }]}>
+                <Text style={[styles.typeChipText, { color: !collectionId ? paper.colors.onPrimaryContainer : paper.colors.onSurfaceVariant }]}>
                   None
                 </Text>
               </TouchableOpacity>
@@ -295,13 +320,13 @@ export default function SaveScreen() {
                   style={[
                     styles.typeChip,
                     {
-                      backgroundColor: collectionId === col.id ? col.color : colors.surfaceSecondary,
-                      borderColor: collectionId === col.id ? col.color : colors.border,
+                      backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceVariant,
+                      borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant,
                     },
                   ]}
                 >
-                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : colors.textSecondary} />
-                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? '#fff' : colors.textSecondary }]}>
+                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant} />
+                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant }]}>
                     {col.name}
                   </Text>
                 </TouchableOpacity>
@@ -322,14 +347,14 @@ export default function SaveScreen() {
           <TouchableOpacity
             onPress={handleGetLocation}
             disabled={locationLoading}
-            style={[styles.gpsBtn, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+            style={[styles.gpsBtn, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}
           >
             {locationLoading ? (
-              <ActivityIndicator size="small" color={colors.textSecondary} />
+              <PaperActivityIndicator size="small" color={paper.colors.onSurfaceVariant} />
             ) : (
-              <Ionicons name="navigate" size={15} color={coords ? '#10b981' : colors.textSecondary} />
+              <Ionicons name="navigate" size={15} color={coords ? paper.colors.primary : paper.colors.onSurfaceVariant} />
             )}
-            <Text style={[styles.gpsBtnText, { color: coords ? '#10b981' : colors.textSecondary }]}>
+            <Text style={[styles.gpsBtnText, { color: coords ? paper.colors.primary : paper.colors.onSurfaceVariant }]}>
               {coords
                 ? `GPS: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
                 : 'Capture current GPS coordinates (optional)'}
@@ -359,7 +384,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
   },
   headerTitle: { fontSize: 17, fontWeight: '700' },

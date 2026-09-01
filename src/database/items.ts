@@ -44,8 +44,11 @@ export async function getAllItems(
 
   if (searchQuery && searchQuery.trim()) {
     const q = `%${searchQuery.trim()}%`;
-    whereClause += whereClause ? ' AND' : 'WHERE';
-    whereClause += ' (title LIKE ? OR description LIKE ? OR notes LIKE ? OR tags LIKE ?)';
+    whereClause += whereClause ? ' AND' : ' WHERE';
+    // COLLATE NOCASE makes LIKE case-insensitive across all columns
+    whereClause +=
+      ' (title LIKE ? COLLATE NOCASE OR description LIKE ? COLLATE NOCASE' +
+      ' OR notes LIKE ? COLLATE NOCASE OR tags LIKE ? COLLATE NOCASE)';
     params.push(q, q, q, q);
   }
 

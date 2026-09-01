@@ -3,23 +3,23 @@ import {
   View,
   Text,
   FlatList,
-  TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
-  RefreshControl,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { FAB, IconButton, Chip, useTheme as usePaperTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
 import { SearchBar } from '../../src/components/SearchBar';
 import { FilterChips } from '../../src/components/FilterChips';
-import { ItemCard } from '../../src/components/ItemCard';
+import { ItemCard, ITEM_CARD_HEIGHT } from '../../src/components/ItemCard';
 import type { SavedItem } from '../../src/types';
 
+import type { ThemeColors } from '../../src/constants/colors';
+
 /** Simple shimmer skeleton card shown while data loads */
-function SkeletonCard({ colors }: { colors: any }) {
+function SkeletonCard({ colors }: { colors: ThemeColors }) {
   const opacity = React.useRef(new Animated.Value(0.4)).current;
   React.useEffect(() => {
     Animated.loop(
@@ -42,16 +42,17 @@ function SkeletonCard({ colors }: { colors: any }) {
 }
 
 const skeletonStyles = StyleSheet.create({
-  card: { flexDirection: 'row', borderRadius: 12, borderWidth: 1, marginBottom: 10, height: 88 },
-  accentBar: { width: 4, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
+  card: { flexDirection: 'row', borderRadius: 16, borderWidth: 1, marginBottom: 10, height: 88 },
+  accentBar: { width: 4, borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
   body: { flex: 1, padding: 12, gap: 10 },
-  badge: { height: 18, width: 72, borderRadius: 6 },
-  titleLine: { height: 14, width: '75%', borderRadius: 6 },
-  descLine: { height: 12, width: '50%', borderRadius: 6 },
+  badge: { height: 18, width: 72, borderRadius: 8 },
+  titleLine: { height: 14, width: '75%', borderRadius: 8 },
+  descLine: { height: 12, width: '50%', borderRadius: 8 },
 });
 
 export default function LibraryScreen() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const {
     items,
     counts,
@@ -77,12 +78,10 @@ export default function LibraryScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View>
-            <Text style={[styles.logoText, { color: colors.text }]}>
-              <Text style={{ color: '#3b82f6' }}>Lumio</Text>
-            </Text>
+            <Text style={[styles.logoText, { color: paper.colors.primary }]}>Lumio</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Loading…</Text>
           </View>
         </View>
@@ -94,43 +93,32 @@ export default function LibraryScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* MD3 App Bar */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View>
-          <Text style={[styles.logoText, { color: colors.text }]}>
-            <Text style={{ color: '#3b82f6' }}>Lumio</Text>
-          </Text>
+          <Text style={[styles.logoText, { color: paper.colors.primary }]}>Lumio</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {counts.all ?? 0} saved {(counts.all ?? 0) === 1 ? 'item' : 'items'}
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity
+          <IconButton
+            icon="swap-vertical"
+            iconColor={colors.icon}
+            size={22}
             onPress={() => setSort(sort === 'newest' ? 'alphabetical' : 'newest')}
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary }]}
-          >
-            <Ionicons name="swap-vertical" size={18} color={colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push('/save')}
-            style={[styles.saveBtn]}
-          >
-            <Ionicons name="add" size={20} color="#ffffff" />
-            <Text style={styles.saveBtnText}>Save</Text>
-          </TouchableOpacity>
+            style={{ backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}
+          />
         </View>
       </View>
 
-      {/* Search */}
+      {/* MD3 Search */}
       <View style={styles.searchContainer}>
-        <SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <SearchBar value={searchQuery} onChangeText={setSearchQuery} />
       </View>
 
-      {/* Filter chips */}
+      {/* MD3 Filter chips */}
       <FilterChips active={filter} onSelect={setFilter} counts={counts} />
 
       {/* List */}
@@ -138,36 +126,34 @@ export default function LibraryScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        // Optimization: pre-calculated item height avoids layout measurement on every render
+        getItemLayout={(_data, index) => ({
+          length: ITEM_CARD_HEIGHT,
+          offset: ITEM_CARD_HEIGHT * index,
+          index,
+        })}
+        removeClippedSubviews
+        windowSize={5}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
         contentContainerStyle={[
           styles.listContent,
           items.length === 0 && styles.emptyList,
         ]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.textSecondary}
-          />
-        }
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="bookmark-outline" size={48} color={colors.textMuted} />
+            <Text style={[styles.emptyIcon, { color: colors.textMuted }]}>🔖</Text>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               {searchQuery ? 'No results found' : 'Nothing saved yet'}
             </Text>
             <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>
               {searchQuery
                 ? 'Try a different search term'
-                : 'Tap Save, or share any link from your browser into Lumio'}
+                : 'Tap + below, or share any link from your browser into Lumio'}
             </Text>
-            {!searchQuery && (
-              <TouchableOpacity
-                onPress={() => router.push('/save')}
-                style={styles.emptyBtn}
-              >
-                <Text style={styles.emptyBtnText}>+ Save your first item</Text>
-              </TouchableOpacity>
-            )}
             {!searchQuery && (
               <Text style={[styles.emptyHint, { color: colors.textMuted }]}>
                 💡 Tip: tap Share in any app and choose Lumio
@@ -175,6 +161,16 @@ export default function LibraryScreen() {
             )}
           </View>
         }
+      />
+
+      {/* MD3 Extended FAB */}
+      <FAB
+        icon="plus"
+        label="Save"
+        onPress={() => router.push('/save')}
+        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
+        color={paper.colors.onPrimaryContainer}
+        variant="extended"
       />
     </SafeAreaView>
   );
@@ -191,7 +187,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   logoText: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
@@ -202,28 +198,7 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
     gap: 4,
-  },
-  saveBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 14,
   },
   searchContainer: {
     paddingHorizontal: 16,
@@ -244,6 +219,9 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     gap: 8,
   },
+  emptyIcon: {
+    fontSize: 48,
+  },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -252,23 +230,18 @@ const styles = StyleSheet.create({
   emptyDesc: {
     fontSize: 14,
     textAlign: 'center',
-  },
-  emptyBtn: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginTop: 12,
-  },
-  emptyBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 15,
+    paddingHorizontal: 32,
   },
   emptyHint: {
     fontSize: 13,
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 24,
+    borderRadius: 16,
   },
 });

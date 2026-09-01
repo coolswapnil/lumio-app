@@ -1,8 +1,8 @@
-import type { ContentType } from '../types';
+import type { ContentType, IconName } from '../types';
 
 export const CONTENT_TYPE_CONFIG: Record<
   ContentType,
-  { label: string; icon: string; color: string }
+  { label: string; icon: IconName; color: string }
 > = {
   link: { label: 'Web Link', icon: 'link', color: '#3b82f6' },
   video: { label: 'Video', icon: 'play-circle', color: '#ef4444' },
@@ -19,7 +19,7 @@ export const CONTENT_TYPE_CONFIG: Record<
 
 export const ALL_CONTENT_TYPES = Object.keys(CONTENT_TYPE_CONFIG) as ContentType[];
 
-export const COLLECTION_ICONS = [
+export const COLLECTION_ICONS: IconName[] = [
   'folder', 'bookmark', 'heart', 'star', 'trophy',
   'airplane', 'restaurant', 'cafe', 'film', 'book',
   'barbell', 'construct', 'bulb', 'location', 'map',

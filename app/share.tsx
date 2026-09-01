@@ -13,6 +13,8 @@
  *    user confirm + save in one tap.
  */
 import React, { useState, useEffect } from 'react';
+import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -23,11 +25,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import uuid from 'react-native-uuid';
 import { useTheme } from '../src/context/ThemeContext';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
@@ -36,14 +36,9 @@ import { summarizeItem } from '../src/services/ai';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../src/constants';
 import type { ContentType, SavedItem } from '../src/types';
 import { Button } from '../src/components/Button';
-
-const uuidv4 = () => uuid.v4() as string;
-
-/** Safely coerce a string | string[] | undefined param to a plain string */
-function asString(v: string | string[] | undefined): string {
-  if (!v) return '';
-  return Array.isArray(v) ? v[0] ?? '' : v;
-}
+import { generateId } from '../src/utils/uuid';
+import { asString, sanitizeText, parseTags, sanitizeUrl, LIMITS } from '../src/utils/validation';
+import { logError, getUserMessage } from '../src/utils/errors';
 
 /** Guess content type from URL/text heuristics */
 function guessContentType(url: string, text: string): ContentType {
@@ -61,13 +56,16 @@ function guessContentType(url: string, text: string): ContentType {
 
 export default function ShareScreen() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const sharedUrl = asString(params.url as string | string[] | undefined);
-  const sharedText = asString(params.text as string | string[] | undefined);
-  const sharedTitle = asString(params.title as string | string[] | undefined);
+  // Sanitize all deep-link params before use
+  const sharedUrl = sanitizeUrl(asString(params.url as string | string[] | undefined));
+  const sharedText = sanitizeText(asString(params.text as string | string[] | undefined), LIMITS.DESCRIPTION);
+  const sharedTitle = sanitizeText(asString(params.title as string | string[] | undefined), LIMITS.TITLE);
 
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
@@ -117,38 +115,50 @@ export default function ShareScreen() {
   };
 
   const handleSave = async () => {
-    if (!title.trim() && !url.trim()) {
-      Alert.alert('Missing info', 'Please add a title or keep the URL.');
+    const cleanTitle = sanitizeText(title, LIMITS.TITLE) || sanitizeUrl(url);
+    if (!cleanTitle) {
+      Alert.alert('Missing info', 'Please add a title or a valid URL.');
+      return;
+    }
+    const cleanUrl = url.trim() ? sanitizeUrl(url) : undefined;
+    if (url.trim() && !cleanUrl) {
+      Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
       return;
     }
     setSaving(true);
-    const now = new Date().toISOString();
-    const item: SavedItem = {
-      id: uuidv4(),
-      title: title.trim() || url,
-      description: description.trim() || undefined,
-      url: url.trim() || undefined,
-      contentType,
-      collectionId,
-      tags: tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean),
-      isCompleted: false,
-      isFavorite: false,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await saveItem(item);
-    await refreshAll();
-    setSaving(false);
-    router.replace('/(tabs)');
+    try {
+      const now = new Date().toISOString();
+      const item: SavedItem = {
+        id: generateId(),
+        title: cleanTitle,
+        description: sanitizeText(description, LIMITS.DESCRIPTION) || undefined,
+        url: cleanUrl,
+        contentType,
+        collectionId,
+        tags: parseTags(tags),
+        isCompleted: false,
+        isFavorite: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveItem(item);
+      await refreshAll();
+      router.replace('/(tabs)');
+    } catch (err) {
+      logError(err, { screen: 'share', action: 'saveItem' });
+      Alert.alert('Save failed', getUserMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        {/* Header — padded for status bar when presented as modal */}
+        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top > 0 ? insets.top : 14 }]}>
           <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ color: '#3b82f6', fontSize: 16 }}>Cancel</Text>
+            <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
           </TouchableOpacity>
           <View style={styles.headerCenter}>
             <Ionicons name="share-social" size={18} color={colors.textSecondary} />
@@ -181,11 +191,11 @@ export default function ShareScreen() {
                     onPress={() => setContentType(type)}
                     style={[
                       styles.typeChip,
-                      { backgroundColor: isActive ? config.color : colors.surfaceSecondary, borderColor: isActive ? config.color : colors.border },
+                      { backgroundColor: isActive ? config.color : paper.colors.surfaceVariant, borderColor: isActive ? config.color : paper.colors.outlineVariant },
                     ]}
                   >
-                    <Ionicons name={config.icon as any} size={14} color={isActive ? '#fff' : colors.textSecondary} />
-                    <Text style={[styles.typeChipText, { color: isActive ? '#fff' : colors.textSecondary }]}>{config.label}</Text>
+                    <Ionicons name={config.icon as any} size={14} color={isActive ? '#fff' : paper.colors.onSurfaceVariant} />
+                    <Text style={[styles.typeChipText, { color: isActive ? '#fff' : paper.colors.onSurfaceVariant }]}>{config.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -219,10 +229,10 @@ export default function ShareScreen() {
           <TouchableOpacity
             onPress={handleAISummarize}
             disabled={aiLoading}
-            style={[styles.aiBtn, { borderColor: '#8b5cf6', backgroundColor: '#8b5cf610' }]}
+            style={[styles.aiBtn, { borderColor: paper.colors.tertiary, backgroundColor: paper.colors.tertiaryContainer + '40' }]}
           >
-            {aiLoading ? <ActivityIndicator size="small" color="#8b5cf6" /> : <Ionicons name="sparkles" size={16} color="#8b5cf6" />}
-            <Text style={{ color: '#8b5cf6', fontWeight: '600', fontSize: 14 }}>
+            {aiLoading ? <PaperActivityIndicator size="small" color={paper.colors.tertiary} /> : <Ionicons name="sparkles" size={16} color={paper.colors.tertiary} />}
+            <Text style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600', fontSize: 14 }}>
               {aiLoading ? 'Analyzing…' : 'AI Auto-fill'}
             </Text>
           </TouchableOpacity>
@@ -259,10 +269,10 @@ export default function ShareScreen() {
                 onPress={() => setCollectionId(undefined)}
                 style={[
                   styles.typeChip,
-                  { backgroundColor: !collectionId ? '#3b82f6' : colors.surfaceSecondary, borderColor: !collectionId ? '#3b82f6' : colors.border },
+                  { backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceVariant, borderColor: !collectionId ? paper.colors.primary : paper.colors.outlineVariant },
                 ]}
               >
-                <Text style={[styles.typeChipText, { color: !collectionId ? '#fff' : colors.textSecondary }]}>None</Text>
+                <Text style={[styles.typeChipText, { color: !collectionId ? paper.colors.onPrimaryContainer : paper.colors.onSurfaceVariant }]}>None</Text>
               </TouchableOpacity>
               {collections.map((col) => (
                 <TouchableOpacity
@@ -270,11 +280,11 @@ export default function ShareScreen() {
                   onPress={() => setCollectionId(col.id)}
                   style={[
                     styles.typeChip,
-                    { backgroundColor: collectionId === col.id ? col.color : colors.surfaceSecondary, borderColor: collectionId === col.id ? col.color : colors.border },
+                    { backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceVariant, borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
                   ]}
                 >
-                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : colors.textSecondary} />
-                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? '#fff' : colors.textSecondary }]}>{col.name}</Text>
+                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant} />
+                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant }]}>{col.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -292,7 +302,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
   },
   headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 6 },

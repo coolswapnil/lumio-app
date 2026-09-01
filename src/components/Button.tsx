@@ -1,13 +1,6 @@
 import React from 'react';
-import {
-  TouchableOpacity,
-  Text,
-  ActivityIndicator,
-  StyleSheet,
-  ViewStyle,
-  TextStyle,
-} from 'react-native';
-import { useTheme } from '../context/ThemeContext';
+import { ViewStyle, TextStyle } from 'react-native';
+import { Button as PaperButton } from 'react-native-paper';
 
 interface ButtonProps {
   title: string;
@@ -21,6 +14,14 @@ interface ButtonProps {
   fullWidth?: boolean;
 }
 
+/**
+ * MD3-compliant button using react-native-paper.
+ * Maps the legacy variant names to Paper's MD3 button modes:
+ *   primary  → contained  (filled, uses theme primary)
+ *   secondary → outlined  (uses theme outline)
+ *   danger   → contained  (uses error color)
+ *   ghost    → text       (no background)
+ */
 export function Button({
   title,
   onPress,
@@ -32,70 +33,43 @@ export function Button({
   textStyle,
   fullWidth = false,
 }: ButtonProps) {
-  const { colors } = useTheme();
-
-  const bgColors: Record<string, string> = {
-    primary: '#3b82f6',
-    secondary: colors.surfaceSecondary,
-    danger: colors.danger,
-    ghost: 'transparent',
+  const modeMap: Record<string, 'contained' | 'outlined' | 'text' | 'contained-tonal' | 'elevated'> = {
+    primary: 'contained',
+    secondary: 'outlined',
+    danger: 'contained',
+    ghost: 'text',
   };
 
-  const textColors: Record<string, string> = {
-    primary: '#ffffff',
-    secondary: colors.text,
-    danger: '#ffffff',
-    ghost: '#3b82f6',
-  };
-
-  const paddingMap: Record<string, number> = { sm: 8, md: 12, lg: 16 };
   const fontSizeMap: Record<string, number> = { sm: 13, md: 15, lg: 17 };
+  const paddingMap: Record<string, number> = { sm: 0, md: 2, lg: 6 };
 
   return (
-    <TouchableOpacity
+    <PaperButton
+      mode={modeMap[variant]}
       onPress={onPress}
+      loading={loading}
       disabled={disabled || loading}
-      activeOpacity={0.7}
-      style={[
-        styles.base,
+      buttonColor={variant === 'danger' ? undefined : undefined}
+      // Pass buttonColor only for danger to use error role
+      {...(variant === 'danger' && { buttonColor: undefined, theme: { colors: { primary: '#BA1A1A' } } })}
+      contentStyle={{
+        paddingVertical: paddingMap[size],
+        width: fullWidth ? '100%' : undefined,
+      }}
+      labelStyle={[
         {
-          backgroundColor: bgColors[variant],
-          paddingVertical: paddingMap[size],
-          paddingHorizontal: paddingMap[size] * 1.8,
-          opacity: disabled ? 0.5 : 1,
-          width: fullWidth ? '100%' : undefined,
-          borderWidth: variant === 'secondary' ? 1 : 0,
-          borderColor: colors.border,
+          fontSize: fontSizeMap[size],
+          fontWeight: '600',
+          letterSpacing: 0.1,
         },
+        textStyle,
+      ]}
+      style={[
+        fullWidth ? { width: '100%' } : undefined,
         style,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator color={textColors[variant]} size="small" />
-      ) : (
-        <Text
-          style={[
-            styles.text,
-            { color: textColors[variant], fontSize: fontSizeMap[size] },
-            textStyle,
-          ]}
-        >
-          {title}
-        </Text>
-      )}
-    </TouchableOpacity>
+      {title}
+    </PaperButton>
   );
 }
-
-const styles = StyleSheet.create({
-  base: {
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  text: {
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-});

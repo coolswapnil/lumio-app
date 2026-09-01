@@ -1,29 +1,36 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
-  FlatList,
-  TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Modal,
-  TextInput,
   ScrollView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  FAB,
+  Text,
+  TextInput,
+  TouchableRipple,
+  useTheme as usePaperTheme,
+  ActivityIndicator,
+} from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import uuid from 'react-native-uuid';
-const uuidv4 = () => uuid.v4() as string;
+import { generateId } from '../../src/utils/uuid';
+import { sanitizeText, LIMITS } from '../../src/utils/validation';
+import { logError, getUserMessage } from '../../src/utils/errors';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
 import { CollectionCard } from '../../src/components/CollectionCard';
-import { saveCollection, deleteCollection } from '../../src/database/collections';
+import { saveCollection } from '../../src/database/collections';
 import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
 import type { Collection } from '../../src/types';
 import { Button } from '../../src/components/Button';
+import { FlatList } from 'react-native';
 
 export default function CollectionsScreen() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const { collections, refreshCollections } = useData();
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
@@ -40,34 +47,38 @@ export default function CollectionsScreen() {
   };
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
+    const cleanName = sanitizeText(name, LIMITS.COLLECTION_NAME);
+    if (!cleanName) return;
     setSaving(true);
+    try {
     const now = new Date().toISOString();
     await saveCollection({
-      id: uuidv4() as string,
-      name: name.trim(),
-      description: description.trim() || undefined,
+      id: generateId(),
+      name: cleanName,
+      description: sanitizeText(description, LIMITS.COLLECTION_DESCRIPTION) || undefined,
       icon: selectedIcon,
       color: selectedColor,
       createdAt: now,
       updatedAt: now,
     });
     await refreshCollections();
-    setSaving(false);
     setModalVisible(false);
     resetForm();
+    } catch (err) {
+      logError(err, { screen: 'collections', action: 'createCollection' });
+      Alert.alert('Error', getUserMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      {/* MD3 Top App Bar */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Collections</Text>
-        <TouchableOpacity
-          onPress={() => setModalVisible(true)}
-          style={[styles.addBtn, { backgroundColor: '#3b82f6' }]}
-        >
-          <Ionicons name="add" size={20} color="#fff" />
-        </TouchableOpacity>
+        <Text variant="headlineSmall" style={{ color: paper.colors.onSurface }}>
+          Collections
+        </Text>
       </View>
 
       <FlatList
@@ -77,18 +88,29 @@ export default function CollectionsScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="folder-open-outline" size={48} color={colors.textMuted} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            <Ionicons name="folder-open-outline" size={52} color={paper.colors.onSurfaceVariant} />
+            <Text variant="titleMedium" style={[styles.emptyText, { color: paper.colors.onSurface }]}>
               No collections yet
             </Text>
-            <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>
+            <Text variant="bodyMedium" style={{ color: paper.colors.onSurfaceVariant, textAlign: 'center' }}>
               Create one to organize your saved items
             </Text>
           </View>
         }
       />
 
-      {/* Create Collection Modal */}
+      {/* MD3 FAB */}
+      <FAB
+        icon="plus"
+        label="New Collection"
+        onPress={() => setModalVisible(true)}
+        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
+        color={paper.colors.onPrimaryContainer}
+        variant="extended"
+        accessibilityLabel="Create new collection"
+      />
+
+      {/* Create Collection Bottom Sheet (Modal) */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -96,97 +118,120 @@ export default function CollectionsScreen() {
         onRequestClose={() => { setModalVisible(false); resetForm(); }}
       >
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
+          {/* Modal Header */}
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => { setModalVisible(false); resetForm(); }}>
-              <Text style={{ color: '#3b82f6', fontSize: 16 }}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>New Collection</Text>
+            <TouchableRipple
+              onPress={() => { setModalVisible(false); resetForm(); }}
+              borderless
+              style={{ borderRadius: 8, padding: 4 }}
+            >
+              <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
+            </TouchableRipple>
+            <Text variant="titleMedium" style={{ color: paper.colors.onSurface }}>
+              New Collection
+            </Text>
             <Button title="Create" onPress={handleCreate} loading={saving} size="sm" />
           </View>
 
           <ScrollView style={styles.modalBody} contentContainerStyle={{ gap: 20 }}>
             {/* Preview */}
             <View style={styles.previewRow}>
-              <View style={[styles.previewIcon, { backgroundColor: selectedColor + '20' }]}>
+              <View style={[styles.previewIcon, { backgroundColor: selectedColor + '22' }]}>
                 <Ionicons name={selectedIcon as any} size={28} color={selectedColor} />
               </View>
-              <Text style={[styles.previewName, { color: colors.text }]}>
+              <Text variant="titleMedium" style={{ color: paper.colors.onSurface }}>
                 {name || 'Collection Name'}
               </Text>
             </View>
 
-            {/* Name */}
-            <View>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Name</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Travel Plans"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-                autoFocus
-              />
-            </View>
+            {/* Name — MD3 TextInput */}
+            <TextInput
+              label="Name"
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Travel Plans"
+              mode="outlined"
+              autoFocus
+              style={styles.textInput}
+            />
 
-            {/* Description */}
-            <View>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Description (optional)</Text>
-              <TextInput
-                value={description}
-                onChangeText={setDescription}
-                placeholder="What will you save here?"
-                placeholderTextColor={colors.placeholder}
-                style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border }]}
-              />
-            </View>
+            {/* Description — MD3 TextInput */}
+            <TextInput
+              label="Description (optional)"
+              value={description}
+              onChangeText={setDescription}
+              placeholder="What will you save here?"
+              mode="outlined"
+              style={styles.textInput}
+            />
 
-            {/* Icon */}
+            {/* Icon picker */}
             <View>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Icon</Text>
+              <Text variant="labelLarge" style={[styles.fieldLabel, { color: paper.colors.onSurfaceVariant }]}>
+                Icon
+              </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.iconGrid}>
                   {COLLECTION_ICONS.map((icon) => (
-                    <TouchableOpacity
+                    <TouchableRipple
                       key={icon}
                       onPress={() => setSelectedIcon(icon)}
+                      borderless
                       style={[
                         styles.iconOption,
                         {
-                          backgroundColor: selectedIcon === icon ? selectedColor + '25' : colors.surfaceSecondary,
-                          borderColor: selectedIcon === icon ? selectedColor : 'transparent',
+                          backgroundColor: selectedIcon === icon
+                            ? selectedColor + '25'
+                            : paper.colors.surfaceVariant,
                           borderWidth: 2,
+                          borderColor: selectedIcon === icon ? selectedColor : 'transparent',
                         },
                       ]}
                     >
-                      <Ionicons name={icon as any} size={20} color={selectedIcon === icon ? selectedColor : colors.icon} />
-                    </TouchableOpacity>
+                      <Ionicons
+                        name={icon as any}
+                        size={20}
+                        color={selectedIcon === icon ? selectedColor : paper.colors.onSurfaceVariant}
+                      />
+                    </TouchableRipple>
                   ))}
                 </View>
               </ScrollView>
             </View>
 
-            {/* Color */}
+            {/* Color picker */}
             <View>
-              <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Color</Text>
+              <Text variant="labelLarge" style={[styles.fieldLabel, { color: paper.colors.onSurfaceVariant }]}>
+                Color
+              </Text>
               <View style={styles.colorGrid}>
                 {COLLECTION_COLORS.map((color) => (
-                  <TouchableOpacity
+                  <TouchableRipple
                     key={color}
                     onPress={() => setSelectedColor(color)}
+                    borderless
                     style={[
                       styles.colorSwatch,
                       { backgroundColor: color },
                       selectedColor === color && styles.colorSwatchActive,
                     ]}
                   >
-                    {selectedColor === color && (
+                    {selectedColor === color ? (
                       <Ionicons name="checkmark" size={14} color="#fff" />
+                    ) : (
+                      <View />
                     )}
-                  </TouchableOpacity>
+                  </TouchableRipple>
                 ))}
               </View>
             </View>
           </ScrollView>
+
+          {saving && (
+            <View style={styles.savingOverlay}>
+              <ActivityIndicator size="large" color={paper.colors.primary} />
+            </View>
+          )}
         </View>
       </Modal>
     </SafeAreaView>
@@ -196,25 +241,19 @@ export default function CollectionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  title: { fontSize: 24, fontWeight: '800' },
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   listContent: { padding: 16, paddingBottom: 100 },
   empty: { alignItems: 'center', paddingTop: 80, gap: 8 },
-  emptyText: { fontSize: 17, fontWeight: '600', marginTop: 12 },
-  emptySubtext: { fontSize: 14, textAlign: 'center' },
+  emptyText: { marginTop: 12 },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 24,
+    borderRadius: 16,
+  },
   modal: { flex: 1 },
   modalHeader: {
     flexDirection: 'row',
@@ -224,7 +263,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 17, fontWeight: '700' },
   modalBody: { padding: 16 },
   previewRow: {
     alignItems: 'center',
@@ -238,14 +276,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  previewName: { fontSize: 18, fontWeight: '700' },
-  fieldLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+  textInput: {
+    backgroundColor: 'transparent',
+  },
+  fieldLabel: {
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   iconGrid: { flexDirection: 'row', gap: 8 },
   iconOption: {
@@ -265,9 +302,12 @@ const styles = StyleSheet.create({
   },
   colorSwatchActive: {
     transform: [{ scale: 1.15 }],
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
     elevation: 3,
+  },
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

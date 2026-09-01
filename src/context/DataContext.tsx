@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { initDatabase } from '../database/db';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
@@ -66,34 +66,67 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await Promise.all([refreshItems(), refreshCollections()]);
   }, [refreshItems, refreshCollections]);
 
+  // Initial load — runs once after DB is ready
   useEffect(() => {
+    let cancelled = false;
     initDatabase().then(() => {
-      refreshAll().finally(() => setIsLoading(false));
+      if (!cancelled) {
+        refreshAll().finally(() => {
+          if (!cancelled) setIsLoading(false);
+        });
+      }
     });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-fetch items when filter/sort/search change — NOT on initial mount
+  // (initial mount is handled by the effect above via refreshAll)
+  const isFirstRender = React.useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     refreshItems();
   }, [filter, sort, searchQuery]);
 
+  // Memoize context value to prevent re-rendering all consumers on every state change
+  const contextValue = useMemo(
+    () => ({
+      items,
+      collections,
+      counts,
+      isLoading,
+      filter,
+      sort,
+      searchQuery,
+      setFilter,
+      setSort,
+      setSearchQuery,
+      refreshItems,
+      refreshCollections,
+      refreshAll,
+    }),
+    [
+      items,
+      collections,
+      counts,
+      isLoading,
+      filter,
+      sort,
+      searchQuery,
+      setFilter,
+      setSort,
+      setSearchQuery,
+      refreshItems,
+      refreshCollections,
+      refreshAll,
+    ]
+  );
+
   return (
-    <DataContext.Provider
-      value={{
-        items,
-        collections,
-        counts,
-        isLoading,
-        filter,
-        sort,
-        searchQuery,
-        setFilter,
-        setSort,
-        setSearchQuery,
-        refreshItems,
-        refreshCollections,
-        refreshAll,
-      }}
-    >
+    <DataContext.Provider value={contextValue}>
       {children}
     </DataContext.Provider>
   );

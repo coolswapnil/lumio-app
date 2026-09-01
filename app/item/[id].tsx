@@ -4,14 +4,14 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   Linking,
   Alert,
-  ActivityIndicator,
   TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -25,6 +25,7 @@ import type { SavedItem } from '../../src/types';
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const [item, setItem] = useState<SavedItem | null>(null);
@@ -47,7 +48,8 @@ export default function ItemDetailScreen() {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.loading}>
-          <ActivityIndicator color="#3b82f6" />
+          {/* MD3 Expressive circular progress indicator */}
+          <PaperActivityIndicator size="large" color={paper.colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -121,19 +123,19 @@ export default function ItemDetailScreen() {
       {/* Navigation Bar */}
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={20} color="#3b82f6" />
-          <Text style={{ color: '#3b82f6', fontSize: 16 }}>Back</Text>
+          <Ionicons name="chevron-back" size={20} color={paper.colors.primary} />
+          <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Back</Text>
         </TouchableOpacity>
         <View style={styles.navActions}>
           <TouchableOpacity onPress={handleFavorite}>
             <Ionicons
               name={item.isFavorite ? 'heart' : 'heart-outline'}
               size={22}
-              color={item.isFavorite ? '#ef4444' : colors.icon}
+              color={item.isFavorite ? paper.colors.error : paper.colors.onSurfaceVariant}
             />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleDelete}>
-            <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            <Ionicons name="trash-outline" size={22} color={paper.colors.error} />
           </TouchableOpacity>
         </View>
       </View>
@@ -167,13 +169,13 @@ export default function ItemDetailScreen() {
         {item.url && (
           <TouchableOpacity
             onPress={handleOpenUrl}
-            style={[styles.urlRow, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+            style={[styles.urlRow, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}
           >
-            <Ionicons name="link" size={15} color="#3b82f6" />
-            <Text style={[styles.urlText, { color: '#3b82f6' }]} numberOfLines={1}>
+            <Ionicons name="link" size={15} color={paper.colors.primary} />
+            <Text style={[styles.urlText, { color: paper.colors.primary }]} numberOfLines={1}>
               {item.url}
             </Text>
-            <Ionicons name="open-outline" size={15} color="#3b82f6" />
+            <Ionicons name="open-outline" size={15} color={paper.colors.primary} />
           </TouchableOpacity>
         )}
 
@@ -186,17 +188,17 @@ export default function ItemDetailScreen() {
         )}
 
         {/* AI Summary */}
-        <View style={[styles.section, { backgroundColor: '#8b5cf608', borderColor: '#8b5cf630' }]}>
+        <View style={[styles.section, { backgroundColor: paper.colors.tertiaryContainer + '30', borderColor: paper.colors.tertiary + '40' }]}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons name="sparkles" size={14} color="#8b5cf6" />
-              <Text style={[styles.sectionTitle, { color: '#8b5cf6' }]}>AI SUMMARY</Text>
+              <Ionicons name="sparkles" size={14} color={paper.colors.tertiary} />
+              <Text style={[styles.sectionTitle, { color: paper.colors.tertiary }]}>AI SUMMARY</Text>
             </View>
             <TouchableOpacity onPress={handleAISummarize} disabled={aiLoading}>
               {aiLoading ? (
-                <ActivityIndicator size="small" color="#8b5cf6" />
+                <PaperActivityIndicator size="small" color={paper.colors.tertiary} />
               ) : (
-                <Text style={{ color: '#8b5cf6', fontSize: 13, fontWeight: '600' }}>
+                <Text style={{ color: paper.colors.tertiary, fontSize: 13, fontWeight: '600' }}>
                   {item.aiSummary ? 'Refresh' : 'Generate'}
                 </Text>
               )}
@@ -216,7 +218,7 @@ export default function ItemDetailScreen() {
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>MY NOTES</Text>
             <TouchableOpacity onPress={() => (isEditing ? handleSaveNotes() : setIsEditing(true))}>
-              <Text style={{ color: '#3b82f6', fontSize: 13, fontWeight: '600' }}>
+              <Text style={{ color: paper.colors.primary, fontSize: 13, fontWeight: '600' }}>
                 {isEditing ? 'Save' : 'Edit'}
               </Text>
             </TouchableOpacity>
@@ -257,7 +259,7 @@ export default function ItemDetailScreen() {
         {(item.address || (item.latitude && item.longitude)) && (
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
-              <Ionicons name="location" size={14} color="#06b6d4" />
+              <Ionicons name="location" size={14} color={paper.colors.primary} />
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>LOCATION</Text>
             </View>
             {item.address && (
@@ -285,10 +287,10 @@ export default function ItemDetailScreen() {
                   .then((ok) => Linking.openURL(ok ? mapsUrl : fallback))
                   .catch(() => Linking.openURL(fallback));
               }}
-              style={styles.openMapsBtn}
+              style={[styles.openMapsBtn, { backgroundColor: paper.colors.primaryContainer }]}
             >
-              <Ionicons name="navigate" size={16} color="#34a853" />
-              <Text style={styles.openMapsBtnText}>Open in Google Maps</Text>
+              <Ionicons name="navigate" size={16} color={paper.colors.onPrimaryContainer} />
+              <Text style={[styles.openMapsBtnText, { color: paper.colors.onPrimaryContainer }]}>Open in Google Maps</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -420,13 +422,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    backgroundColor: '#34a85318',
     paddingVertical: 10,
     borderRadius: 8,
     marginTop: 6,
   },
   openMapsBtnText: {
-    color: '#34a853',
     fontWeight: '700',
     fontSize: 14,
   },

@@ -1,53 +1,65 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Card, Text, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { Collection } from '../types';
-import { useTheme } from '../context/ThemeContext';
 
 interface CollectionCardProps {
   collection: Collection;
 }
 
+/**
+ * MD3 Expressive collection card using react-native-paper Card.
+ * Uses elevated mode for a subtle tonal surface lift.
+ */
 export function CollectionCard({ collection }: CollectionCardProps) {
-  const { colors } = useTheme();
+  const paper = usePaperTheme();
   const router = useRouter();
 
   return (
-    <TouchableOpacity
+    <Card
+      mode="elevated"
       onPress={() => router.push(`/collection/${collection.id}`)}
-      activeOpacity={0.75}
-      style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={styles.card}
+      contentStyle={styles.content}
+      accessible
+      accessibilityLabel={`${collection.name}, ${collection.itemCount ?? 0} items`}
+      accessibilityRole="button"
     >
-      <View style={[styles.iconContainer, { backgroundColor: collection.color + '20' }]}>
+      <View style={[styles.iconContainer, { backgroundColor: collection.color + '22' }]}>
         <Ionicons name={collection.icon as any} size={24} color={collection.color} />
       </View>
       <View style={styles.info}>
-        <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+        <Text
+          variant="titleMedium"
+          numberOfLines={1}
+          style={{ color: paper.colors.onSurface }}
+        >
           {collection.name}
         </Text>
-        <Text style={[styles.count, { color: colors.textSecondary }]}>
-          {collection.itemCount} {collection.itemCount === 1 ? 'item' : 'items'}
+        <Text
+          variant="bodySmall"
+          style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}
+        >
+          {(collection.itemCount ?? 0) === 1 ? '1 item' : `${collection.itemCount ?? 0} items`}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-    </TouchableOpacity>
+      <Ionicons name="chevron-forward" size={16} color={paper.colors.onSurfaceVariant} />
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    marginBottom: 8,
+    borderRadius: 16,
+  },
+  content: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
     gap: 12,
   },
   iconContainer: {
@@ -60,12 +72,15 @@ const styles = StyleSheet.create({
   info: {
     flex: 1,
   },
-  name: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  count: {
-    fontSize: 13,
-    marginTop: 2,
-  },
 });
+
+// Memoize — re-render only when collection data changes
+export { CollectionCard as _CollectionCardBase };
+const CollectionCardMemo = React.memo(CollectionCard, (prev, next) =>
+  prev.collection.id === next.collection.id &&
+  prev.collection.name === next.collection.name &&
+  prev.collection.itemCount === next.collection.itemCount &&
+  prev.collection.icon === next.collection.icon &&
+  prev.collection.color === next.collection.color
+);
+export { CollectionCardMemo as CollectionCard };

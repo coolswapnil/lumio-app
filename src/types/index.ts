@@ -1,4 +1,12 @@
 // Type definitions for Lumio app
+import type { ComponentProps } from 'react';
+import type { Ionicons } from '@expo/vector-icons';
+
+/**
+ * Strongly-typed Ionicons icon name.
+ * Eliminates `as any` casts throughout the codebase.
+ */
+export type IconName = ComponentProps<typeof Ionicons>['name'];
 
 export type ContentType =
   | 'link'
@@ -24,18 +32,27 @@ export type AIProvider =
   | 'local';
 
 export interface SavedItem {
+  /** UUID v4 */
   id: string;
+  /** Max 200 characters */
   title: string;
+  /** Max 2000 characters */
   description?: string;
+  /** Validated http(s) URL, max 2048 characters */
   url?: string;
   imageUrl?: string;
   contentType: ContentType;
   collectionId?: string;
+  /** Array of lowercase tags, each max 50 chars, max 20 tags */
   tags: string[];
+  /** Max 5000 characters */
   notes?: string;
-  address?: string;       // Place name / address text from saved content
-  latitude?: number;      // GPS latitude (optional, from expo-location)
-  longitude?: number;     // GPS longitude (optional, from expo-location)
+  /** Place name / address text from saved content, max 300 chars */
+  address?: string;
+  /** GPS latitude (optional, from expo-location) */
+  latitude?: number;
+  /** GPS longitude (optional, from expo-location) */
+  longitude?: number;
   isCompleted: boolean;
   isFavorite: boolean;
   aiSummary?: string;
@@ -47,8 +64,10 @@ export interface Collection {
   id: string;
   name: string;
   description?: string;
-  icon: string;
+  /** Ionicons icon name */
+  icon: IconName;
   color: string;
+  /** Cached item count from the database JOIN */
   itemCount: number;
   createdAt: string;
   updatedAt: string;

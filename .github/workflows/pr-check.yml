@@ -7,6 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
+  # ── 1. Type safety ────────────────────────────────────────────────────────
   typecheck:
     name: TypeScript Check
     runs-on: ubuntu-latest
@@ -15,5 +16,66 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
-      - run: npm install
+          cache: 'npm'
+      - run: npm ci
       - run: npx tsc --noEmit
+
+  # ── 2. Linting ───────────────────────────────────────────────────────────
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx eslint . --ext .ts,.tsx --max-warnings 0
+
+  # ── 3. Dependency vulnerability audit ────────────────────────────────────
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      # Fail on moderate+ vulnerabilities (CVSS >= 4.0)
+      - name: npm audit
+        run: npm audit --audit-level=moderate
+      # Scan for secrets / hardcoded credentials in source files
+      - name: Scan for hardcoded secrets
+        run: |
+          echo "Scanning for potential hardcoded secrets..."
+          # Fail if any non-test .ts/.tsx file contains what looks like a hardcoded API key pattern
+          ! grep -rn \
+            --include="*.ts" --include="*.tsx" \
+            --exclude-dir=node_modules \
+            --exclude-dir=__tests__ \
+            -E "(api[_-]?key|secret|password|bearer|token)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}" \
+            . || (echo "::error::Potential hardcoded secret detected. Use environment variables." && exit 1)
+
+  # ── 4. Unit tests ─────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run tests with coverage
+        run: npx jest --coverage --coverageReporters=text --coverageReporters=lcov
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14

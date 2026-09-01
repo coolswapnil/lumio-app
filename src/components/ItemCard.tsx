@@ -1,20 +1,18 @@
 import React, { useRef } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
   Animated,
   PanResponder,
   Alert,
 } from 'react-native';
+import { Card, Text, Chip, IconButton, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import type { SavedItem } from '../types';
 import { CONTENT_TYPE_CONFIG } from '../constants';
-import { useTheme } from '../context/ThemeContext';
 import { toggleFavorite, toggleCompleted, deleteItem } from '../database/items';
 import { useData } from '../context/DataContext';
 
@@ -25,10 +23,17 @@ interface ItemCardProps {
   compact?: boolean;
 }
 
-const SWIPE_THRESHOLD = -80; // px left-swipe to reveal delete
+/**
+ * Estimated card height in pixels used for FlatList getItemLayout.
+ * Accounts for card padding + title (2 lines max) + footer. Compact variant is shorter.
+ */
+export const ITEM_CARD_HEIGHT = 120;
+export const ITEM_CARD_HEIGHT_COMPACT = 72;
+
+const SWIPE_THRESHOLD = -80;
 
 export function ItemCard({ item, compact = false }: ItemCardProps) {
-  const { colors } = useTheme();
+  const paper = usePaperTheme();
   const { refreshAll } = useData();
   const router = useRouter();
   const config = CONTENT_TYPE_CONFIG[item.contentType];
@@ -47,11 +52,9 @@ export function ItemCard({ item, compact = false }: ItemCardProps) {
       onPanResponderRelease: (_, g) => {
         const finalDx = g.dx + (revealed.current ? SWIPE_THRESHOLD : 0);
         if (finalDx < SWIPE_THRESHOLD / 2) {
-          // Reveal delete button
           Animated.spring(translateX, { toValue: SWIPE_THRESHOLD, useNativeDriver: true }).start();
           revealed.current = true;
         } else {
-          // Snap back
           Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
           revealed.current = false;
         }
@@ -96,107 +99,134 @@ export function ItemCard({ item, compact = false }: ItemCardProps) {
     router.push(`/item/${item.id}`);
   };
 
+  const hostName = (() => {
+    try { return new URL(item.url ?? '').hostname.replace('www.', ''); } catch { return item.url ?? ''; }
+  })();
+
   return (
     <View style={styles.wrapper}>
-      {/* Delete background revealed on left swipe */}
-      <View style={[styles.deleteBackground, { backgroundColor: '#ef4444' }]}>
-        <TouchableOpacity onPress={handleDelete} style={styles.deleteAction}>
-          <Ionicons name="trash" size={22} color="#ffffff" />
-          <Text style={styles.deleteLabel}>Delete</Text>
-        </TouchableOpacity>
+      {/* Delete background revealed on left-swipe */}
+      <View style={[styles.deleteBackground, { backgroundColor: paper.colors.error }]}>
+        <IconButton
+          icon="trash-can"
+          iconColor={paper.colors.onError}
+          size={22}
+          onPress={handleDelete}
+          accessibilityLabel="Delete item"
+        />
+        <Text style={[styles.deleteLabel, { color: paper.colors.onError }]}>Delete</Text>
       </View>
 
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
-        <TouchableOpacity
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        <Card
+          mode="elevated"
           onPress={handlePress}
-          activeOpacity={0.75}
-          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.card, { borderLeftColor: config.color, borderLeftWidth: 4 }]}
+          contentStyle={styles.cardContent}
+          accessible
+          accessibilityLabel={item.title}
+          accessibilityRole="button"
         >
-          {/* Color accent bar */}
-          <View style={[styles.accentBar, { backgroundColor: config.color }]} />
-
-          <View style={styles.body}>
-            {/* Type badge + actions */}
-            <View style={styles.topRow}>
-              <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
-                <Ionicons name={config.icon as any} size={12} color={config.color} />
-                <Text style={[styles.typeLabel, { color: config.color }]}>{config.label}</Text>
-              </View>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={handleComplete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons
-                    name={item.isCompleted ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                    size={20}
-                    color={item.isCompleted ? colors.success : colors.textMuted}
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleFavorite} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons
-                    name={item.isFavorite ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={item.isFavorite ? '#ef4444' : colors.textMuted}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Title */}
-            <Text
-              style={[styles.title, { color: colors.text }]}
-              numberOfLines={compact ? 1 : 2}
+          {/* Type badge + actions row */}
+          <View style={styles.topRow}>
+            <Chip
+              compact
+              icon={() => (
+                <Ionicons name={config.icon} size={12} color={config.color} />
+              )}
+              style={[styles.typeBadge, { backgroundColor: config.color + '22' }]}
+              textStyle={{ color: config.color, fontSize: 11, fontWeight: '600' }}
             >
-              {item.title}
-            </Text>
+              {config.label}
+            </Chip>
 
-            {/* Description */}
-            {!compact && item.description ? (
-              <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={2}>
-                {item.description}
-              </Text>
-            ) : null}
-
-            {/* AI Summary chip */}
-            {item.aiSummary && !compact ? (
-              <View style={[styles.summaryChip, { backgroundColor: colors.surfaceSecondary }]}>
-                <Ionicons name="sparkles" size={12} color="#8b5cf6" />
-                <Text style={[styles.summaryText, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {item.aiSummary}
-                </Text>
-              </View>
-            ) : null}
-
-            {/* Tags */}
-            {item.tags.length > 0 && !compact ? (
-              <View style={styles.tagsRow}>
-                {item.tags.slice(0, 3).map((tag) => (
-                  <View key={tag} style={[styles.tag, { backgroundColor: colors.surfaceSecondary }]}>
-                    <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{tag}</Text>
-                  </View>
-                ))}
-                {item.tags.length > 3 && (
-                  <Text style={[styles.tagText, { color: colors.textMuted }]}>
-                    +{item.tags.length - 3}
-                  </Text>
-                )}
-              </View>
-            ) : null}
-
-            {/* Footer */}
-            <View style={styles.footer}>
-              {item.url ? (
-                <Text style={[styles.url, { color: colors.textMuted }]} numberOfLines={1}>
-                  {(() => { try { return new URL(item.url).hostname.replace('www.', ''); } catch { return item.url; } })()}
-                </Text>
-              ) : null}
-              <Text style={[styles.date, { color: colors.textMuted }]}>
-                {dayjs(item.createdAt).fromNow()}
-              </Text>
+            <View style={styles.actions}>
+              <IconButton
+                icon={item.isCompleted ? 'check-circle' : 'check-circle-outline'}
+                iconColor={item.isCompleted ? paper.colors.primary : paper.colors.onSurfaceVariant}
+                size={20}
+                onPress={handleComplete}
+                accessibilityLabel={item.isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
+                style={styles.actionIcon}
+              />
+              <IconButton
+                icon={item.isFavorite ? 'heart' : 'heart-outline'}
+                iconColor={item.isFavorite ? paper.colors.error : paper.colors.onSurfaceVariant}
+                size={20}
+                onPress={handleFavorite}
+                accessibilityLabel={item.isFavorite ? 'Remove favorite' : 'Add to favorites'}
+                style={styles.actionIcon}
+              />
             </View>
           </View>
-        </TouchableOpacity>
+
+          {/* Title */}
+          <Text
+            variant={compact ? 'titleSmall' : 'titleMedium'}
+            numberOfLines={compact ? 1 : 2}
+            style={{ color: paper.colors.onSurface, marginTop: 4 }}
+          >
+            {item.title}
+          </Text>
+
+          {/* Description */}
+          {!compact && item.description ? (
+            <Text
+              variant="bodySmall"
+              numberOfLines={2}
+              style={{ color: paper.colors.onSurfaceVariant, marginTop: 4, lineHeight: 18 }}
+            >
+              {item.description}
+            </Text>
+          ) : null}
+
+          {/* AI Summary chip */}
+          {item.aiSummary && !compact ? (
+            <View style={[styles.summaryChip, { backgroundColor: paper.colors.secondaryContainer }]}>
+              <Ionicons name="sparkles" size={12} color={paper.colors.onSecondaryContainer} />
+              <Text
+                variant="bodySmall"
+                style={{ flex: 1, color: paper.colors.onSecondaryContainer, lineHeight: 16 }}
+                numberOfLines={2}
+              >
+                {item.aiSummary}
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Tags */}
+          {item.tags.length > 0 && !compact ? (
+            <View style={styles.tagsRow}>
+              {item.tags.slice(0, 3).map((tag) => (
+                <Chip
+                  key={tag}
+                  compact
+                  style={{ backgroundColor: paper.colors.surfaceVariant }}
+                  textStyle={{ color: paper.colors.onSurfaceVariant, fontSize: 11 }}
+                >
+                  #{tag}
+                </Chip>
+              ))}
+              {item.tags.length > 3 && (
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
+                  +{item.tags.length - 3}
+                </Text>
+              )}
+            </View>
+          ) : null}
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            {item.url ? (
+              <Text variant="bodySmall" style={{ color: paper.colors.outline, flex: 1 }} numberOfLines={1}>
+                {hostName}
+              </Text>
+            ) : null}
+            <Text variant="bodySmall" style={{ color: paper.colors.outline }}>
+              {dayjs(item.createdAt).fromNow()}
+            </Text>
+          </View>
+        </Card>
       </Animated.View>
     </View>
   );
@@ -207,7 +237,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 10,
     overflow: 'hidden',
-    borderRadius: 12,
+    borderRadius: 16,
   },
   deleteBackground: {
     position: 'absolute',
@@ -215,36 +245,22 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: 80,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  deleteAction: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: 12,
   },
   deleteLabel: {
-    color: '#ffffff',
     fontSize: 11,
     fontWeight: '600',
+    marginTop: -4,
   },
   card: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 16,
     overflow: 'hidden',
   },
-  accentBar: {
-    width: 4,
-    borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
-  body: {
-    flex: 1,
+  cardContent: {
     padding: 12,
-    gap: 6,
+    paddingLeft: 0,
   },
   topRow: {
     flexDirection: 'row',
@@ -252,67 +268,51 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   typeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
     borderRadius: 6,
-    gap: 4,
-  },
-  typeLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    height: 26,
   },
   actions: {
     flexDirection: 'row',
-    gap: 10,
+    marginRight: -8,
   },
-  title: {
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
-  description: {
-    fontSize: 13,
-    lineHeight: 18,
+  actionIcon: {
+    margin: 0,
+    width: 32,
+    height: 32,
   },
   summaryChip: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     padding: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     gap: 6,
-  },
-  summaryText: {
-    fontSize: 12,
-    flex: 1,
-    lineHeight: 16,
+    marginTop: 6,
   },
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
     alignItems: 'center',
-  },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  tagText: {
-    fontSize: 11,
+    marginTop: 6,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 2,
-  },
-  url: {
-    fontSize: 11,
-    flex: 1,
-  },
-  date: {
-    fontSize: 11,
+    marginTop: 8,
   },
 });
+
+// ── Memoize to prevent re-renders when other list items change ────────────────
+// Custom equality: only re-render if the item data or compact flag changed.
+const ItemCardMemo = React.memo(ItemCard, (prev, next) =>
+  prev.compact === next.compact &&
+  prev.item.id === next.item.id &&
+  prev.item.title === next.item.title &&
+  prev.item.isCompleted === next.item.isCompleted &&
+  prev.item.isFavorite === next.item.isFavorite &&
+  prev.item.aiSummary === next.item.aiSummary &&
+  prev.item.tags.length === next.item.tags.length
+);
+
+export { ItemCardMemo as ItemCard };

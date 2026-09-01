@@ -2,10 +2,12 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme as usePaperTheme } from 'react-native-paper';
 import { useTheme } from '../../src/context/ThemeContext';
 
 export default function TabsLayout() {
   const { colors } = useTheme();
+  const paper = usePaperTheme();
   const insets = useSafeAreaInsets();
 
   return (
@@ -16,12 +18,13 @@ export default function TabsLayout() {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          // Dynamically size tab bar to account for device home bar
+          // Respect device bottom inset (home bar / gesture area)
           height: 52 + insets.bottom,
           paddingBottom: insets.bottom,
           paddingTop: 8,
         },
-        tabBarActiveTintColor: '#3b82f6',
+        // Use MD3 theme primary — inherits Material You dynamic color
+        tabBarActiveTintColor: paper.colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
           fontSize: 11,
