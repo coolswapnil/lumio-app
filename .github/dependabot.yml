@@ -1,0 +1,86 @@
+version: 2
+
+updates:
+  # ── npm dependencies ───────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "npm"
+
+    # Group all Expo-ecosystem packages into a single PR so they upgrade together.
+    # This prevents partial upgrades where expo bumps but react/react-native do not.
+    groups:
+      expo-ecosystem:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "react-native"
+          - "react"
+          - "react-dom"
+          - "react-test-renderer"
+        update-types:
+          - "minor"
+          - "patch"
+
+      testing:
+        patterns:
+          - "jest"
+          - "jest-expo"
+          - "@testing-library/*"
+          - "@types/jest"
+        update-types:
+          - "minor"
+          - "patch"
+
+      typescript-tooling:
+        patterns:
+          - "typescript"
+          - "@types/*"
+          - "@typescript-eslint/*"
+          - "eslint"
+        update-types:
+          - "minor"
+          - "patch"
+
+    # Never allow Dependabot to open a standalone PR that bumps react,
+    # react-native, or react-test-renderer without bumping expo at the same
+    # time — they must move as a group to stay in sync.
+    ignore:
+      # Block major React upgrades (19+) until Expo explicitly supports them.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-test-renderer"
+        update-types: ["version-update:semver-major"]
+      # Block major react-native upgrades — they always require an Expo SDK bump.
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-major"]
+      # Block standalone minor/patch bumps of these three that could drift from expo.
+      # They are included in the expo-ecosystem group above for coordinated upgrades.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "react-native"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "react-test-renderer"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"

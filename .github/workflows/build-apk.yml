@@ -31,8 +31,29 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Install npm dependencies
+      - name: Install npm dependencies (strict — no --force or --legacy-peer-deps)
         run: npm install
+
+      - name: Validate dependency tree
+        run: |
+          npm ls --depth=0 2>&1 | tee /tmp/npm-ls.log
+          if grep -qE "UNMET|invalid" /tmp/npm-ls.log; then
+            echo "::error::Unmet peer dependencies detected. Fix package.json before releasing."
+            cat /tmp/npm-ls.log
+            exit 1
+          fi
+          echo "Dependency tree OK"
+
+      - name: Validate react-test-renderer matches React major
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const react = (p.dependencies.react || '').replace(/[^0-9.].*/, '').split('.')[0];
+            const rtr = (p.devDependencies['react-test-renderer'] || '').replace(/[^0-9.].*/, '').split('.')[0];
+            if (!rtr) { console.error('::error::react-test-renderer missing from devDependencies'); process.exit(1); }
+            if (react !== rtr) { console.error('::error::react major (' + react + ') != react-test-renderer major (' + rtr + ')'); process.exit(1); }
+            console.log('react-test-renderer major matches React:', react);
+          "
 
       - name: Generate icon assets
         run: |

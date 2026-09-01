@@ -3,21 +3,28 @@ module.exports = {
   preset: 'jest-expo',
   setupFilesAfterFramework: [],
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-paper|@react-native-paper|react-native-material-you-colors)',
+    'node_modules/(?!(' +
+      '(jest-)?react-native' +
+      '|@react-native(-community)?' +
+      '|expo(nent)?' +
+      '|@expo(nent)?/.*' +
+      '|@expo-google-fonts/.*' +
+      '|react-navigation' +
+      '|@react-navigation/.*' +
+      '|@unimodules/.*' +
+      '|unimodules' +
+      '|sentry-expo' +
+      '|native-base' +
+      '|react-native-svg' +
+      '|react-native-paper' +
+      '|react-native-material-you-colors' +
+      ')/)',
   ],
-  testMatch: [
-    '**/__tests__/**/*.test.ts',
-    '**/__tests__/**/*.test.tsx',
-    '**/*.test.ts',
-    '**/*.test.tsx',
-  ],
+  testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/'],
   collectCoverageFrom: [
-    'src/**/*.ts',
-    'src/**/*.tsx',
-    'app/**/*.tsx',
+    'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
-    '!**/__tests__/**',
-    '!**/node_modules/**',
+    '!src/types/**',
   ],
   coverageThreshold: {
     global: {
@@ -27,7 +34,5 @@ module.exports = {
       statements: 60,
     },
   },
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-  },
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 };

@@ -7,10 +7,110 @@ on:
     branches: [main, master]
 
 jobs:
-  # ── 1. Type safety ────────────────────────────────────────────────────────
+  # ── 1. Dependency health ──────────────────────────────────────────────────
+  dependency-health:
+    name: Dependency Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+
+      # Clean install — must succeed without --force or --legacy-peer-deps.
+      # If this fails, there is a peer dependency conflict in package.json.
+      - name: Install dependencies (strict)
+        run: npm install
+
+      # Validate the full dependency tree — exits non-zero if unmet peers exist
+      - name: Validate dependency tree (npm ls)
+        run: npm ls --depth=0 2>&1 | tee /tmp/npm-ls.log; grep -c "UNMET\|invalid\|extraneous" /tmp/npm-ls.log && echo "::error::Unmet peer dependencies found — fix package.json" && exit 1 || echo "Dependency tree OK"
+
+      # npm doctor checks npm/node version health, registry reachability, etc.
+      - name: npm doctor
+        run: npm doctor || true
+
+      # Enforce react-test-renderer major version == react major version
+      - name: Validate react-test-renderer version matches React
+        run: |
+          REACT_VER=$(node -e "const p=require('./package.json'); console.log(p.dependencies.react || p.devDependencies.react)")
+          RTR_VER=$(node -e "const p=require('./package.json'); console.log(p.devDependencies['react-test-renderer'] || 'MISSING')")
+          echo "react: $REACT_VER"
+          echo "react-test-renderer: $RTR_VER"
+          if [ "$RTR_VER" = "MISSING" ]; then
+            echo "::error::react-test-renderer is not in devDependencies. Add it with the same version as react."
+            exit 1
+          fi
+          REACT_MAJOR=$(echo "$REACT_VER" | sed 's/[^0-9].*//' | cut -d. -f1)
+          RTR_MAJOR=$(echo "$RTR_VER" | sed 's/[^0-9].*//' | cut -d. -f1)
+          if [ "$REACT_MAJOR" != "$RTR_MAJOR" ]; then
+            echo "::error::react major ($REACT_MAJOR) != react-test-renderer major ($RTR_MAJOR). They must match."
+            exit 1
+          fi
+          echo "react-test-renderer major version matches React: $REACT_MAJOR"
+
+      # Validate that an overrides block exists to pin react-test-renderer
+      - name: Validate overrides block pins react-test-renderer
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const override = p.overrides && p.overrides['react-test-renderer'];
+            const devDep = p.devDependencies && p.devDependencies['react-test-renderer'];
+            if (!override) {
+              console.error('::error::package.json is missing overrides[\"react-test-renderer\"]. Add it to prevent npm resolving react-test-renderer@19+.');
+              process.exit(1);
+            }
+            if (override !== devDep) {
+              console.error('::error::overrides[\"react-test-renderer\"] (' + override + ') does not match devDependencies[\"react-test-renderer\"] (' + devDep + ').');
+              process.exit(1);
+            }
+            console.log('overrides pin OK:', override);
+          "
+
+      # Validate Expo SDK version is consistent with react/react-native versions
+      - name: Validate Expo SDK compatibility
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const expo = p.dependencies.expo || '';
+            const react = p.dependencies.react || '';
+            const rn = p.dependencies['react-native'] || '';
+            // Expo 52 requires react@18.3.1 and react-native@0.76.x
+            const expoMajor = parseInt(expo.replace(/[^0-9].*/, '').split('.')[0] || '0');
+            if (expoMajor === 52) {
+              if (!react.includes('18.')) {
+                console.error('::error::Expo 52 requires react@18.x, found: ' + react);
+                process.exit(1);
+              }
+              if (!rn.includes('0.76.')) {
+                console.error('::error::Expo 52 requires react-native@0.76.x, found: ' + rn);
+                process.exit(1);
+              }
+            }
+            console.log('Expo SDK (' + expo + ') compatibility with react (' + react + ') and react-native (' + rn + '): OK');
+          "
+
+      # Security: fail on moderate+ vulnerabilities
+      - name: npm audit
+        run: npm audit --audit-level=moderate
+
+      # Scan for hardcoded secrets
+      - name: Scan for hardcoded secrets
+        run: |
+          echo "Scanning for potential hardcoded secrets..."
+          ! grep -rn \
+            --include="*.ts" --include="*.tsx" \
+            --exclude-dir=node_modules \
+            --exclude-dir=__tests__ \
+            -E "(api[_-]?key|secret|password|bearer|token)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}" \
+            . || (echo "::error::Potential hardcoded secret detected. Use environment variables." && exit 1)
+
+  # ── 2. Type safety ────────────────────────────────────────────────────────
   typecheck:
     name: TypeScript Check
     runs-on: ubuntu-latest
+    needs: dependency-health
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-node@v4.4.0
@@ -19,10 +119,11 @@ jobs:
       - run: npm install
       - run: npx tsc --noEmit
 
-  # ── 2. Linting ───────────────────────────────────────────────────────────
+  # ── 3. Linting ───────────────────────────────────────────────────────────
   lint:
     name: ESLint
     runs-on: ubuntu-latest
+    needs: dependency-health
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-node@v4.4.0
@@ -31,35 +132,11 @@ jobs:
       - run: npm install
       - run: npx eslint . --ext .ts,.tsx --max-warnings 0
 
-  # ── 3. Dependency vulnerability audit ────────────────────────────────────
-  audit:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version: '22'
-      - run: npm install
-      # Fail on moderate+ vulnerabilities (CVSS >= 4.0)
-      - name: npm audit
-        run: npm audit --audit-level=moderate
-      # Scan for secrets / hardcoded credentials in source files
-      - name: Scan for hardcoded secrets
-        run: |
-          echo "Scanning for potential hardcoded secrets..."
-          # Fail if any non-test .ts/.tsx file contains what looks like a hardcoded API key pattern
-          ! grep -rn \
-            --include="*.ts" --include="*.tsx" \
-            --exclude-dir=node_modules \
-            --exclude-dir=__tests__ \
-            -E "(api[_-]?key|secret|password|bearer|token)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}" \
-            . || (echo "::error::Potential hardcoded secret detected. Use environment variables." && exit 1)
-
   # ── 4. Unit tests ─────────────────────────────────────────────────────────
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    needs: dependency-health
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: actions/setup-node@v4.4.0
