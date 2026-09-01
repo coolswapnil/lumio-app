@@ -105,7 +105,6 @@ export default function CollectionsScreen() {
         onPress={() => setModalVisible(true)}
         style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
         color={paper.colors.onPrimaryContainer}
-        variant="extended"
         accessibilityLabel="Create new collection"
       />
 

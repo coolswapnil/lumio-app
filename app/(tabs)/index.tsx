@@ -170,7 +170,6 @@ export default function LibraryScreen() {
         onPress={() => router.push('/save')}
         style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
         color={paper.colors.onPrimaryContainer}
-        variant="extended"
       />
     </SafeAreaView>
   );
