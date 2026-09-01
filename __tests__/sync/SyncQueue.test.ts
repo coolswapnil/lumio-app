@@ -53,13 +53,15 @@ const mockDb = {
       }
     } else if (s.startsWith('UPDATE SYNC_QUEUE')) {
       // minimal: find by last param (id) and apply status/attempts/error/retry
+      // Normalize whitespace before matching — the real SQL uses multi-space alignment
+      const sn = s.replace(/\s+/g, ' ');
       const id = params[params.length - 1] as number;
       const entry = mockStore.find((r) => r.id === id);
       if (entry) {
-        if (s.includes('STATUS = ?')) entry.status = params[0];
-        if (s.includes('ATTEMPTS = ATTEMPTS + 1')) entry.attempts = (entry.attempts as number) + 1;
-        if (s.includes('LAST_ERROR')) entry.last_error = params[1];
-        if (s.includes('NEXT_RETRY_AT')) entry.next_retry_at = params[2];
+        if (sn.includes('STATUS = ?')) entry.status = params[0] as string;
+        if (sn.includes('ATTEMPTS = ATTEMPTS + 1')) entry.attempts = (entry.attempts as number) + 1;
+        if (sn.includes('LAST_ERROR = ?')) entry.last_error = params[1] as string;
+        if (sn.includes('NEXT_RETRY_AT = ?')) entry.next_retry_at = params[2] as string;
       }
     } else if (s.startsWith('DELETE FROM SYNC_QUEUE WHERE STATUS')) {
       const idx = mockStore.findIndex((r) => r.status === 'dead');
