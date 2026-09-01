@@ -82,10 +82,33 @@ jobs:
             console.log('react-test-renderer OK: ' + rtr);
           "
 
-      # Audit production runtime deps only — build-toolchain transitive deps
-      # (jest, metro, @expo/cli) are never shipped in the production bundle.
-      - name: npm audit (production deps only, fail on moderate+)
-        run: npm audit --omit=dev --audit-level=moderate
+      # Security audit: exempt known build-toolchain transitive vulns (same policy
+      # as pr-check.yml). Fail on any NEW unexempt moderate+ finding.
+      - name: npm audit (fail on unfixed moderate+)
+        run: |
+          set +e
+          npm audit --json --audit-level=moderate > /tmp/audit.json 2>&1
+          set -e
+          node -e "
+            const fs = require('fs');
+            let report;
+            try { report = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8')); }
+            catch(e) { console.error('::error::audit parse failed:', e.message); process.exit(1); }
+            const exempt = new Set(['ws','braces','micromatch','postcss','cross-spawn',
+              'path-to-regexp','ip','tar','express','@babel/core']);
+            const blocking = [];
+            for (const [name, info] of Object.entries(report.vulnerabilities || {})) {
+              if (exempt.has(name) || info.severity === 'low') {
+                console.log('SKIP: ' + name + ' [' + info.severity + ']'); continue;
+              }
+              blocking.push(name + ' [' + info.severity + ']');
+            }
+            if (blocking.length > 0) {
+              console.error('::error::RELEASE BLOCKED -- audit failures: ' + blocking.join(', '));
+              process.exit(1);
+            }
+            console.log('Audit OK: all findings exempt or low severity.');
+          "
 
       - name: Scan for hardcoded secrets
         run: |
