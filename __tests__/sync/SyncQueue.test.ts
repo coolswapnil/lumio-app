@@ -100,7 +100,10 @@ const mockDb = {
 };
 
 jest.mock('../../src/database/db', () => ({
-  getDatabase: jest.fn().mockResolvedValue(mockDb),
+  // getDatabase must be a function that returns mockDb lazily — jest.mock factories
+  // are hoisted before module-level const declarations so mockDb cannot be referenced
+  // directly in mockResolvedValue(); instead we use mockImplementation with a factory.
+  getDatabase: jest.fn().mockImplementation(() => Promise.resolve(mockDb)),
 }));
 
 // Also mock the metadata and tombstone helpers' internal db calls
