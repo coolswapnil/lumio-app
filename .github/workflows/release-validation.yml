@@ -84,30 +84,30 @@ jobs:
 
       # Security audit: exempt known build-toolchain transitive vulns (same policy
       # as pr-check.yml). Fail on any NEW unexempt moderate+ finding.
-      - name: npm audit (fail on unfixed moderate+)
+      - name: npm audit (exemption-based check)
         run: |
+          npm install --package-lock-only 2>/dev/null || true
           set +e
           npm audit --json > /tmp/audit.json 2>/tmp/audit-err.txt
           set -e
-          cat /tmp/audit-err.txt || true
+          echo "=== All audit findings ==="
+          jq -r '.vulnerabilities | to_entries[] | .key + " [" + .value.severity + "]"' \
+            /tmp/audit.json 2>/dev/null | sort || true
+          echo "==="
           BLOCKED=$(jq -r '
-            .vulnerabilities
-            | to_entries[]
-            | select(
-                .key as $n |
+            .vulnerabilities | to_entries[]
+            | select(.key as $n |
                 ["ws","braces","micromatch","postcss","cross-spawn","path-to-regexp",
                  "undici","body-parser","qs","ip","tar","express","@babel/core",
-                 "minimatch","glob"] | index($n) | not
-              )
+                 "minimatch","glob"] | index($n) | not)
             | select(.value.severity != "low" and .value.severity != "info")
             | .key + "[" + .value.severity + "]"
-          ' /tmp/audit.json 2>/dev/null || echo "")
+          ' /tmp/audit.json 2>/dev/null)
           if [ -n "$BLOCKED" ]; then
-            echo "::error::RELEASE BLOCKED -- unexempt audit findings: $BLOCKED"
+            echo "::error::RELEASE BLOCKED: $BLOCKED"
             exit 1
           fi
-          TOTAL=$(jq '.vulnerabilities | length' /tmp/audit.json 2>/dev/null || echo 0)
-          echo "Audit OK: $TOTAL finding(s), all exempt or low."
+          echo "Audit OK: all findings exempt."
 
       - name: Scan for hardcoded secrets
         run: |
