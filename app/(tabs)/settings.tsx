@@ -103,7 +103,7 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Appearance */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>APPEARANCE</Text>
-        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
           {(['light', 'dark', 'system'] as const).map((mode, i, arr) => (
             <React.Fragment key={mode}>
               <TouchableOpacity
@@ -131,7 +131,7 @@ export default function SettingsScreen() {
 
         {/* AI Provider */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>AI PROVIDER</Text>
-        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
           {AI_PROVIDERS.map((provider, i, arr) => (
             <React.Fragment key={provider.id}>
               <TouchableOpacity
@@ -157,7 +157,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* API Key */}
-        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
           <View style={styles.cardPadding}>
             {/* MD3 TextInput: API Key */}
             <TextInput
@@ -268,7 +268,7 @@ export default function SettingsScreen() {
 
         {/* Export / Backup */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>EXPORT & BACKUP</Text>
-        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
           <Text variant="bodyMedium" style={[styles.exportDesc, { color: paper.colors.onSurfaceVariant }]}>
             {items.length} item{items.length !== 1 ? 's' : ''} · {collections.length} collection{collections.length !== 1 ? 's' : ''}
           </Text>
@@ -305,7 +305,7 @@ export default function SettingsScreen() {
 
         {/* About */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>ABOUT</Text>
-        <View style={[styles.card, { backgroundColor: paper.colors.surfaceContainer, borderColor: paper.colors.outlineVariant }]}>
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
           <View style={styles.row}>
             <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Lumio</Text>
             <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
