@@ -16,8 +16,7 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
+      - run: npm install
       - run: npx tsc --noEmit
 
   # ── 2. Linting ───────────────────────────────────────────────────────────
@@ -29,8 +28,7 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
+      - run: npm install
       - run: npx eslint . --ext .ts,.tsx --max-warnings 0
 
   # ── 3. Dependency vulnerability audit ────────────────────────────────────
@@ -42,8 +40,7 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
+      - run: npm install
       # Fail on moderate+ vulnerabilities (CVSS >= 4.0)
       - name: npm audit
         run: npm audit --audit-level=moderate
@@ -68,8 +65,7 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
-          cache: 'npm'
-      - run: npm ci
+      - run: npm install
       - name: Run tests with coverage
         run: npx jest --coverage --coverageReporters=text --coverageReporters=lcov
       - name: Upload coverage report
