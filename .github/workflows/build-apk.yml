@@ -47,16 +47,30 @@ jobs:
 
       # Generate release keystore on the runner using keytool (Java 17 is already installed)
       - name: Generate release keystore
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # Strip any whitespace/newlines from secrets before use
+          ALIAS=$(echo -n "$KEY_ALIAS" | tr -d '[:space:]')
+          STOREPASS=$(echo -n "$KEYSTORE_PASSWORD" | tr -d '[:space:]')
+          KEYPASS=$(echo -n "$KEY_PASSWORD" | tr -d '[:space:]')
+
           keytool -genkey -v \
             -keystore android/app/lumio-release.keystore \
-            -alias "${{ secrets.KEY_ALIAS }}" \
+            -alias "$ALIAS" \
             -keyalg RSA -keysize 2048 \
             -validity 10000 \
-            -storepass "${{ secrets.KEYSTORE_PASSWORD }}" \
-            -keypass "${{ secrets.KEY_PASSWORD }}" \
+            -storepass "$STOREPASS" \
+            -keypass "$KEYPASS" \
             -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
           echo "Keystore: $(wc -c < android/app/lumio-release.keystore) bytes"
+
+          # Write sanitised values to env file for the Gradle step
+          echo "SIGNING_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "SIGNING_STOREPASS=$STOREPASS" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYPASS=$KEYPASS" >> "$GITHUB_ENV"
 
       # Pre-bundle JS so Gradle does not need Metro at build time
       - name: Bundle JavaScript
@@ -82,9 +96,9 @@ jobs:
             --no-daemon \
             -Dfile.encoding=UTF-8 \
             -Pandroid.injected.signing.store.file="$(pwd)/app/lumio-release.keystore" \
-            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+            -Pandroid.injected.signing.store.password="${SIGNING_STOREPASS}" \
+            -Pandroid.injected.signing.key.alias="${SIGNING_ALIAS}" \
+            -Pandroid.injected.signing.key.password="${SIGNING_KEYPASS}" \
             2>&1 | tee /tmp/gradle.log
           CODE=${PIPESTATUS[0]}
           if [ $CODE -ne 0 ]; then
