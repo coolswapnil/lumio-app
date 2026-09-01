@@ -2,6 +2,11 @@
 module.exports = {
   preset: 'jest-expo',
 
+  // Use babel coverage provider so Istanbul instruments source files during
+  // transformation. V8 coverage has path-mapping issues with jest-expo that
+  // result in 0% coverage reports even when tests execute successfully.
+  coverageProvider: 'babel',
+
   // Extend Jest matchers with @testing-library/react-native built-in matchers.
   // @testing-library/jest-native is deprecated as of v12.4+ — use the built-in
   // matchers shipped directly in @testing-library/react-native v13+.

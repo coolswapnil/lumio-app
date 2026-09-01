@@ -66,9 +66,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Memoize to prevent all ThemeContext consumers from re-rendering on unrelated parent changes
   const contextValue = useMemo(
     () => ({ isDark, colors, settings, updateSettings }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line -- intentional: updateSettings excluded; it's stable (recreated only when settings changes)
     [isDark, colors, settings]
-    // updateSettings is intentionally excluded — it's stable (doesn't change identity)
   );
 
   return (

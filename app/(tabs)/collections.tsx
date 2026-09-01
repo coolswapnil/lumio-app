@@ -24,7 +24,6 @@ import { useData } from '../../src/context/DataContext';
 import { CollectionCard } from '../../src/components/CollectionCard';
 import { saveCollection } from '../../src/database/collections';
 import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
-import type { Collection } from '../../src/types';
 import { Button } from '../../src/components/Button';
 import { FlatList } from 'react-native';
 

@@ -37,6 +37,9 @@ module.exports = {
     'no-console': 'off',
     'no-undef': 'off', // handled by TypeScript
 
+    // Control characters are intentional in input-sanitization regexes
+    'no-control-regex': 'off',
+
     // React Native specific
     'no-restricted-globals': 'off',
   },

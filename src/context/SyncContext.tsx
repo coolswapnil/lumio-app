@@ -113,7 +113,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
       engine.stopBackground();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line -- intentional: runs once on mount; engine is a module singleton
   }, []);
 
   // -------------------------------------------------------------------------

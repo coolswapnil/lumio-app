@@ -77,7 +77,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }
     });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line -- intentional: runs once on mount; refreshAll is stable
   }, []);
 
   // Re-fetch items when filter/sort/search change — NOT on initial mount

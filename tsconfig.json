@@ -8,5 +8,12 @@
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts", "expo-env.d.ts"],
-  "exclude": ["node_modules", "scripts", "android-widget", "android", "ios"]
+  "exclude": [
+    "node_modules",
+    "scripts",
+    "android-widget",
+    "android",
+    "ios",
+    "__tests__"
+  ]
 }
