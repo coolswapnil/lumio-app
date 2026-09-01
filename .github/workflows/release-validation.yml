@@ -28,9 +28,9 @@ jobs:
     name: Dependency Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -99,8 +99,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -114,8 +114,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -129,8 +129,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: dependency-gate
     steps:
-      - uses: actions/checkout@v4.2.2
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -138,7 +138,7 @@ jobs:
       - name: Unit tests — zero failures required
         run: npm run test:coverage -- --coverageReporters=text --coverageReporters=lcov
       - name: Upload test coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         if: always()
         with:
           name: release-coverage-${{ github.ref_name }}
@@ -157,14 +157,14 @@ jobs:
       - lint-gate
       - test-gate
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
           cache: 'npm'
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6.0.0
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -255,7 +255,7 @@ jobs:
           echo "APK verified: $(du -sh $APK)"
 
       - name: Upload release gate APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-gate-apk-${{ github.ref_name }}
           path: android/app/build/outputs/apk/release/

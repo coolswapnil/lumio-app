@@ -77,6 +77,7 @@ updates:
 
       # ── Tier 5: TypeScript tooling ─────────────────────────────────────────
       # Moves independently from runtime deps — safe to merge after CI passes.
+      # Major version upgrades are blocked (see ignore rules below).
       typescript-tooling:
         patterns:
           - "typescript"
@@ -103,14 +104,41 @@ updates:
           - "minor"
           - "patch"
 
+    # ── Ignore rules ───────────────────────────────────────────────────────────
     # IMPORTANT: ignore rules must NOT overlap with group patterns for minor/patch.
     # If a package is in both a group and an ignore rule for the same update-type,
-    # the ignore rule wins and the package is excluded from the group PR — causing
-    # incomplete grouped upgrades that fail CI.
+    # the ignore rule wins and the package is excluded from the group PR.
     #
     # Strategy: only block MAJOR upgrades via ignore. Minor/patch are handled by
     # the groups above (which require manual review before merge).
     ignore:
+      # ── Expo SDK major upgrades ───────────────────────────────────────────
+      # Block expo major upgrades (e.g. SDK 52 → 53) — requires full migration.
+      # Run `npx expo install --fix` and update all Tier 1 packages together.
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+
+      # Block expo-router major upgrades — must match expo SDK major.
+      - dependency-name: "expo-router"
+        update-types: ["version-update:semver-major"]
+
+      # Block ALL expo-* package major upgrades — each major maps to a new SDK.
+      # Expo SDK 52 uses expo-location@18, expo-constants@17, expo-asset@11, etc.
+      # Expo SDK 57 versions (57.x) are NOT compatible with SDK 52 — they require
+      # a full SDK migration. Close any PRs proposing expo-*@57.x.
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
+
+      # Block @expo/* scope major upgrades (e.g. @expo/vector-icons v14 → v15)
+      # @expo/vector-icons@15 requires expo-font>=14 which belongs to SDK 53+.
+      - dependency-name: "@expo/*"
+        update-types: ["version-update:semver-major"]
+
+      # Block @expo-google-fonts/* major upgrades
+      - dependency-name: "@expo-google-fonts/*"
+        update-types: ["version-update:semver-major"]
+
+      # ── React / React Native major upgrades ───────────────────────────────
       # Block React major upgrades (React 19+) until Expo explicitly supports them.
       # Expo 52 = React 18. Upgrading React to 19 without a matching Expo SDK bump
       # will break expo-modules, react-native-reanimated, and react-test-renderer.
@@ -123,14 +151,6 @@ updates:
 
       # Block react-test-renderer major upgrades — must always equal react's major.
       - dependency-name: "react-test-renderer"
-        update-types: ["version-update:semver-major"]
-
-      # Block expo major upgrades (e.g. SDK 52 → 53) — requires manual migration.
-      - dependency-name: "expo"
-        update-types: ["version-update:semver-major"]
-
-      # Block expo-router major upgrades — must match expo SDK major.
-      - dependency-name: "expo-router"
         update-types: ["version-update:semver-major"]
 
       # Block react-native-reanimated major upgrades — must match Expo SDK.
@@ -146,11 +166,34 @@ updates:
         update-types: ["version-update:semver-major"]
 
       # Block react-native-safe-area-context major upgrades — SDK-pinned.
+      # v5.x requires React Native ^0.85+ (we're on 0.76.7 for SDK 52).
       - dependency-name: "react-native-safe-area-context"
         update-types: ["version-update:semver-major"]
 
       # Block @react-navigation/* major upgrades — requires coordinated migration.
       - dependency-name: "@react-navigation/*"
+        update-types: ["version-update:semver-major"]
+
+      # ── TypeScript ecosystem major upgrades ───────────────────────────────
+      # Block TypeScript major upgrades (e.g. 5.x → 7.x).
+      # typescript@7 breaks @typescript-eslint which requires typescript <6.1.0.
+      # Any TypeScript major upgrade requires auditing the entire toolchain first.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+      # Block @types/* major upgrades — may conflict with current TypeScript version.
+      - dependency-name: "@types/*"
+        update-types: ["version-update:semver-major"]
+
+      # ── Babel major upgrades ──────────────────────────────────────────────
+      # Block @babel/core major upgrades (v7 → v8).
+      # babel@8 is a significant breaking change requiring coordinated migration
+      # of babel-preset-expo, all @babel/* plugins, and build tooling.
+      - dependency-name: "@babel/*"
+        update-types: ["version-update:semver-major"]
+
+      # Block babel-preset-expo major upgrades — must match Expo SDK.
+      - dependency-name: "babel-preset-expo"
         update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions ─────────────────────────────────────────────────────────
@@ -166,9 +209,14 @@ updates:
       - "dependencies"
       - "github-actions"
     groups:
+      # Group ALL GitHub Actions updates together.
+      # Action major version bumps (e.g. v4 → v7) change the Node.js runtime
+      # and must be applied to all workflow files simultaneously to avoid
+      # partial upgrades where some actions use Node20 and others use Node24.
       github-actions:
         patterns:
           - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
