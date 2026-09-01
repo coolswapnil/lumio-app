@@ -37,28 +37,38 @@ jobs:
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
+      # ── Pin Gradle wrapper BEFORE prebuild ────────────────────────────────────
+      # RN 0.74.4+ ships a gradle-wrapper.properties pointing to Gradle 8.8.
+      # expo-module-gradle-plugin (used by Expo 51 modules) is incompatible with
+      # Gradle 8.8. We overwrite the wrapper file in node_modules so that when
+      # expo prebuild copies it into android/, it gets Gradle 8.3 instead.
+      - name: Pin Gradle wrapper to 8.3 in react-native node_modules
+        run: |
+          WRAPPER="node_modules/react-native/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$WRAPPER" ]; then
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' "$WRAPPER"
+            echo "Pinned RN gradle wrapper: $(grep distributionUrl $WRAPPER)"
+          else
+            echo "Wrapper not found at $WRAPPER — will patch after prebuild"
+          fi
+
       - name: Expo prebuild
         run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean
         env:
           CI: '1'
 
       # ── Patch for Expo 51 compatibility ───────────────────────────────────────
-      # Expo 51 targets AGP 7.4.x + Gradle 8.0. The generated build.gradle has no
-      # AGP version (resolved from react-native's version catalog which pins 7.4.2).
-      # We only need to fix the ONE known issue: ExpoModulesCorePlugin.gradle uses
-      # components.release which was removed in AGP 8.x. Since the version catalog
-      # controls AGP, we do NOT touch the AGP version — we only patch the one line.
-      - name: Patch ExpoModulesCorePlugin for AGP compatibility
+      - name: Patch for Expo 51 + Gradle 8.3 compatibility
         run: |
-          # Fix: components.release → afterEvaluate guard with findByName
-          find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
-            # Wrap the publishing block in a null-safe check
-            sed -i "s/from components\.release/from (components.findByName('release') ?: components.findByName('debug'))/g" "$f"
-            echo "Patched: $f"
-          done
-
-          # Show current Gradle wrapper version (set by prebuild)
+          # Always overwrite the generated wrapper — prebuild may have restored it
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' \
+            android/gradle/wrapper/gradle-wrapper.properties
           echo "Gradle wrapper: $(grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties)"
+
+          # Fix components.release removed in AGP 8.x (safety net)
+          find node_modules/expo-modules-core/android -name "ExpoModulesCorePlugin.gradle" | while read f; do
+            sed -i "s/from components\.release/from (components.findByName('release') ?: components.findByName('debug'))/g" "$f"
+          done
           echo "AGP classpath: $(grep 'com.android.tools.build' android/build.gradle)"
 
       - name: Make gradlew executable
