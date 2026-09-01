@@ -125,12 +125,30 @@ jobs:
       - name: npm audit (fail on unfixed moderate+)
         run: |
           set +e
-          npm audit --json 2>/dev/null > /tmp/audit.json
+          npm audit --json > /tmp/audit.json 2>/tmp/audit-err.txt
+          NPM_EXIT=$?
           set -e
+
+          echo "=== npm audit exit code: $NPM_EXIT ==="
+          echo "=== /tmp/audit.json first 200 chars ==="
+          head -c 200 /tmp/audit.json || true
+          echo ""
+          echo "=== /tmp/audit-err.txt ==="
+          cat /tmp/audit-err.txt || true
+          echo "==="
+
           python3 - << 'PYEOF'
-          import json, sys
-          with open('/tmp/audit.json') as f:
-              report = json.load(f)
+          import json, sys, os
+          raw = open('/tmp/audit.json').read().strip()
+          if not raw:
+              print('::error::npm audit produced empty output -- cannot parse audit results')
+              sys.exit(1)
+          try:
+              report = json.loads(raw)
+          except Exception as e:
+              print('::error::npm audit JSON parse failed:', e)
+              print('Raw output:', raw[:500])
+              sys.exit(1)
           exempt = {
               'ws', 'braces', 'micromatch', 'postcss', 'cross-spawn',
               'path-to-regexp', 'undici', 'body-parser', 'qs',
@@ -138,17 +156,17 @@ jobs:
           }
           vulns = report.get('vulnerabilities', {})
           blocking = [
-              f"{name}[{info['severity']}]"
+              name + '[' + info['severity'] + ']'
               for name, info in vulns.items()
               if name not in exempt and info.get('severity') != 'low'
           ]
           for name, info in vulns.items():
               tag = 'BLOCKED' if name not in exempt and info.get('severity') != 'low' else 'SKIP'
-              print(f"{tag}: {name} [{info.get('severity')}]")
+              print(tag + ': ' + name + ' [' + str(info.get('severity')) + ']')
           if blocking:
-              print(f"::error::npm audit FAILED -- {len(blocking)} unexempt finding(s): {', '.join(blocking)}", file=sys.stderr)
+              print('::error::npm audit FAILED -- unexempt: ' + ', '.join(blocking), file=sys.stderr)
               sys.exit(1)
-          print(f"npm audit OK: {len(vulns)} finding(s), all exempt or low.")
+          print('npm audit OK: ' + str(len(vulns)) + ' finding(s), all exempt or low.')
           PYEOF
 
       # Scan source files for hardcoded secrets.
