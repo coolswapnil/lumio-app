@@ -131,39 +131,34 @@ jobs:
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}"
           APK="release-apks/lumio-${VERSION}.apk"
-          BODY="## Lumio ${VERSION}\n\nSigned release APK for Android.\n\n### Install\n1. Download \`lumio-${VERSION}.apk\` from Assets below\n2. Phone: Settings \u2192 Security \u2192 Install unknown apps \u2192 enable for your file manager\n3. Open the APK and tap Install"
 
-          # Check if release already exists for this tag
-          EXISTING=$(curl -sf -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            "${API}/releases/tags/${VERSION}" 2>/dev/null || echo "")
-          if [ -n "$EXISTING" ]; then
-            RELEASE_ID=$(echo "$EXISTING" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-            echo "Release already exists: $RELEASE_ID — reusing it"
-          else
-            RESP=$(curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Content-Type: application/json" "${API}/releases" \
-              -d "{\"tag_name\":\"${VERSION}\",\"name\":\"Lumio ${VERSION}\",\"body\":\"${BODY}\",\"draft\":false,\"prerelease\":false}")
-            RELEASE_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-            echo "Release created: $RELEASE_ID"
-          fi
+          echo "APK size: $(du -sh $APK)"
+          echo "Tag: $VERSION"
+          echo "Repo: $GITHUB_REPOSITORY"
 
-          # Upload APK (delete existing asset with same name first if present)
-          EXISTING_ASSET=$(curl -sf -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            "${API}/releases/${RELEASE_ID}/assets" 2>/dev/null | \
-            python3 -c "import sys,json; assets=json.load(sys.stdin); [print(a['id']) for a in assets if a['name']=='lumio-${VERSION}.apk']" || echo "")
-          if [ -n "$EXISTING_ASSET" ]; then
-            curl -sf -X DELETE -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "${API}/releases/assets/${EXISTING_ASSET}" || true
-            echo "Deleted existing asset $EXISTING_ASSET"
-          fi
+          # Use the gh CLI which handles auth, existing releases, and asset
+          # upload correctly — no manual curl needed.
+          # Create release (or update if exists)
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Lumio ${VERSION}" \
+            --notes "## Lumio ${VERSION}
 
-          curl -sf -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @"$APK" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?name=lumio-${VERSION}.apk"
-          echo "APK uploaded to release $RELEASE_ID"
+Signed release APK for Android.
+
+### Install
+1. Download \`lumio-${VERSION}.apk\` from Assets below
+2. Phone: Settings → Security → Install unknown apps → enable for your file manager
+3. Open the APK and tap Install" \
+            || gh release view "$VERSION" --repo "$GITHUB_REPOSITORY"
+
+          # Upload APK (--clobber replaces existing asset with same name)
+          gh release upload "$VERSION" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+          echo "Release complete: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${VERSION}"
