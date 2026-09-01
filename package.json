@@ -29,7 +29,7 @@
     "expo-constants": "~17.0.4",
     "expo-secure-store": "~14.0.1",
     "expo-web-browser": "~14.0.2",
-    "@expo/vector-icons": "^14.0.4",
+    "@expo/vector-icons": "^15.1.1",
     "@expo-google-fonts/inter": "^0.2.3",
     "react": "18.3.1",
     "react-native": "0.76.7",
