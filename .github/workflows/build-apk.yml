@@ -44,6 +44,26 @@ jobs:
         env:
           CI: '1'
 
+      # Expo 52 prebuild may generate a Gradle wrapper newer than 8.3 on the
+      # ubuntu-latest runner. expo-modules-core requires AGP 8.3 / Gradle 8.3
+      # and breaks on Gradle 8.8+ ("expo-module-gradle-plugin not found" +
+      # "unknown property 'release'" errors). Pin both here, after prebuild
+      # but before any Gradle invocation.
+      - name: Pin Gradle wrapper to 8.3
+        run: |
+          PROPS="android/gradle/wrapper/gradle-wrapper.properties"
+          # Replace whatever distributionUrl was generated with Gradle 8.3
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.3-bin.zip|' "$PROPS"
+          echo "=== gradle-wrapper.properties ==="
+          cat "$PROPS"
+
+      - name: Pin Android Gradle Plugin to 8.3.2
+        run: |
+          # Replace the AGP version in the root build.gradle with 8.3.2
+          sed -i 's/com\.android\.tools\.build:gradle:[0-9.]\+/com.android.tools.build:gradle:8.3.2/' android/build.gradle
+          echo "=== android/build.gradle classpath line ==="
+          grep 'com.android.tools.build' android/build.gradle || echo "(not found — may use plugins block)"
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
@@ -65,22 +85,19 @@ jobs:
 
       # Generate keystore and build signed release APK in one step so the
       # signing credentials are in scope as shell variables for both commands.
-      - name: Build release APK
+      - name: Build signed release APK
         env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
           CI: 'true'
         run: |
-          # Use fixed internal credentials — keystore is regenerated fresh each run
-          # so the password just needs to be consistent within this job.
+          # Keystore is regenerated fresh on every run — password only needs
+          # to be consistent within this single job, never stored anywhere.
           KS_FILE="$(pwd)/android/app/lumio-release.keystore"
           KS_ALIAS="lumio-key"
           KS_PASS="build-$(date +%Y%m%d)"
           KEY_PASS="build-$(date +%Y%m%d)"
 
-          # Generate keystore
+          # Generate a fresh signing keystore
           keytool -genkey -v \
             -keystore "$KS_FILE" \
             -alias "$KS_ALIAS" \
@@ -91,7 +108,7 @@ jobs:
             -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
           echo "Keystore generated: $(wc -c < $KS_FILE) bytes"
 
-          # Build
+          # Build signed release APK
           cd android
           ./gradlew assembleRelease \
             --no-daemon \
