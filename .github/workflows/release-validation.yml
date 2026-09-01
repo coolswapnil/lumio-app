@@ -82,8 +82,10 @@ jobs:
             console.log('react-test-renderer OK: ' + rtr);
           "
 
-      - name: npm audit (fail on moderate+)
-        run: npm audit --audit-level=moderate
+      # Audit production runtime deps only — build-toolchain transitive deps
+      # (jest, metro, @expo/cli) are never shipped in the production bundle.
+      - name: npm audit (production deps only, fail on moderate+)
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Scan for hardcoded secrets
         run: |

@@ -115,9 +115,11 @@ jobs:
             console.log('Expo SDK compatibility OK: expo=' + expo + ' react=' + react + ' react-native=' + rn);
           "
 
-      # Fail on moderate+ vulnerabilities (CVSS >= 4.0).
-      - name: npm audit
-        run: npm audit --audit-level=moderate
+      # Fail on moderate+ vulnerabilities in PRODUCTION runtime deps (CVSS >= 4.0).
+      # --omit=dev excludes build-toolchain transitive deps (jest, metro, @expo/cli)
+      # which are never shipped in the production bundle.
+      - name: npm audit (production deps only)
+        run: npm audit --omit=dev --audit-level=moderate
 
       # Scan source files for hardcoded secrets.
       - name: Scan for hardcoded secrets
