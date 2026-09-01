@@ -87,7 +87,8 @@ jobs:
 
       - name: Generate icon assets
         run: |
-          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
+          # apt-get may not have these packages on all runner images; non-blocking
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1 || echo "apt-get: native libs unavailable, skipping canvas build"
           npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
 
       - name: Expo prebuild
