@@ -55,6 +55,9 @@ jobs:
             console.log('react-test-renderer major matches React:', react);
           "
 
+      - name: expo-doctor (Expo SDK compatibility check)
+        run: npx expo-doctor@latest 2>&1 | tee /tmp/expo-doctor.log; grep -iE "error|issue|incompatible|mismatch" /tmp/expo-doctor.log && echo "::error::expo-doctor reported issues. Check package versions." && exit 1 || echo "expo-doctor OK"
+
       - name: Generate icon assets
         run: |
           sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1

@@ -1,7 +1,10 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'jest-expo',
-  setupFilesAfterFramework: [],
+
+  // jest-expo handles setupFilesAfterFramework internally; we only add custom matchers here.
+  setupFilesAfterFramework: ['@testing-library/jest-native/extend-expect'],
+
   transformIgnorePatterns: [
     'node_modules/(?!(' +
       '(jest-)?react-native' +
@@ -20,12 +23,15 @@ module.exports = {
       '|react-native-material-you-colors' +
       ')/)',
   ],
+
   testPathIgnorePatterns: ['/node_modules/', '/android/', '/ios/'],
+
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
     '!src/types/**',
   ],
+
   coverageThreshold: {
     global: {
       branches: 60,
@@ -34,5 +40,6 @@ module.exports = {
       statements: 60,
     },
   },
+
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
 };
