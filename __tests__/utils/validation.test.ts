@@ -10,7 +10,7 @@ import {
   parseTags,
   extractSafeUrl,
   LIMITS,
-} from '../src/utils/validation';
+} from '../../src/utils/validation';
 
 describe('isValidUrl', () => {
   it('accepts valid https URLs', () => {

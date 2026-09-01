@@ -8,7 +8,7 @@
 // Mock fetch globally before importing the module
 global.fetch = jest.fn();
 
-import { summarizeItem } from '../src/services/ai';
+import { summarizeItem } from '../../src/services/ai';
 import type { AISettings } from '../src/types';
 
 const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;

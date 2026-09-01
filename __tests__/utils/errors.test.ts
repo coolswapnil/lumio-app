@@ -1,7 +1,7 @@
 /**
  * Unit tests for src/utils/errors.ts
  */
-import { logError, getUserMessage } from '../src/utils/errors';
+import { logError, getUserMessage } from '../../src/utils/errors';
 
 describe('logError', () => {
   beforeEach(() => {

@@ -2,7 +2,8 @@
 module.exports = {
   preset: 'jest-expo',
 
-  // jest-expo handles setupFilesAfterFramework internally; we only add custom matchers here.
+  // Extend Jest matchers with @testing-library/jest-native custom matchers.
+  // The correct Jest configuration key is setupFilesAfterFramework.
   setupFilesAfterFramework: ['@testing-library/jest-native/extend-expect'],
 
   transformIgnorePatterns: [

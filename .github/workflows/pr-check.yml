@@ -31,8 +31,17 @@ jobs:
         run: npm doctor || true
 
       # expo-doctor validates all Expo package versions are compatible with the SDK.
+      # It exits non-zero when it finds incompatibilities — we rely on that exit code.
       - name: expo-doctor
-        run: npx expo-doctor@latest 2>&1 | tee /tmp/expo-doctor.log; grep -iE "error|issue|incompatible|mismatch" /tmp/expo-doctor.log && echo "::error::expo-doctor reported issues. Run 'npx expo install --fix' locally and commit the result." && exit 1 || echo "expo-doctor OK"
+        run: |
+          npx expo-doctor@latest 2>&1 | tee /tmp/expo-doctor.log
+          EXIT=${PIPESTATUS[0]}
+          cat /tmp/expo-doctor.log
+          if [ "$EXIT" -ne 0 ]; then
+            echo "::error::expo-doctor failed. Run 'npx expo install --fix' locally and commit the result."
+            exit 1
+          fi
+          echo "expo-doctor OK"
 
       # Enforce react-test-renderer major == react major.
       - name: Validate react-test-renderer matches React major
