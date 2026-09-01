@@ -13,7 +13,7 @@ interface CollectionCardProps {
  * MD3 Expressive collection card using react-native-paper Card.
  * Uses elevated mode for a subtle tonal surface lift.
  */
-export function CollectionCard({ collection }: CollectionCardProps) {
+function CollectionCardBase({ collection }: CollectionCardProps) {
   const paper = usePaperTheme();
   const router = useRouter();
 
@@ -75,12 +75,12 @@ const styles = StyleSheet.create({
 });
 
 // Memoize — re-render only when collection data changes
-export { CollectionCard as _CollectionCardBase };
-const CollectionCardMemo = React.memo(CollectionCard, (prev, next) =>
+export { CollectionCardBase as _CollectionCardBase };
+const CollectionCard = React.memo(CollectionCardBase, (prev, next) =>
   prev.collection.id === next.collection.id &&
   prev.collection.name === next.collection.name &&
   prev.collection.itemCount === next.collection.itemCount &&
   prev.collection.icon === next.collection.icon &&
   prev.collection.color === next.collection.color
 );
-export { CollectionCardMemo as CollectionCard };
+export { CollectionCard };

@@ -162,7 +162,7 @@ export default function SettingsScreen() {
             {/* MD3 TextInput: API Key */}
             <TextInput
               label={`${selectedProvider?.name ?? 'Provider'} API Key`}
-              value={aiSettings.apiKey}
+              value={aiSettings.apiKey ?? ''}
               onChangeText={(v) => setAiSettings((s) => ({ ...s, apiKey: v }))}
               placeholder={`Enter your ${selectedProvider?.name ?? 'provider'} API key`}
               mode="outlined"
@@ -182,7 +182,7 @@ export default function SettingsScreen() {
             {/* Model */}
             <TextInput
               label="Model (optional — uses default if blank)"
-              value={aiSettings.model}
+              value={aiSettings.model ?? ''}
               onChangeText={(v) => setAiSettings((s) => ({ ...s, model: v }))}
               placeholder={selectedProvider?.modelPlaceholder ?? 'model-name'}
               mode="outlined"
@@ -196,7 +196,7 @@ export default function SettingsScreen() {
               <>
                 <TextInput
                   label="Project ID *"
-                  value={aiSettings.watsonxProjectId}
+                  value={aiSettings.watsonxProjectId ?? ''}
                   onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxProjectId: v }))}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   mode="outlined"
@@ -206,7 +206,7 @@ export default function SettingsScreen() {
                 />
                 <TextInput
                   label="Region"
-                  value={aiSettings.watsonxRegion}
+                  value={aiSettings.watsonxRegion ?? ''}
                   onChangeText={(v) => setAiSettings((s) => ({ ...s, watsonxRegion: v }))}
                   placeholder="us-south"
                   mode="outlined"
@@ -222,7 +222,7 @@ export default function SettingsScreen() {
               <>
                 <TextInput
                   label={aiSettings.provider === 'local' ? 'Server Base URL' : 'API Base URL'}
-                  value={aiSettings.localBaseUrl}
+                  value={aiSettings.localBaseUrl ?? ''}
                   onChangeText={(v) => setAiSettings((s) => ({ ...s, localBaseUrl: v }))}
                   placeholder={
                     aiSettings.provider === 'local'

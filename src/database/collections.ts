@@ -1,12 +1,12 @@
 import { getDatabase } from './db';
-import type { Collection } from '../types';
+import type { Collection, IconName } from '../types';
 
 function rowToCollection(row: Record<string, unknown>): Collection {
   return {
     id: row.id as string,
     name: row.name as string,
     description: row.description as string | undefined,
-    icon: row.icon as string,
+    icon: row.icon as IconName,
     color: row.color as string,
     itemCount: (row.item_count as number) ?? 0,
     createdAt: row.created_at as string,

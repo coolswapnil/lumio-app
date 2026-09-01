@@ -87,7 +87,7 @@ const mockDb = {
     }
     return [];
   }),
-  getFirstAsync: jest.fn(async (sql: string) => {
+  getFirstAsync: jest.fn(async (sql: string, _params: unknown[] = []) => {
     const s = sql.trim().toUpperCase();
     if (s.includes("STATUS IN ('PENDING','FAILED','PROCESSING')")) {
       return { count: mockStore.filter((r) => ['pending','failed','processing'].includes(r.status as string)).length };

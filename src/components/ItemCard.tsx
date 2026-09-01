@@ -32,7 +32,7 @@ export const ITEM_CARD_HEIGHT_COMPACT = 72;
 
 const SWIPE_THRESHOLD = -80;
 
-export function ItemCard({ item, compact = false }: ItemCardProps) {
+function ItemCardBase({ item, compact = false }: ItemCardProps) {
   const paper = usePaperTheme();
   const { refreshAll } = useData();
   const router = useRouter();
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
 
 // ── Memoize to prevent re-renders when other list items change ────────────────
 // Custom equality: only re-render if the item data or compact flag changed.
-const ItemCardMemo = React.memo(ItemCard, (prev, next) =>
+const ItemCard = React.memo(ItemCardBase, (prev, next) =>
   prev.compact === next.compact &&
   prev.item.id === next.item.id &&
   prev.item.title === next.item.title &&
@@ -315,4 +315,4 @@ const ItemCardMemo = React.memo(ItemCard, (prev, next) =>
   prev.item.tags.length === next.item.tags.length
 );
 
-export { ItemCardMemo as ItemCard };
+export { ItemCard };
