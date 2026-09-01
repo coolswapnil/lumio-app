@@ -50,7 +50,7 @@
     "@hookform/resolvers": "^3.9.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.25.2",
+    "@babel/core": "^8.0.1",
     "babel-preset-expo": "~12.0.4",
     "@types/react": "~18.3.12",
     "typescript": "^5.3.3",
