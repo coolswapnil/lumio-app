@@ -45,33 +45,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # Generate release keystore on the runner using keytool (Java 17 is already installed)
-      - name: Generate release keystore
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          # Strip any whitespace/newlines from secrets before use
-          ALIAS=$(echo -n "$KEY_ALIAS" | tr -d '[:space:]')
-          STOREPASS=$(echo -n "$KEYSTORE_PASSWORD" | tr -d '[:space:]')
-          KEYPASS=$(echo -n "$KEY_PASSWORD" | tr -d '[:space:]')
-
-          keytool -genkey -v \
-            -keystore android/app/lumio-release.keystore \
-            -alias "$ALIAS" \
-            -keyalg RSA -keysize 2048 \
-            -validity 10000 \
-            -storepass "$STOREPASS" \
-            -keypass "$KEYPASS" \
-            -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
-          echo "Keystore: $(wc -c < android/app/lumio-release.keystore) bytes"
-
-          # Write sanitised values to env file for the Gradle step
-          echo "SIGNING_ALIAS=$ALIAS" >> "$GITHUB_ENV"
-          echo "SIGNING_STOREPASS=$STOREPASS" >> "$GITHUB_ENV"
-          echo "SIGNING_KEYPASS=$KEYPASS" >> "$GITHUB_ENV"
-
       # Pre-bundle JS so Gradle does not need Metro at build time
       - name: Bundle JavaScript
         run: |
@@ -88,17 +61,43 @@ jobs:
           NODE_ENV: production
           EXPO_NO_DOTENV: '1'
 
-      # Build signed release APK
+      # Generate keystore and build signed release APK in one step so the
+      # signing credentials are in scope as shell variables for both commands.
       - name: Build release APK
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
+          CI: 'true'
         run: |
+          # Use fixed internal credentials — keystore is regenerated fresh each run
+          # so the password just needs to be consistent within this job.
+          KS_FILE="$(pwd)/android/app/lumio-release.keystore"
+          KS_ALIAS="lumio-key"
+          KS_PASS="build-$(date +%Y%m%d)"
+          KEY_PASS="build-$(date +%Y%m%d)"
+
+          # Generate keystore
+          keytool -genkey -v \
+            -keystore "$KS_FILE" \
+            -alias "$KS_ALIAS" \
+            -keyalg RSA -keysize 2048 \
+            -validity 10000 \
+            -storepass "$KS_PASS" \
+            -keypass "$KEY_PASS" \
+            -dname "CN=Lumio App, OU=Mobile, O=Lumio, L=Unknown, ST=Unknown, C=US"
+          echo "Keystore generated: $(wc -c < $KS_FILE) bytes"
+
+          # Build
           cd android
           ./gradlew assembleRelease \
             --no-daemon \
             -Dfile.encoding=UTF-8 \
-            -Pandroid.injected.signing.store.file="$(pwd)/app/lumio-release.keystore" \
-            -Pandroid.injected.signing.store.password="${SIGNING_STOREPASS}" \
-            -Pandroid.injected.signing.key.alias="${SIGNING_ALIAS}" \
-            -Pandroid.injected.signing.key.password="${SIGNING_KEYPASS}" \
+            -Pandroid.injected.signing.store.file="$KS_FILE" \
+            -Pandroid.injected.signing.store.password="$KS_PASS" \
+            -Pandroid.injected.signing.key.alias="$KS_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASS" \
             2>&1 | tee /tmp/gradle.log
           CODE=${PIPESTATUS[0]}
           if [ $CODE -ne 0 ]; then
@@ -108,9 +107,6 @@ jobs:
             tail -80 /tmp/gradle.log || true
             exit $CODE
           fi
-        env:
-          GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
-          CI: 'true'
 
       - name: Collect APK
         run: |
