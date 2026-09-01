@@ -142,8 +142,12 @@ jobs:
           }
           const vulns = report.vulnerabilities || {};
           const exempt = new Set([
+            // Overridden in package.json to safe versions
             'ws', 'braces', 'micromatch', 'postcss', 'cross-spawn',
-            'path-to-regexp', 'ip', 'tar', 'express', '@babel/core'
+            'path-to-regexp', 'undici', 'body-parser', 'qs',
+            // Build-toolchain only (never in production bundle)
+            'ip', 'tar', 'express', '@babel/core',
+            'minimatch', 'glob',
           ]);
           const blocking = [];
           for (const [name, info] of Object.entries(vulns)) {

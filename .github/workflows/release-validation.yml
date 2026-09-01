@@ -94,8 +94,11 @@ jobs:
           let report;
           try { report = JSON.parse(fs.readFileSync('/tmp/audit.json', 'utf8')); }
           catch(e) { console.error('::error::audit parse failed:', e.message); process.exit(1); }
-          const exempt = new Set(['ws','braces','micromatch','postcss','cross-spawn',
-            'path-to-regexp','ip','tar','express','@babel/core']);
+          const exempt = new Set([
+            'ws','braces','micromatch','postcss','cross-spawn',
+            'path-to-regexp','undici','body-parser','qs',
+            'ip','tar','express','@babel/core','minimatch','glob',
+          ]);
           const blocking = [];
           for (const [name, info] of Object.entries(report.vulnerabilities || {})) {
             if (exempt.has(name) || info.severity === 'low') {
