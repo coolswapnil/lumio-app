@@ -21,6 +21,7 @@ jobs:
         uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
@@ -36,6 +37,7 @@ jobs:
 
       - name: Validate dependency tree
         run: |
+          set -o pipefail
           npm ls --depth=0 2>&1 | tee /tmp/npm-ls.log
           if grep -qE "UNMET|invalid" /tmp/npm-ls.log; then
             echo "::error::Unmet peer dependencies detected. Fix package.json before releasing."

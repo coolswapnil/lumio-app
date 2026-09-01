@@ -17,9 +17,11 @@ updates:
     reviewers: []
 
     groups:
+      # ── Tier 1: Expo ecosystem ─────────────────────────────────────────────
       # All Expo SDK packages move together — partial upgrades break the build.
       # react, react-native, and react-test-renderer are included because Expo
       # pins them to specific versions in each SDK release.
+      # REQUIRES MANUAL REVIEW before merge — see DEPENDENCY_POLICY.md.
       expo-ecosystem:
         patterns:
           - "expo"
@@ -38,7 +40,9 @@ updates:
           - "minor"
           - "patch"
 
-      # React Navigation packages move together.
+      # ── Tier 2: React Navigation ───────────────────────────────────────────
+      # Navigation packages share internal APIs and must stay on the same major.
+      # REQUIRES MANUAL REVIEW before merge.
       react-navigation:
         patterns:
           - "@react-navigation/*"
@@ -46,7 +50,20 @@ updates:
           - "minor"
           - "patch"
 
-      # Testing stack must stay compatible with jest-expo and React.
+      # ── Tier 3: React Native UI libraries ─────────────────────────────────
+      # react-native-paper and react-native-material-you-colors move together
+      # since they share the Material You design system.
+      react-native-ui:
+        patterns:
+          - "react-native-paper"
+          - "react-native-material-you-colors"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # ── Tier 4: Testing stack ──────────────────────────────────────────────
+      # Must stay compatible with jest-expo and React.
+      # REQUIRES MANUAL REVIEW before merge (react-test-renderer must equal react).
       testing:
         patterns:
           - "jest"
@@ -58,7 +75,8 @@ updates:
           - "minor"
           - "patch"
 
-      # TypeScript tooling moves independently from runtime deps.
+      # ── Tier 5: TypeScript tooling ─────────────────────────────────────────
+      # Moves independently from runtime deps — safe to merge after CI passes.
       typescript-tooling:
         patterns:
           - "typescript"
@@ -67,6 +85,20 @@ updates:
           - "eslint"
           - "babel-preset-expo"
           - "@babel/*"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # ── Tier 6: Utility libraries ──────────────────────────────────────────
+      # No runtime coupling to Expo or React Native — safe independently.
+      # Minor/patch upgrades are auto-mergeable after CI passes.
+      utility-libraries:
+        patterns:
+          - "dayjs"
+          - "zod"
+          - "react-hook-form"
+          - "@hookform/*"
+          - "react-native-uuid"
         update-types:
           - "minor"
           - "patch"
@@ -99,6 +131,26 @@ updates:
 
       # Block expo-router major upgrades — must match expo SDK major.
       - dependency-name: "expo-router"
+        update-types: ["version-update:semver-major"]
+
+      # Block react-native-reanimated major upgrades — must match Expo SDK.
+      - dependency-name: "react-native-reanimated"
+        update-types: ["version-update:semver-major"]
+
+      # Block react-native-screens major upgrades — must match Expo SDK.
+      - dependency-name: "react-native-screens"
+        update-types: ["version-update:semver-major"]
+
+      # Block react-native-gesture-handler major upgrades — must match Expo SDK.
+      - dependency-name: "react-native-gesture-handler"
+        update-types: ["version-update:semver-major"]
+
+      # Block react-native-safe-area-context major upgrades — SDK-pinned.
+      - dependency-name: "react-native-safe-area-context"
+        update-types: ["version-update:semver-major"]
+
+      # Block @react-navigation/* major upgrades — requires coordinated migration.
+      - dependency-name: "@react-navigation/*"
         update-types: ["version-update:semver-major"]
 
   # ── GitHub Actions ─────────────────────────────────────────────────────────

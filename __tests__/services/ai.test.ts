@@ -9,7 +9,7 @@
 global.fetch = jest.fn();
 
 import { summarizeItem } from '../../src/services/ai';
-import type { AISettings } from '../src/types';
+import type { AISettings } from '../../src/types';
 
 const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;
 

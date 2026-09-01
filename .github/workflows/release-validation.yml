@@ -1,0 +1,292 @@
+name: Release Validation
+
+# ── Trigger ──────────────────────────────────────────────────────────────────
+# Runs on every release tag push and can be triggered manually.
+# Also runs on the release branch to validate before tagging.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'manual validation'
+
+# ── Concurrency ───────────────────────────────────────────────────────────────
+# Cancel any in-progress validation run for the same ref so tag re-pushes
+# don't queue up redundant jobs.
+concurrency:
+  group: release-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Gate 1: Dependency health ──────────────────────────────────────────────
+  # This job MUST pass before any other gate runs.
+  dependency-gate:
+    name: Dependency Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: npm install (strict — no --force or --legacy-peer-deps)
+        run: npm install
+
+      - name: npm ls (zero unmet peers required)
+        run: |
+          set -o pipefail
+          npm ls --depth=0 2>&1 | tee /tmp/npm-ls.log
+          if grep -qE "UNMET|invalid" /tmp/npm-ls.log; then
+            echo "::error::RELEASE BLOCKED — unmet peer dependencies detected."
+            cat /tmp/npm-ls.log
+            exit 1
+          fi
+          echo "Dependency tree clean."
+
+      - name: Validate Expo SDK 52 baseline
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const expo = (p.dependencies.expo || '').replace(/[~^]/,'');
+            const react = p.dependencies.react || '';
+            const rn = p.dependencies['react-native'] || '';
+            if (!expo.startsWith('52.'))  { console.error('::error::expo must be 52.x, found: ' + expo); process.exit(1); }
+            if (react !== '18.3.1')       { console.error('::error::react must be 18.3.1, found: ' + react); process.exit(1); }
+            if (!rn.startsWith('0.76'))   { console.error('::error::react-native must be 0.76.x, found: ' + rn); process.exit(1); }
+            console.log('Expo SDK 52 baseline OK: expo=' + expo + '  react=' + react + '  rn=' + rn);
+          "
+
+      - name: Validate react-test-renderer matches React
+        run: |
+          node -e "
+            const p = require('./package.json');
+            const react = (p.dependencies.react || '').replace(/[^0-9.].*/, '');
+            const rtr   = (p.devDependencies['react-test-renderer'] || '');
+            if (!rtr) { console.error('::error::react-test-renderer missing'); process.exit(1); }
+            if (react !== rtr.replace(/[~^]/,'')) {
+              console.error('::error::react (' + react + ') != react-test-renderer (' + rtr + ')');
+              process.exit(1);
+            }
+            const ov = (p.overrides || {})['react-test-renderer'];
+            if (!ov || ov !== rtr) {
+              console.error('::error::overrides[react-test-renderer] must equal devDependencies value');
+              process.exit(1);
+            }
+            console.log('react-test-renderer OK: ' + rtr);
+          "
+
+      - name: npm audit (fail on moderate+)
+        run: npm audit --audit-level=moderate
+
+      - name: Scan for hardcoded secrets
+        run: |
+          ! grep -rn \
+            --include="*.ts" --include="*.tsx" \
+            --exclude-dir=node_modules \
+            --exclude-dir=__tests__ \
+            -E "(api[_-]?key|secret|password|bearer|token)\s*[:=]\s*['\"][a-zA-Z0-9+/]{20,}" \
+            . || (echo "::error::Potential hardcoded secret detected." && exit 1)
+
+  # ── Gate 2: TypeScript ────────────────────────────────────────────────────
+  typecheck-gate:
+    name: TypeScript Gate
+    runs-on: ubuntu-latest
+    needs: dependency-gate
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - name: TypeScript — zero errors required
+        run: npm run typecheck
+
+  # ── Gate 3: Lint ──────────────────────────────────────────────────────────
+  lint-gate:
+    name: Lint Gate
+    runs-on: ubuntu-latest
+    needs: dependency-gate
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - name: ESLint — zero warnings required
+        run: npm run lint
+
+  # ── Gate 4: Unit tests ────────────────────────────────────────────────────
+  test-gate:
+    name: Test Gate
+    runs-on: ubuntu-latest
+    needs: dependency-gate
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - name: Unit tests — zero failures required
+        run: npm run test:coverage -- --coverageReporters=text --coverageReporters=lcov
+      - name: Upload test coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-coverage-${{ github.ref_name }}
+          path: coverage/
+          retention-days: 90
+
+  # ── Gate 5: Android build ─────────────────────────────────────────────────
+  # Runs a full production build — this is the final gate before release.
+  # All previous gates must pass first.
+  android-build-gate:
+    name: Android Build Gate
+    runs-on: ubuntu-latest
+    needs:
+      - dependency-gate
+      - typecheck-gate
+      - lint-gate
+      - test-gate
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: npm install
+        run: npm install
+
+      - name: Generate icon assets
+        run: |
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev > /dev/null 2>&1
+          npm install canvas --no-save > /dev/null 2>&1 && node scripts/generate-icons.js || echo "Using placeholder icons"
+
+      - name: Expo prebuild
+        run: EXPO_NO_DOTENV=1 npx expo prebuild --platform android --clean
+        env:
+          CI: '1'
+
+      - name: Pin Gradle wrapper to 8.7
+        run: |
+          PROPS="android/gradle/wrapper/gradle-wrapper.properties"
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' "$PROPS"
+          echo "Pinned: $(grep distributionUrl $PROPS)"
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Bundle JavaScript
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed \
+            --platform android \
+            --entry-file node_modules/expo-router/entry.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res \
+            --dev false \
+            --reset-cache
+          echo "Bundle size: $(du -sh android/app/src/main/assets/index.android.bundle)"
+        env:
+          NODE_ENV: production
+          EXPO_NO_DOTENV: '1'
+
+      - name: Build signed release APK
+        env:
+          GRADLE_OPTS: '-Xmx4g -XX:MaxMetaspaceSize=512m'
+          CI: 'true'
+        run: |
+          KS_FILE="$(pwd)/android/app/release-gate.keystore"
+          KS_ALIAS="release-gate"
+          KS_PASS="gate-$(date +%Y%m%d)"
+          KEY_PASS="gate-$(date +%Y%m%d)"
+
+          keytool -genkey -v \
+            -keystore "$KS_FILE" \
+            -alias "$KS_ALIAS" \
+            -keyalg RSA -keysize 2048 \
+            -validity 1 \
+            -storepass "$KS_PASS" \
+            -keypass "$KEY_PASS" \
+            -dname "CN=Release Gate, OU=CI, O=Lumio, L=Unknown, ST=Unknown, C=US"
+
+          cd android
+          ./gradlew assembleRelease \
+            --no-daemon \
+            -Dfile.encoding=UTF-8 \
+            -Pandroid.injected.signing.store.file="$KS_FILE" \
+            -Pandroid.injected.signing.store.password="$KS_PASS" \
+            -Pandroid.injected.signing.key.alias="$KS_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASS" \
+            2>&1 | tee /tmp/gradle.log
+          CODE=${PIPESTATUS[0]}
+          if [ $CODE -ne 0 ]; then
+            echo "::error::RELEASE BLOCKED — Android build failed."
+            grep -E "FAILED|Exception|> Task|Caused by|error:" /tmp/gradle.log | head -60 || true
+            tail -80 /tmp/gradle.log || true
+            exit $CODE
+          fi
+
+      - name: Verify APK exists
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::RELEASE BLOCKED — no APK produced."
+            exit 1
+          fi
+          echo "APK verified: $(du -sh $APK)"
+
+      - name: Upload release gate APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-apk-${{ github.ref_name }}
+          path: android/app/build/outputs/apk/release/
+          retention-days: 7
+
+  # ── Release summary ────────────────────────────────────────────────────────
+  # This job only runs when ALL gates pass. It serves as the merge-ready
+  # signal and provides a single status check to require in branch protection.
+  release-ready:
+    name: Release Ready ✓
+    runs-on: ubuntu-latest
+    needs:
+      - dependency-gate
+      - typecheck-gate
+      - lint-gate
+      - test-gate
+      - android-build-gate
+    steps:
+      - name: All release gates passed
+        run: |
+          echo "========================================"
+          echo "  ALL RELEASE GATES PASSED"
+          echo "  Ref: ${{ github.ref_name }}"
+          echo "  Commit: ${{ github.sha }}"
+          echo "  Triggered by: ${{ github.actor }}"
+          echo "========================================"
+          echo ""
+          echo "Gates passed:"
+          echo "  ✓ Dependency health (npm ls clean, audit clean)"
+          echo "  ✓ Expo SDK 52 baseline verified"
+          echo "  ✓ TypeScript — zero errors"
+          echo "  ✓ ESLint — zero warnings"
+          echo "  ✓ Unit tests — all passing"
+          echo "  ✓ Android build — APK produced"

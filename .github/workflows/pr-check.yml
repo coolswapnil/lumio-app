@@ -17,6 +17,7 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
+          cache: 'npm'
 
       # Must succeed with zero flags — no --force, no --legacy-peer-deps.
       - name: npm install (strict)
@@ -24,7 +25,15 @@ jobs:
 
       # npm ls exits non-zero when there are unmet peer deps or invalid packages.
       - name: npm ls (peer dependency check)
-        run: npm ls 2>&1 | tee /tmp/npm-ls.log && echo "npm ls OK" || (cat /tmp/npm-ls.log && echo "::error::npm ls reported errors — unmet peer dependencies or invalid packages. Fix package.json." && exit 1)
+        run: |
+          set -o pipefail
+          npm ls 2>&1 | tee /tmp/npm-ls.log
+          if grep -qE "UNMET|invalid" /tmp/npm-ls.log; then
+            echo "::error::npm ls reported unmet peer dependencies or invalid packages. Fix package.json."
+            cat /tmp/npm-ls.log
+            exit 1
+          fi
+          echo "npm ls OK"
 
       # npm doctor checks Node/npm health, registry reachability, cache state.
       - name: npm doctor
@@ -129,8 +138,9 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
+          cache: 'npm'
       - run: npm install
-      - run: npx tsc --noEmit
+      - run: npm run typecheck
 
   # ── 3. Linting ───────────────────────────────────────────────────────────
   lint:
@@ -142,8 +152,9 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
+          cache: 'npm'
       - run: npm install
-      - run: npx eslint . --ext .ts,.tsx --max-warnings 0
+      - run: npm run lint
 
   # ── 4. Unit tests ─────────────────────────────────────────────────────────
   test:
@@ -155,9 +166,10 @@ jobs:
       - uses: actions/setup-node@v4.4.0
         with:
           node-version: '22'
+          cache: 'npm'
       - run: npm install
       - name: Run tests with coverage
-        run: npx jest --coverage --coverageReporters=text --coverageReporters=lcov
+        run: npm run test:coverage -- --coverageReporters=text --coverageReporters=lcov
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         if: always()

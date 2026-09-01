@@ -2,9 +2,10 @@
 module.exports = {
   preset: 'jest-expo',
 
-  // Extend Jest matchers with @testing-library/jest-native custom matchers.
-  // The correct Jest configuration key is setupFilesAfterFramework.
-  setupFilesAfterFramework: ['@testing-library/jest-native/extend-expect'],
+  // Extend Jest matchers with @testing-library/react-native built-in matchers.
+  // @testing-library/jest-native is deprecated as of v12.4+ — use the built-in
+  // matchers shipped directly in @testing-library/react-native v13+.
+  setupFilesAfterEnv: ['@testing-library/react-native/extend-expect'],
 
   transformIgnorePatterns: [
     'node_modules/(?!(' +
