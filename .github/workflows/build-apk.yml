@@ -30,7 +30,14 @@ jobs:
         run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Install npm dependencies
-        run: npm install
+        run: |
+          npm install
+          # expo-modules-autolinking provides expo-module-gradle-plugin used by
+          # all expo native modules. Ensure it is installed even if hoisting failed.
+          npm install expo-modules-autolinking --no-save 2>/dev/null || true
+          # Verify the android directory exists (contains the gradle plugin)
+          echo "expo-modules-autolinking android dir:"
+          ls node_modules/expo-modules-autolinking/android/ 2>/dev/null || echo "MISSING — install failed"
 
       - name: Generate icon assets
         run: |
@@ -69,23 +76,19 @@ jobs:
           #    The plugin lives at: node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin
           #    OR: node_modules/@expo/gradle-plugin  (depending on expo version)
           #    We find it dynamically.
-          # Find expo-module-gradle-plugin — search all of node_modules
-          echo "=== Searching for expo-module-gradle-plugin ==="
-          find node_modules -name "build.gradle" -o -name "build.gradle.kts" | \
-            xargs grep -l "expo-module-gradle-plugin\|id.*expo.module" 2>/dev/null | head -10 || true
-          echo "=== All dirs containing expo-module-gradle-plugin string ==="
-          find node_modules -name "*.gradle" | \
-            xargs grep -rl "id.*expo-module-gradle-plugin\|expo\.modules\.plugin" 2>/dev/null | head -5 || true
-          echo "=== expo-modules-autolinking android dir ==="
-          ls node_modules/expo-modules-autolinking/android/ 2>/dev/null || echo "not found"
-          echo "=== expo-modules-core android dir ==="
-          ls node_modules/expo-modules-core/android/ 2>/dev/null | head -20 || true
-          echo "=== Looking for settings.gradle in node_modules ==="
-          find node_modules -name "settings.gradle" | head -5 || true
-          echo "=== Looking for any dir named expo-module-gradle-plugin ==="
-          find node_modules -type d -name "expo-module-gradle-plugin" 2>/dev/null || echo "not found"
-          echo "=== Looking for ExpoModulesPlugin or similar ==="
-          find node_modules -type d -name "*gradle*plugin*" 2>/dev/null | head -10 || true
+          # The expo-module-gradle-plugin is provided by expo-modules-autolinking.
+          # Add it as an includeBuild inside pluginManagement so Gradle can resolve
+          # the plugins{} block in expo-font and other expo modules.
+          PLUGIN_DIR="$(pwd)/node_modules/expo-modules-autolinking/android/expo-module-gradle-plugin"
+          if [ -d "$PLUGIN_DIR" ]; then
+            sed -i "s|pluginManagement {|pluginManagement {\n  includeBuild(\"${PLUGIN_DIR}\")|" \
+              android/settings.gradle
+            echo "Added includeBuild: $PLUGIN_DIR"
+          else
+            echo "ERROR: expo-module-gradle-plugin not found at $PLUGIN_DIR"
+            ls "$(pwd)/node_modules/expo-modules-autolinking/android/" 2>/dev/null || true
+            exit 1
+          fi
 
           echo "=== settings.gradle first 8 lines ==="
           head -8 android/settings.gradle
