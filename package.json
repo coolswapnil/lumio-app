@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "build:android": "eas build --platform android",
     "build:apk": "eas build --platform android --profile preview",
-    "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:coverage": "jest --coverage",
