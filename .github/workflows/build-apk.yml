@@ -44,39 +44,24 @@ jobs:
         env:
           CI: '1'
 
-      # Expo 52 / expo-modules-core 2.x targets Gradle 8.6 + AGP 8.4.
-      # On ubuntu-latest the generated wrapper may be 8.10+ which breaks with:
-      #   "unknown property 'release'" (SoftwareComponent API removed in 8.8)
-      # Gradle 8.3 is too old (Kotlin settings-plugin compileKotlin fails).
-      # Print generated versions first so future failures are easier to debug,
-      # then pin to the exact versions Expo 52 is tested against.
-      - name: Inspect generated android project versions
+      # The AGP version that expo prebuild generates tells us exactly which Gradle
+      # version is required. AGP 8.5/8.6 require Gradle >= 8.7; AGP 8.7 requires
+      # Gradle >= 8.9. Gradle 8.8+ breaks expo-modules-core (removes
+      # SoftwareComponent.release API). So the only safe version is 8.7.
+      # We do NOT patch AGP — only pin the Gradle wrapper.
+      - name: Print generated Gradle versions (diagnostic)
         run: |
           echo "=== gradle-wrapper.properties ==="
           cat android/gradle/wrapper/gradle-wrapper.properties
           echo ""
           echo "=== android/build.gradle ==="
           cat android/build.gradle
-          echo ""
-          echo "=== android/settings.gradle (first 30 lines) ==="
-          head -30 android/settings.gradle || true
 
-      - name: Pin Gradle wrapper to 8.6
+      - name: Pin Gradle wrapper to 8.7
         run: |
           PROPS="android/gradle/wrapper/gradle-wrapper.properties"
-          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.6-bin.zip|' "$PROPS"
+          sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' "$PROPS"
           echo "Pinned: $(grep distributionUrl $PROPS)"
-
-      - name: Pin Android Gradle Plugin to 8.4.2
-        run: |
-          BUILD="android/build.gradle"
-          # classpath style: classpath("com.android.tools.build:gradle:X.Y.Z")
-          sed -i 's/com\.android\.tools\.build:gradle:[0-9][0-9.]*/com.android.tools.build:gradle:8.4.2/g' "$BUILD"
-          # plugins{} id style: id("com.android.application") version "X.Y.Z"
-          sed -i 's/id("com\.android\.application") version "[0-9][0-9.]*"/id("com.android.application") version "8.4.2"/g' "$BUILD"
-          sed -i 's/id("com\.android\.library") version "[0-9][0-9.]*"/id("com.android.library") version "8.4.2"/g' "$BUILD"
-          echo "=== android/build.gradle after patch ==="
-          cat "$BUILD"
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
