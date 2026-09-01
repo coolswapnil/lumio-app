@@ -140,21 +140,15 @@ jobs:
           echo "Tag: $VERSION"
           echo "Repo: $GITHUB_REPOSITORY"
 
-          # Use the gh CLI which handles auth, existing releases, and asset
-          # upload correctly — no manual curl needed.
-          # Create release (or update if exists)
+          # Write release notes to a temp file to avoid YAML multiline issues
+          printf "Signed release APK for Android.\n\n### Install\n1. Download lumio-%s.apk from Assets below\n2. Phone: Settings > Security > Install unknown apps\n3. Open the APK and tap Install\n" "$VERSION" > /tmp/release-notes.md
+
+          # Create release (skip if already exists)
           gh release create "$VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Lumio ${VERSION}" \
-            --notes "## Lumio ${VERSION}
-
-Signed release APK for Android.
-
-### Install
-1. Download \`lumio-${VERSION}.apk\` from Assets below
-2. Phone: Settings → Security → Install unknown apps → enable for your file manager
-3. Open the APK and tap Install" \
-            || gh release view "$VERSION" --repo "$GITHUB_REPOSITORY"
+            --notes-file /tmp/release-notes.md \
+            || true
 
           # Upload APK (--clobber replaces existing asset with same name)
           gh release upload "$VERSION" "$APK" \
