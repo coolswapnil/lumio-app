@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Linking,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -40,6 +40,7 @@ function openInGoogleMaps(item: SavedItem) {
 export default function LocationsScreen() {
   const { colors } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { items } = useData();
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -145,7 +146,12 @@ export default function LocationsScreen() {
         data={locationItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={[styles.list, locationItems.length === 0 && styles.emptyList]}
+        contentContainerStyle={[
+          styles.list,
+          // Clear the navigation bar so the last item is not hidden behind it
+          { paddingBottom: insets.bottom + 16 },
+          locationItems.length === 0 && styles.emptyList,
+        ]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="location-outline" size={52} color={paper.colors.onSurfaceVariant} />
@@ -185,7 +191,7 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    // paddingBottom set inline (depends on navigation bar inset)
   },
   emptyList: { flex: 1 },
   card: {

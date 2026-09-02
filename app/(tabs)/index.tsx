@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FAB, IconButton, useTheme as usePaperTheme } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -50,9 +50,14 @@ const skeletonStyles = StyleSheet.create({
   descLine: { height: 12, width: '50%', borderRadius: 8 },
 });
 
+// FAB height (MD3 extended FAB) + gap above it
+const FAB_HEIGHT = 56;
+const FAB_MARGIN = 16;
+
 export default function LibraryScreen() {
   const { colors } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const {
     items,
     counts,
@@ -139,6 +144,8 @@ export default function LibraryScreen() {
         updateCellsBatchingPeriod={50}
         contentContainerStyle={[
           styles.listContent,
+          // Clear space for FAB + navigation bar so the last item is never hidden
+          { paddingBottom: insets.bottom + FAB_HEIGHT + FAB_MARGIN + 8 },
           items.length === 0 && styles.emptyList,
         ]}
         refreshing={refreshing}
@@ -163,12 +170,12 @@ export default function LibraryScreen() {
         }
       />
 
-      {/* MD3 Extended FAB */}
+      {/* MD3 Extended FAB — bottom respects gesture nav / home bar */}
       <FAB
         icon="plus"
         label="Save"
         onPress={() => router.push('/save')}
-        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
+        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer, bottom: insets.bottom + FAB_MARGIN }]}
         color={paper.colors.onPrimaryContainer}
       />
     </SafeAreaView>
@@ -206,7 +213,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 100,
+    // paddingBottom is set inline (depends on insets — see FlatList contentContainerStyle)
   },
   emptyList: {
     flex: 1,
@@ -240,7 +247,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 16,
-    bottom: 24,
+    // bottom is set inline so it can use the insets value
     borderRadius: 16,
   },
 });

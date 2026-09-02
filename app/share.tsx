@@ -14,7 +14,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
   Text,
@@ -57,7 +57,6 @@ function guessContentType(url: string, text: string): ContentType {
 export default function ShareScreen() {
   const { colors } = useTheme();
   const paper = usePaperTheme();
-  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -153,10 +152,13 @@ export default function ShareScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    // SafeAreaView outermost: consumes status-bar inset before KeyboardAvoidingView
+    // sees it — prevents the header from overlapping the status bar on Android.
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header — padded for status bar when presented as modal */}
-        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top > 0 ? insets.top : 14 }]}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
           </TouchableOpacity>
@@ -291,7 +293,8 @@ export default function ShareScreen() {
           </ScrollView>
         </ScrollView>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

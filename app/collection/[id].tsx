@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +22,7 @@ export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -55,7 +56,7 @@ export default function CollectionDetailScreen() {
 
   if (!collection) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.empty}>
           <Text style={[{ color: colors.text }]}>Collection not found.</Text>
         </View>
@@ -64,7 +65,7 @@ export default function CollectionDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={20} color={paper.colors.primary} />
@@ -97,7 +98,12 @@ export default function CollectionDetailScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <ItemCard item={item} />}
-        contentContainerStyle={[styles.list, items.length === 0 && styles.emptyList]}
+        contentContainerStyle={[
+          styles.list,
+          // Clear the navigation bar so the last item is not hidden behind it
+          { paddingBottom: insets.bottom + 24 },
+          items.length === 0 && styles.emptyList,
+        ]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="bookmark-outline" size={40} color={paper.colors.onSurfaceVariant} />
@@ -143,7 +149,7 @@ const styles = StyleSheet.create({
   collectionName: { fontSize: 20, fontWeight: '800' },
   collectionDesc: { fontSize: 13, marginTop: 2 },
   itemCount: { fontSize: 12, marginTop: 3 },
-  list: { padding: 16, paddingBottom: 80 },
+  list: { padding: 16 },
   emptyList: { flex: 1 },
   empty: {
     alignItems: 'center',

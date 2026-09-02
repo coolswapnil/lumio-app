@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, ActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import { Button } from '../../src/components/Button';
 export default function SettingsScreen() {
   const { colors, settings, updateSettings } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { items, collections } = useData();
   const [exporting, setExporting] = useState<'json' | 'csv' | null>(null);
   const [aiSettings, setAiSettings] = useState<Partial<AISettings>>({
@@ -100,7 +101,7 @@ export default function SettingsScreen() {
         <Text variant="headlineSmall" style={{ color: paper.colors.onSurface }}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         {/* Appearance */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>APPEARANCE</Text>
         <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
@@ -335,7 +336,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  content: { padding: 16, paddingBottom: 100, gap: 8 },
+  content: { padding: 16, gap: 8 },
   sectionTitle: {
     letterSpacing: 0.8,
     marginTop: 8,

@@ -6,7 +6,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   FAB,
   Text,
@@ -27,9 +27,14 @@ import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
 import { Button } from '../../src/components/Button';
 import { FlatList } from 'react-native';
 
+// FAB height (MD3 extended FAB) + gap above it
+const FAB_HEIGHT = 56;
+const FAB_MARGIN = 16;
+
 export default function CollectionsScreen() {
   const { colors } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { collections, refreshCollections } = useData();
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
@@ -84,7 +89,11 @@ export default function CollectionsScreen() {
         data={collections}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <CollectionCard collection={item} />}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          // Clear space for FAB + navigation bar
+          { paddingBottom: insets.bottom + FAB_HEIGHT + FAB_MARGIN + 8 },
+        ]}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Ionicons name="folder-open-outline" size={52} color={paper.colors.onSurfaceVariant} />
@@ -98,12 +107,12 @@ export default function CollectionsScreen() {
         }
       />
 
-      {/* MD3 FAB */}
+      {/* MD3 FAB — bottom respects gesture nav / home bar */}
       <FAB
         icon="plus"
         label="New Collection"
         onPress={() => setModalVisible(true)}
-        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer }]}
+        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer, bottom: insets.bottom + FAB_MARGIN }]}
         color={paper.colors.onPrimaryContainer}
         accessibilityLabel="Create new collection"
       />
@@ -115,7 +124,8 @@ export default function CollectionsScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => { setModalVisible(false); resetForm(); }}
       >
-        <View style={[styles.modal, { backgroundColor: colors.background }]}>
+        {/* SafeAreaView inside modal so its header clears the status bar on Android */}
+        <SafeAreaView style={[styles.modal, { backgroundColor: colors.background }]} edges={['top']}>
           {/* Modal Header */}
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <TouchableRipple
@@ -230,7 +240,7 @@ export default function CollectionsScreen() {
               <ActivityIndicator size="large" color={paper.colors.primary} />
             </View>
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -243,13 +253,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  listContent: { padding: 16, paddingBottom: 100 },
+  listContent: { padding: 16 },
   empty: { alignItems: 'center', paddingTop: 80, gap: 8 },
   emptyText: { marginTop: 12 },
   fab: {
     position: 'absolute',
     right: 16,
-    bottom: 24,
+    // bottom is set inline so it can use the insets value
     borderRadius: 16,
   },
   modal: { flex: 1 },

@@ -9,7 +9,7 @@ import {
   Alert,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +26,7 @@ export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
   const paper = usePaperTheme();
+  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const [item, setItem] = useState<SavedItem | null>(null);
@@ -46,7 +47,7 @@ export default function ItemDetailScreen() {
 
   if (!item) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.loading}>
           {/* MD3 Expressive circular progress indicator */}
           <PaperActivityIndicator size="large" color={paper.colors.primary} />
@@ -119,7 +120,7 @@ export default function ItemDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Navigation Bar */}
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
@@ -140,7 +141,7 @@ export default function ItemDetailScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
         {/* Type badge */}
         <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
           <Ionicons name={config.icon as any} size={14} color={config.color} />
@@ -335,7 +336,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   navActions: { flexDirection: 'row', gap: 16 },
-  content: { padding: 16, paddingBottom: 60, gap: 14 },
+  content: { padding: 16, gap: 14 },
   typeBadge: {
     flexDirection: 'row',
     alignItems: 'center',

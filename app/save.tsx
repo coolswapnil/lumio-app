@@ -10,7 +10,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -31,7 +31,6 @@ import { Button } from '../src/components/Button';
 export default function SaveScreen() {
   const { colors } = useTheme();
   const paper = usePaperTheme();
-  const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
 
@@ -175,13 +174,16 @@ export default function SaveScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    // SafeAreaView outermost: consumes status-bar inset before KeyboardAvoidingView
+    // sees it — prevents the header from overlapping the status bar on Android.
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header — padded for status bar when presented as modal */}
-        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top > 0 ? insets.top : 14 }]}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
           </TouchableOpacity>
@@ -373,7 +375,8 @@ export default function SaveScreen() {
           </Text>
         </ScrollView>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
