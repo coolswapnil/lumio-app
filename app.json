@@ -12,6 +12,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#0f172a"
     },
+    "extra": {
+      "logo": {
+        "light": "./assets/logo-light.png",
+        "dark": "./assets/logo-dark.png"
+      }
+    },
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
@@ -20,11 +26,11 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0f172a"
       },
       "package": "com.lumio.savelater",
       "versionCode": 20204,
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -53,7 +59,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "Lumio",
+      "shortName": "Lumio",
+      "themeColor": "#0f172a",
+      "backgroundColor": "#0f172a"
     },
     "plugins": [
       "expo-router",
