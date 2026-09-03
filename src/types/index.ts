@@ -36,6 +36,16 @@ export type AIProvider =
   | 'indus'
   | 'local';
 
+/**
+ * Which local inference back-end to use when provider === 'local'.
+ *  - 'ollama'   : Ollama REST API  (default http://localhost:11434/v1)
+ *  - 'lmstudio' : LM Studio REST   (default http://localhost:1234/v1)
+ *  - 'llamacpp' : llama.cpp server / any OpenAI-compatible endpoint
+ *  - 'gguf'     : Direct GGUF file path (future native bridge; routed via
+ *                 a local llama.cpp-compatible server for now)
+ */
+export type LocalAISource = 'ollama' | 'lmstudio' | 'llamacpp' | 'gguf';
+
 export interface SavedItem {
   /** UUID v4 */
   id: string;
@@ -85,8 +95,18 @@ export interface AISettings {
   // IBM watsonx extras
   watsonxProjectId?: string;
   watsonxRegion?: string;
-  // Local LLM (Ollama / LM Studio / any OpenAI-compatible server)
+  // Local LLM (Ollama / LM Studio / llama.cpp / GGUF)
   localBaseUrl?: string;
+  /** Which local back-end to use; only relevant when provider === 'local' */
+  localSource?: LocalAISource;
+  /** Absolute path to a .gguf model file selected by the user */
+  localGgufPath?: string;
+  /** File size in bytes of the selected .gguf model */
+  localGgufSize?: number;
+  /** Display name of the selected .gguf model file */
+  localGgufName?: string;
+  /** Whether local AI mode is enabled */
+  localEnabled?: boolean;
 }
 
 export type AppearanceStyle = 'classic' | 'material-you' | 'expressive';

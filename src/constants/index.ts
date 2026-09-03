@@ -1,4 +1,4 @@
-import type { ContentType, IconName } from '../types';
+import type { ContentType, IconName, LocalAISource } from '../types';
 
 export const CONTENT_TYPE_CONFIG: Record<
   ContentType,
@@ -97,5 +97,53 @@ export const AI_PROVIDERS = [
     modelPlaceholder: 'llama3.2',
     requiresBaseUrl: true,
     isLocal: true,
+  },
+];
+
+export const LOCAL_AI_SOURCES: Array<{
+  id: LocalAISource;
+  name: string;
+  description: string;
+  defaultUrl: string;
+  modelPlaceholder: string;
+  requiresFilePicker: boolean;
+  /** Whether an API key is ever required */
+  requiresApiKey: boolean;
+}> = [
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    description: 'Local models via Ollama server',
+    defaultUrl: 'http://localhost:11434/v1',
+    modelPlaceholder: 'llama3.2',
+    requiresFilePicker: false,
+    requiresApiKey: false,
+  },
+  {
+    id: 'lmstudio',
+    name: 'LM Studio',
+    description: 'Local models via LM Studio',
+    defaultUrl: 'http://localhost:1234/v1',
+    modelPlaceholder: 'local-model',
+    requiresFilePicker: false,
+    requiresApiKey: false,
+  },
+  {
+    id: 'llamacpp',
+    name: 'llama.cpp server',
+    description: 'Any OpenAI-compatible local endpoint',
+    defaultUrl: 'http://localhost:8080/v1',
+    modelPlaceholder: 'default',
+    requiresFilePicker: false,
+    requiresApiKey: false,
+  },
+  {
+    id: 'gguf',
+    name: 'Local GGUF file',
+    description: 'Load a .gguf model file from device storage',
+    defaultUrl: 'http://localhost:8080/v1',
+    modelPlaceholder: 'default',
+    requiresFilePicker: true,
+    requiresApiKey: false,
   },
 ];

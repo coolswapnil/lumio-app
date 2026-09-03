@@ -237,20 +237,38 @@ async function callIndus(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Local LLM — Ollama / LM Studio / any OpenAI-compatible local server
+// Local LLM — Ollama / LM Studio / llama.cpp / GGUF
 //
-// Ollama default:    http://localhost:11434/v1   (no key needed)
-// LM Studio default: http://localhost:1234/v1    (no key needed)
-// Custom server:     user-provided base URL
+// Source defaults:
+//   ollama   → http://localhost:11434/v1  (no key needed)
+//   lmstudio → http://localhost:1234/v1   (no key needed)
+//   llamacpp → http://localhost:8080/v1   (no key needed)
+//   gguf     → routed through llama.cpp server at localBaseUrl
 // ────────────────────────────────────────────────────────────────────────────
+function resolveLocalBaseUrl(
+  source: import('../types').LocalAISource | undefined,
+  customUrl: string | undefined
+): string {
+  if (customUrl?.trim()) return customUrl.trim().replace(/\/$/, '');
+  switch (source) {
+    case 'lmstudio': return 'http://localhost:1234/v1';
+    case 'llamacpp': return 'http://localhost:8080/v1';
+    case 'gguf':     return 'http://localhost:8080/v1';
+    case 'ollama':
+    default:         return 'http://localhost:11434/v1';
+  }
+}
+
 async function callLocalLLM(
   apiKey: string,
   model: string,
   baseUrl: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  source?: import('../types').LocalAISource
 ): Promise<string> {
-  const url = (baseUrl || 'http://localhost:11434/v1').replace(/\/$/, '');
-  return callOpenAICompatible(url, apiKey, model || 'llama3.2', messages);
+  const url = resolveLocalBaseUrl(source, baseUrl);
+  const defaultModel = (source === 'lmstudio') ? 'local-model' : 'llama3.2';
+  return callOpenAICompatible(url, apiKey, model || defaultModel, messages);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -297,8 +315,9 @@ async function callAI(
       return callLocalLLM(
         settings.apiKey,
         settings.model ?? 'llama3.2',
-        settings.localBaseUrl ?? 'http://localhost:11434/v1',
-        messages
+        settings.localBaseUrl ?? '',
+        messages,
+        settings.localSource
       );
 
     default:

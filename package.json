@@ -27,6 +27,7 @@
     "expo-asset": "~11.0.4",
     "expo-clipboard": "~7.0.0",
     "expo-constants": "~17.0.4",
+    "expo-document-picker": "~13.0.3",
     "expo-file-system": "~18.0.7",
     "expo-font": "~13.0.3",
     "expo-linking": "~7.0.4",
