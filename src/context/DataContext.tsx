@@ -1,4 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+
+// FIX M-18: prevent expo-router from auto-hiding the splash until DB is ready
+SplashScreen.preventAutoHideAsync().catch(() => {});
 import { initDatabase } from '../database/db';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
@@ -72,7 +76,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     initDatabase().then(() => {
       if (!cancelled) {
         refreshAll().finally(() => {
-          if (!cancelled) setIsLoading(false);
+          if (!cancelled) {
+            setIsLoading(false);
+            SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
+          }
         });
       }
     });
