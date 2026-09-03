@@ -50,9 +50,14 @@ const skeletonStyles = StyleSheet.create({
   descLine: { height: 12, width: '50%', borderRadius: 8 },
 });
 
-// FAB height (MD3 extended FAB) + gap above it
+// MD3 extended FAB dimensions
 const FAB_HEIGHT = 56;
 const FAB_MARGIN = 16;
+// Tab bar fixed content height (matches _layout.tsx tabBarStyle height base).
+// The tab bar total height = TAB_BAR_HEIGHT + insets.bottom.
+// The FAB is position:absolute relative to the full screen, so it must clear
+// both the nav-bar inset AND the tab bar's fixed content height.
+const TAB_BAR_HEIGHT = 52;
 
 export default function LibraryScreen() {
   const { colors } = useTheme();
@@ -144,8 +149,9 @@ export default function LibraryScreen() {
         updateCellsBatchingPeriod={50}
         contentContainerStyle={[
           styles.listContent,
-          // Clear space for FAB + navigation bar so the last item is never hidden
-          { paddingBottom: insets.bottom + FAB_HEIGHT + FAB_MARGIN + 8 },
+          // Clear space for FAB + tab bar + nav bar so the last item is never hidden.
+          // FAB sits at (insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN) from screen bottom.
+          { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + FAB_HEIGHT + FAB_MARGIN + 8 },
           items.length === 0 && styles.emptyList,
         ]}
         refreshing={refreshing}
@@ -170,12 +176,19 @@ export default function LibraryScreen() {
         }
       />
 
-      {/* MD3 Extended FAB — bottom respects gesture nav / home bar */}
+      {/* MD3 Extended FAB — clears tab bar (TAB_BAR_HEIGHT) + gesture nav inset */}
       <FAB
         icon="plus"
         label="Save"
         onPress={() => router.push('/save')}
-        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer, bottom: insets.bottom + FAB_MARGIN }]}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: paper.colors.primaryContainer,
+            // bottom = nav-bar inset + fixed tab bar content height + design margin
+            bottom: insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN,
+          },
+        ]}
         color={paper.colors.onPrimaryContainer}
       />
     </SafeAreaView>

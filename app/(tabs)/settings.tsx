@@ -101,7 +101,8 @@ export default function SettingsScreen() {
         <Text variant="headlineSmall" style={{ color: paper.colors.onSurface }}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
+      {/* paddingBottom clears tab bar (52dp) + nav inset + design gap */}
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 52 + 24 }]}>
         {/* Appearance */}
         <Text variant="labelSmall" style={[styles.sectionTitle, { color: paper.colors.onSurfaceVariant }]}>APPEARANCE</Text>
         <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>

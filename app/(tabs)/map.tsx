@@ -50,10 +50,13 @@ export default function LocationsScreen() {
     const withLocation = items.filter((item) => item.address?.trim() || (item.latitude && item.longitude));
     if (!search.trim()) return withLocation;
     const q = search.trim().toLowerCase();
+    // FIX C-3: items with GPS coords but no address text pass the outer filter,
+    // so address can be undefined here. Replace the non-null assertion (!) with
+    // optional chaining to prevent a crash when searching GPS-only items.
     return withLocation.filter(
       (item) =>
         item.title.toLowerCase().includes(q) ||
-        item.address!.toLowerCase().includes(q) ||
+        (item.address?.toLowerCase().includes(q) ?? false) ||
         item.tags.some((t) => t.includes(q))
     );
   }, [items, search]);
@@ -148,8 +151,9 @@ export default function LocationsScreen() {
         renderItem={renderItem}
         contentContainerStyle={[
           styles.list,
-          // Clear the navigation bar so the last item is not hidden behind it
-          { paddingBottom: insets.bottom + 16 },
+          // Clear the tab bar (52dp) + nav-bar inset so the last item is not hidden.
+          // There is no FAB on this screen, so we only need tab bar + inset + design gap.
+          { paddingBottom: insets.bottom + 52 + 16 },
           locationItems.length === 0 && styles.emptyList,
         ]}
         ListEmptyComponent={

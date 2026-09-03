@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lumio",
     "slug": "lumio-app",
-    "version": "2.2.4",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -26,11 +26,12 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "monochromeImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/monochrome-icon.png",
         "backgroundColor": "#0f172a"
       },
       "package": "com.lumio.savelater",
-      "versionCode": 20204,
+      "versionCode": 10000,
+      "targetSdkVersion": 35,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
@@ -66,6 +67,7 @@
       "backgroundColor": "#0f172a"
     },
     "plugins": [
+      "./plugins/withEdgeToEdge",
       "expo-router",
       [
         "expo-location",

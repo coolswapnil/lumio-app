@@ -27,9 +27,12 @@ import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
 import { Button } from '../../src/components/Button';
 import { FlatList } from 'react-native';
 
-// FAB height (MD3 extended FAB) + gap above it
+// MD3 extended FAB dimensions
 const FAB_HEIGHT = 56;
 const FAB_MARGIN = 16;
+// Tab bar fixed content height — must match _layout.tsx tabBarStyle height base.
+// FAB is position:absolute from screen bottom, so it must clear tab bar + nav inset.
+const TAB_BAR_HEIGHT = 52;
 
 export default function CollectionsScreen() {
   const { colors } = useTheme();
@@ -91,8 +94,8 @@ export default function CollectionsScreen() {
         renderItem={({ item }) => <CollectionCard collection={item} />}
         contentContainerStyle={[
           styles.listContent,
-          // Clear space for FAB + navigation bar
-          { paddingBottom: insets.bottom + FAB_HEIGHT + FAB_MARGIN + 8 },
+          // Clear space for FAB + tab bar + nav inset so last item is not hidden.
+          { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + FAB_HEIGHT + FAB_MARGIN + 8 },
         ]}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -107,12 +110,19 @@ export default function CollectionsScreen() {
         }
       />
 
-      {/* MD3 FAB — bottom respects gesture nav / home bar */}
+      {/* MD3 FAB — clears tab bar (TAB_BAR_HEIGHT) + gesture nav inset */}
       <FAB
         icon="plus"
         label="New Collection"
         onPress={() => setModalVisible(true)}
-        style={[styles.fab, { backgroundColor: paper.colors.primaryContainer, bottom: insets.bottom + FAB_MARGIN }]}
+        style={[
+          styles.fab,
+          {
+            backgroundColor: paper.colors.primaryContainer,
+            // bottom = nav-bar inset + fixed tab bar content height + design margin
+            bottom: insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN,
+          },
+        ]}
         color={paper.colors.onPrimaryContainer}
         accessibilityLabel="Create new collection"
       />

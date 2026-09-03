@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../src/context/ThemeContext';
 import { DataProvider } from '../src/context/DataContext';
 import { SyncProvider } from '../src/context/SyncContext';
@@ -11,34 +12,44 @@ function AppContent() {
   const { isDark, colors } = useTheme();
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.background },
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="save"
-          options={{
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
+    // SafeAreaProvider must wrap all useSafeAreaInsets() consumers.
+    // Without it, insets default to 0 on Android — causing FABs and
+    // scrollable content to render behind the navigation bar.
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.background }}>
+        {/*
+          translucent={true} makes the status bar fully transparent so the
+          app background draws behind it. Combined with the transparent
+          navigationBarColor in styles.xml this gives true edge-to-edge.
+        */}
+        <StatusBar style={isDark ? 'light' : 'dark'} translucent />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.background },
+            animation: 'slide_from_right',
           }}
-        />
-        <Stack.Screen
-          name="share"
-          options={{
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
-          }}
-        />
-        <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="collection/[id]" options={{ headerShown: false }} />
-      </Stack>
-    </GestureHandlerRootView>
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="save"
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="share"
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="collection/[id]" options={{ headerShown: false }} />
+        </Stack>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
