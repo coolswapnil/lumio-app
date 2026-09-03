@@ -30,7 +30,7 @@ L_PTS    = [(62,70),(62,100),(114,100),(114,115),(46,115),(46,70)]
 # Focus node
 NX, NY   = 62, 100
 NODE_R   = 6.05   # disc radius
-GLOW_R   = 15.4   # halo radius
+GLOW_R   = 12.32  # halo radius, reduced 20% so the bookmark remains primary
 
 # Colours
 C_BLUE      = (29,  78, 216)   # #1d4ed8
@@ -203,7 +203,7 @@ def render_icon(size: int, bg_color, round_corners=True, transparent_bg=False):
                      cx=int(NX*scale), cy=int(NY*scale),
                      r_inner=int(NODE_R*scale),
                      r_outer=int(GLOW_R*scale),
-                     colour=C_PURPLE1, max_alpha=200)
+                     colour=C_PURPLE1, max_alpha=160)
     img.alpha_composite(glow_layer)
 
     # 7. Lavender disc
