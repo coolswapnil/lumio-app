@@ -401,9 +401,17 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
     // ── Expressive: squircle FAB (bottom-right) with gradient simulation + callout ──
     return (
       <Animated.View style={[fabStyles.expressiveWrap, { transform: [{ scale }] }]}>
-        <Animated.View style={[fabStyles.callout, { opacity: calloutOpacity }]}>
-          <Text style={fabStyles.calloutText}>Save Item</Text>
-          <View style={fabStyles.calloutArrow} />
+        <Animated.View
+          style={[
+            fabStyles.callout,
+            {
+              backgroundColor: paper.colors.inverseSurface,
+              opacity: calloutOpacity,
+            },
+          ]}
+        >
+          <Text style={[fabStyles.calloutText, { color: paper.colors.inverseOnSurface }]}>Save Item</Text>
+          <View style={[fabStyles.calloutArrow, { borderLeftColor: paper.colors.inverseSurface }]} />
         </Animated.View>
         <Pressable
           onPress={loading ? undefined : onPress}
@@ -433,7 +441,7 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
                 <View style={fabStyles.loadingDot} />
               </Animated.View>
             ) : (
-              <Ionicons name="checkmark" size={26} color="#fff" style={fabStyles.expressiveIcon} />
+              <Ionicons name="checkmark" size={26} color={paper.colors.onSecondary} style={fabStyles.expressiveIcon} />
             )}
           </Animated.View>
         </Pressable>
@@ -511,13 +519,11 @@ const fabStyles = StyleSheet.create({
     position: 'absolute',
     right: 66,
     bottom: 12,
-    backgroundColor: '#1f2328',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   calloutText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -533,7 +539,6 @@ const fabStyles = StyleSheet.create({
     borderLeftWidth: 6,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderLeftColor: '#1f2328',
   },
   expressiveFab: {
     width: 56,
