@@ -61,20 +61,43 @@ const APPEARANCE_TOGGLES = [
 
 type SectionKey = 'appearance' | 'ai' | 'storage' | 'advanced' | 'about';
 
-// ─── Diagnostics event → badge colour (static, theme-agnostic tints) ──────────
-const DIAG_EVENT_COLORS: Record<import('../../src/services/diagnostics').DiagEventType, string> = {
-  SHARE_INTENT_RECEIVED: '#dbeafe', // blue-100
-  SHARE_INTENT_PARSED:   '#dbeafe',
-  METADATA_FOUND:        '#d1fae5', // green-100
-  AI_REQUEST_STARTED:    '#fef9c3', // yellow-100
-  AI_RESPONSE_RECEIVED:  '#e0e7ff', // indigo-100
-  AI_RESPONSE_PARSED:    '#e0e7ff',
-  PROVIDER_ERROR:        '#fee2e2', // red-100
-  SAVE_STARTED:          '#fce7f3', // pink-100
-  SAVE_COMPLETED:        '#dcfce7', // green-200
-  SAVE_FAILED:           '#fee2e2',
-  FORM_UPDATE_COMPLETED: '#f3f4f6', // gray-100
+// ─── Diagnostics event → MD3 container role ───────────────────────────────────
+// Keys map each event type to a semantic MD3 container so badges are
+// always theme-aware (light / dark / AMOLED / Material You).
+type DiagBadgeRole = 'primary' | 'secondary' | 'tertiary' | 'error' | 'surface';
+
+const DIAG_EVENT_ROLES: Record<import('../../src/services/diagnostics').DiagEventType, DiagBadgeRole> = {
+  SHARE_INTENT_RECEIVED: 'primary',
+  SHARE_ACTION:          'primary',
+  SHARE_MIME_TYPE:       'primary',
+  SHARE_TEXT:            'primary',
+  SHARE_URL_EXTRACTED:   'primary',
+  SHARE_SCREEN_OPENED:   'primary',
+  SHARE_FORM_POPULATED:  'secondary',
+  SHARE_INTENT_PARSED:   'secondary',
+  METADATA_FOUND:        'tertiary',
+  AI_REQUEST_STARTED:    'tertiary',
+  AI_RESPONSE_RECEIVED:  'secondary',
+  AI_RESPONSE_PARSED:    'secondary',
+  PROVIDER_ERROR:        'error',
+  SAVE_STARTED:          'surface',
+  SAVE_COMPLETED:        'tertiary',
+  SAVE_FAILED:           'error',
+  FORM_UPDATE_COMPLETED: 'surface',
 };
+
+function getDiagBadgeColors(
+  role: DiagBadgeRole,
+  paper: ReturnType<typeof useAppTheme>
+): { bg: string; fg: string } {
+  switch (role) {
+    case 'primary':   return { bg: paper.colors.primaryContainer,   fg: paper.colors.onPrimaryContainer };
+    case 'secondary': return { bg: paper.colors.secondaryContainer, fg: paper.colors.onSecondaryContainer };
+    case 'tertiary':  return { bg: paper.colors.tertiaryContainer,  fg: paper.colors.onTertiaryContainer };
+    case 'error':     return { bg: paper.colors.errorContainer,     fg: paper.colors.onErrorContainer };
+    default:          return { bg: paper.colors.surfaceContainerHigh, fg: paper.colors.onSurfaceVariant };
+  }
+}
 
 // ─── RAM / Compatibility helpers ──────────────────────────────────────────────
 
@@ -1791,11 +1814,16 @@ export default function SettingsScreen() {
                   No entries
                 </Text>
               }
-              renderItem={({ item }) => (
+              renderItem={({ item }) => {
+                const { bg: badgeBg, fg: badgeFg } = getDiagBadgeColors(
+                  DIAG_EVENT_ROLES[item.event] ?? 'surface',
+                  paper
+                );
+                return (
                 <View style={[styles.diagEntry, { borderBottomColor: paper.colors.outlineVariant }]}>
                   <View style={styles.diagEntryHeader}>
-                    <View style={[styles.diagEventBadge, { backgroundColor: DIAG_EVENT_COLORS[item.event] ?? paper.colors.secondaryContainer }]}>
-                      <Text variant="labelSmall" style={{ color: paper.colors.onSecondaryContainer, fontWeight: '700', fontSize: 10 }}>
+                    <View style={[styles.diagEventBadge, { backgroundColor: badgeBg }]}>
+                      <Text variant="labelSmall" style={{ color: badgeFg, fontWeight: '700', fontSize: 10 }}>
                         {item.event}
                       </Text>
                     </View>
@@ -1807,7 +1835,8 @@ export default function SettingsScreen() {
                     {item.detail}
                   </Text>
                 </View>
-              )}
+                );
+              }}
             />
 
             {/* Action row: Copy · Export · Clear */}
