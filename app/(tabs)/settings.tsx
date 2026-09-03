@@ -23,8 +23,9 @@ import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
 import { getAISettings, saveAISettings, clearAISettings } from '../../src/services/settings';
 import { exportAsJSON, exportAsCSV } from '../../src/services/export';
+import { testConnection, loadHealth, clearHealth, formatRelativeTime } from '../../src/services/aiHealth';
 import { AI_PROVIDERS, LOCAL_AI_SOURCES } from '../../src/constants';
-import type { AISettings, AIProvider, LocalAISource, IconName } from '../../src/types';
+import type { AISettings, AIProvider, LocalAISource, IconName, AIHealthStatus, AIConnectionStatus } from '../../src/types';
 import { Button } from '../../src/components/Button';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -95,6 +96,25 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+// ─── ConnectionStatusBadge ────────────────────────────────────────────────────
+
+function ConnectionStatusBadge({ status }: { status: AIConnectionStatus }) {
+  const paper = usePaperTheme();
+  const cfg: Record<AIConnectionStatus, { emoji: string; label: string; bg: string; fg: string }> = {
+    connected:  { emoji: '🟢', label: 'Connected',  bg: paper.colors.primaryContainer,   fg: paper.colors.onPrimaryContainer },
+    limited:    { emoji: '🟡', label: 'Limited',    bg: paper.colors.secondaryContainer, fg: paper.colors.onSecondaryContainer },
+    offline:    { emoji: '🔴', label: 'Offline',    bg: paper.colors.errorContainer,     fg: paper.colors.onErrorContainer },
+    unknown:    { emoji: '⚪', label: 'Unknown',    bg: paper.colors.surfaceVariant,     fg: paper.colors.onSurfaceVariant },
+  };
+  const c = cfg[status];
+  return (
+    <View style={[{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: c.bg }]}>
+      <Text style={{ fontSize: 11, marginRight: 4 }}>{c.emoji}</Text>
+      <Text variant="labelSmall" style={{ color: c.fg, fontWeight: '700' }}>{c.label}</Text>
+    </View>
+  );
 }
 
 // ─── Animated collapsible section card ───────────────────────────────────────
@@ -253,6 +273,8 @@ export default function SettingsScreen() {
   const [pickingGguf, setPickingGguf]         = useState(false);
   const [providerModalVisible, setProviderModalVisible] = useState(false);
   const [dbSize, setDbSize]                   = useState<string>('—');
+  const [health, setHealth]                   = useState<AIHealthStatus | null>(null);
+  const [testingConn, setTestingConn]         = useState(false);
 
   // Load persisted collapse state
   useEffect(() => {
@@ -276,12 +298,34 @@ export default function SettingsScreen() {
     });
   }, []);
 
-  // Load AI settings
+  // Load AI settings + last known health status
   useEffect(() => {
     getAISettings().then((s) => {
       if (s) setAiSettings(s);
     });
+    loadHealth().then((h) => {
+      if (h) setHealth(h);
+    });
   }, []);
+
+  const handleTestConnection = useCallback(async () => {
+    if (!aiSettings.provider) return;
+    setTestingConn(true);
+    const current: AISettings = {
+      provider:           aiSettings.provider as AIProvider,
+      apiKey:             aiSettings.apiKey ?? '',
+      model:              aiSettings.model?.trim() || undefined,
+      watsonxProjectId:   aiSettings.watsonxProjectId,
+      watsonxRegion:      aiSettings.watsonxRegion,
+      localBaseUrl:       aiSettings.localBaseUrl,
+      localSource:        aiSettings.localSource,
+      localEnabled:       aiSettings.localEnabled,
+      localContextLength: aiSettings.localContextLength,
+    };
+    const result = await testConnection(current);
+    setHealth(result);
+    setTestingConn(false);
+  }, [aiSettings]);
 
   // DB size
   useEffect(() => {
@@ -395,7 +439,9 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             await clearAISettings();
+            await clearHealth();
             setAiSettings({ provider: 'openai', apiKey: '', model: '', localEnabled: false, localSource: 'ollama', localContextLength: 4096 });
+            setHealth(null);
             Alert.alert('Reset Complete', 'AI settings have been restored to defaults.');
           },
         },
@@ -614,6 +660,190 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={20} color={paper.colors.onSurfaceVariant} />
+            </TouchableOpacity>
+          </View>
+
+          {/* ── AI STATUS CARD ────────────────────────────────────────── */}
+          <View style={[styles.fullDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+          <View style={styles.subSection}>
+            <Text variant="labelSmall" style={[styles.groupLabel, { color: paper.colors.onSurfaceVariant }]}>
+              AI STATUS
+            </Text>
+
+            {/* Status overview card */}
+            <View style={[styles.statusCard, {
+              backgroundColor: paper.colors.surface,
+              borderColor: paper.colors.outlineVariant,
+              borderRadius: innerRadius,
+            }]}>
+              {/* Provider / Model row */}
+              {[
+                { label: 'Provider', value: isLocalProvider ? `Local LLM · ${selectedLocalSource.name}` : selectedProvider.name },
+                { label: 'Model',    value: aiSettings.model?.trim() || (isLocalProvider ? selectedLocalSource.modelPlaceholder : (selectedProvider.modelPlaceholder ?? '—')) },
+              ].map((row, i) => (
+                <React.Fragment key={row.label}>
+                  <View style={styles.metaRow}>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>{row.label}</Text>
+                    <Text variant="bodyMedium" style={{ color: paper.colors.onSurface, fontWeight: '500', flexShrink: 1 }} numberOfLines={1}>
+                      {row.value}
+                    </Text>
+                  </View>
+                  {i === 0 && <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />}
+                </React.Fragment>
+              ))}
+
+              <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+
+              {/* Connection status row */}
+              <View style={styles.metaRow}>
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Status</Text>
+                <ConnectionStatusBadge status={health?.status ?? 'unknown'} />
+              </View>
+
+              <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+
+              {/* Last checked */}
+              <View style={styles.metaRow}>
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Last Check</Text>
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
+                  {formatRelativeTime(health?.lastSuccessfulCheck)}
+                </Text>
+              </View>
+
+              {/* Response time — only when connected */}
+              {health?.responseTimeMs !== undefined && health.status === 'connected' && (
+                <>
+                  <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+                  <View style={styles.metaRow}>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Response Time</Text>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>{health.responseTimeMs} ms</Text>
+                  </View>
+                </>
+              )}
+
+              {/* Error message — only when not connected */}
+              {health?.lastErrorMessage && health.status !== 'connected' && (
+                <>
+                  <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+                  <View style={[styles.inlineAlert, { backgroundColor: paper.colors.errorContainer, borderRadius: innerRadius }]}>
+                    <Ionicons name="alert-circle" size={14} color={paper.colors.onErrorContainer} />
+                    <Text variant="bodySmall" style={{ color: paper.colors.onErrorContainer, flex: 1, marginLeft: 6 }}>
+                      {health.lastErrorMessage}
+                    </Text>
+                  </View>
+                </>
+              )}
+            </View>
+
+            {/* Rate-limit warning */}
+            {health?.rateLimit && health.status === 'limited' && (
+              <View style={[styles.warningBanner, {
+                backgroundColor: paper.colors.secondaryContainer,
+                borderRadius: innerRadius,
+                marginTop: 8,
+              }]}>
+                <Ionicons name="timer-outline" size={16} color={paper.colors.onSecondaryContainer} />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text variant="labelMedium" style={{ color: paper.colors.onSecondaryContainer, fontWeight: '700' }}>
+                    ⚠ Rate Limited
+                  </Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSecondaryContainer, marginTop: 2 }}>
+                    {`Retry in ${health.rateLimit.retryAfterSeconds}s`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Quota exceeded warning */}
+            {health?.status === 'limited' && !health.rateLimit && (
+              <View style={[styles.warningBanner, {
+                backgroundColor: paper.colors.errorContainer,
+                borderRadius: innerRadius,
+                marginTop: 8,
+              }]}>
+                <Ionicons name="warning" size={16} color={paper.colors.onErrorContainer} />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text variant="labelMedium" style={{ color: paper.colors.onErrorContainer, fontWeight: '700' }}>
+                    ⚠ Quota Exceeded
+                  </Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onErrorContainer, marginTop: 2 }}>
+                    {`Provider: ${isLocalProvider ? 'Local LLM' : selectedProvider.name}`}
+                  </Text>
+                </View>
+                <View style={{ gap: 6, marginLeft: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setProviderModalVisible(true)}
+                    style={[styles.inlinePillBtn, { backgroundColor: paper.colors.onErrorContainer }]}
+                  >
+                    <Text variant="labelSmall" style={{ color: paper.colors.errorContainer, fontWeight: '700' }}>
+                      Switch Provider
+                    </Text>
+                  </TouchableOpacity>
+                  {!isLocalProvider && (
+                    <TouchableOpacity
+                      onPress={() => setAiSettings((s) => ({ ...s, provider: 'local', localEnabled: true }))}
+                      style={[styles.inlinePillBtn, { backgroundColor: paper.colors.onErrorContainer }]}
+                    >
+                      <Text variant="labelSmall" style={{ color: paper.colors.errorContainer, fontWeight: '700' }}>
+                        Use Local AI
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Quota details — shown when available */}
+            {health?.quota && (health.quota.requestsRemaining !== undefined || health.quota.tokensRemaining !== undefined) && (
+              <View style={[styles.quotaGrid, {
+                backgroundColor: paper.colors.surface,
+                borderColor: paper.colors.outlineVariant,
+                borderRadius: innerRadius,
+                marginTop: 8,
+              }]}>
+                {[
+                  { label: 'Requests Remaining', value: health.quota.requestsRemaining },
+                  { label: 'Tokens Remaining',   value: health.quota.tokensRemaining },
+                  { label: 'Daily Limit',         value: health.quota.dailyLimit },
+                  { label: 'Monthly Limit',       value: health.quota.monthlyLimit },
+                ].filter((r) => r.value !== undefined).map((r, i, arr) => (
+                  <React.Fragment key={r.label}>
+                    <View style={styles.metaRow}>
+                      <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>{r.label}</Text>
+                      <Text variant="bodyMedium" style={{ color: paper.colors.onSurface, fontWeight: '600' }}>
+                        {r.value?.toLocaleString()}
+                      </Text>
+                    </View>
+                    {i < arr.length - 1 && <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />}
+                  </React.Fragment>
+                ))}
+              </View>
+            )}
+
+            {/* Test Connection button */}
+            <TouchableOpacity
+              onPress={handleTestConnection}
+              disabled={testingConn}
+              style={[styles.testConnBtn, {
+                backgroundColor: testingConn ? paper.colors.surfaceVariant : paper.colors.primaryContainer,
+                borderColor: paper.colors.primary,
+                borderRadius: innerRadius,
+                marginTop: 10,
+              }]}
+              accessibilityRole="button"
+              accessibilityLabel="Test Connection"
+            >
+              {testingConn
+                ? <ActivityIndicator size="small" color={paper.colors.onPrimaryContainer} />
+                : <Ionicons name="wifi" size={18} color={paper.colors.onPrimaryContainer} />
+              }
+              <Text variant="labelLarge" style={{
+                color: testingConn ? paper.colors.onSurfaceVariant : paper.colors.onPrimaryContainer,
+                fontWeight: '600',
+                marginLeft: 8,
+              }}>
+                {testingConn ? 'Testing…' : 'Test Connection'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1572,5 +1802,41 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     marginBottom: 2,
+  },
+
+  // AI Status Card
+  statusCard: {
+    padding: 12,
+    borderWidth: 1,
+  },
+  inlineAlert: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    marginTop: 6,
+  },
+  warningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 0,
+  },
+  inlinePillBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  quotaGrid: {
+    padding: 12,
+    borderWidth: 1,
+  },
+  testConnBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderWidth: 1,
   },
 });

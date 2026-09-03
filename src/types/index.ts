@@ -111,6 +111,45 @@ export interface AISettings {
   localContextLength?: number;
 }
 
+// ─── AI Health Monitoring ──────────────────────────────────────────────────
+
+export type AIConnectionStatus = 'connected' | 'limited' | 'offline' | 'unknown';
+
+export interface AIQuotaInfo {
+  requestsRemaining?: number;
+  tokensRemaining?:   number;
+  dailyLimit?:        number;
+  monthlyLimit?:      number;
+}
+
+export interface AIRateLimitInfo {
+  /** Seconds until the rate limit resets */
+  retryAfterSeconds: number;
+  /** When this info was recorded */
+  detectedAt: string;
+}
+
+export interface AIHealthStatus {
+  /** The provider this status belongs to */
+  provider: AIProvider;
+  /** Derived connection status */
+  status: AIConnectionStatus;
+  /** ISO timestamp of the last successful check */
+  lastSuccessfulCheck?: string;
+  /** ISO timestamp of the last check attempt (successful or not) */
+  lastCheckedAt?: string;
+  /** Response time in ms from the last successful check */
+  responseTimeMs?: number;
+  /** Model reported by the endpoint (may differ from configured model) */
+  confirmedModel?: string;
+  /** Quota data if the provider exposes it */
+  quota?: AIQuotaInfo;
+  /** Active rate-limit window, present only when a 429 was received */
+  rateLimit?: AIRateLimitInfo;
+  /** Human-readable error message from the last failed check (never raw stack) */
+  lastErrorMessage?: string;
+}
+
 export type AppearanceStyle = 'classic' | 'material-you' | 'expressive';
 
 export interface AppSettings {

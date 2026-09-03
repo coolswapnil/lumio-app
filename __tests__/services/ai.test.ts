@@ -83,9 +83,11 @@ describe('summarizeItem — OpenAI provider', () => {
     expect(result.summary).toBe('');
   });
 
-  it('throws on non-2xx response', async () => {
+  it('returns empty result on non-2xx response (fail-safe)', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ error: 'Unauthorized' }, 401));
-    await expect(summarizeItem(baseSettings, 'Title')).rejects.toThrow('401');
+    const result = await summarizeItem(baseSettings, 'Title');
+    expect(result.summary).toBe('');
+    expect(result.suggestedTags).toEqual([]);
   });
 });
 
@@ -140,16 +142,20 @@ describe('summarizeItem — Anthropic provider', () => {
     expect(headers['x-api-key']).toBe('ant-test-key');
   });
 
-  it('throws on API error', async () => {
+  it('returns empty result on API error (fail-safe)', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ error: 'bad_request' }, 400));
-    await expect(summarizeItem(anthropicSettings, 'Title')).rejects.toThrow('400');
+    const result = await summarizeItem(anthropicSettings, 'Title');
+    expect(result.summary).toBe('');
+    expect(result.suggestedTags).toEqual([]);
   });
 });
 
 // ─── Unknown provider ─────────────────────────────────────────────────────────
 describe('summarizeItem — unknown provider', () => {
-  it('throws for unsupported provider', async () => {
+  it('returns empty result for unsupported provider (fail-safe)', async () => {
     const badSettings = { ...baseSettings, provider: 'unknown-provider' as AISettings['provider'] };
-    await expect(summarizeItem(badSettings, 'Title')).rejects.toThrow('Unknown AI provider');
+    const result = await summarizeItem(badSettings, 'Title');
+    expect(result.summary).toBe('');
+    expect(result.suggestedTags).toEqual([]);
   });
 });

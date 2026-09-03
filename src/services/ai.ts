@@ -1,5 +1,6 @@
 import type { AISettings } from '../types';
 import { logError } from '../utils/errors';
+import { safeErrorMessage } from './aiHealth';
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';
@@ -328,6 +329,11 @@ async function callAI(
 
 // ────────────────────────────────────────────────────────────────────────────
 // Public API
+//
+// FAIL-SAFE: these functions must NEVER let raw AI error messages reach
+// caller-visible return values. All errors are caught here and converted
+// to safe empty/fallback results. The description field is NEVER populated
+// with an AI error message — callers receive { summary:'', suggestedTags:[] }.
 // ────────────────────────────────────────────────────────────────────────────
 export async function summarizeItem(
   settings: AISettings,
@@ -360,7 +366,15 @@ export async function summarizeItem(
     },
   ];
 
-  const raw = await callAI(settings, messages);
+  let raw: string;
+  try {
+    raw = await callAI(settings, messages);
+  } catch (callErr) {
+    // FAIL-SAFE: never let the raw error message reach description fields.
+    logError(callErr, { action: 'summarizeItem:callAI', provider: settings.provider });
+    return { summary: '', suggestedTags: [] };
+  }
+
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -394,5 +408,11 @@ export async function chatWithAI(
     },
     { role: 'user', content: userMessage },
   ];
-  return callAI(settings, messages);
+  try {
+    return await callAI(settings, messages);
+  } catch (err) {
+    logError(err, { action: 'chatWithAI', provider: settings.provider });
+    // Return a user-friendly message — never the raw error.
+    return safeErrorMessage(err);
+  }
 }
