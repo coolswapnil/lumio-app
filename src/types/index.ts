@@ -44,7 +44,7 @@ export type AIProvider =
  *  - 'gguf'     : Direct GGUF file path (future native bridge; routed via
  *                 a local llama.cpp-compatible server for now)
  */
-export type LocalAISource = 'ollama' | 'lmstudio' | 'llamacpp' | 'gguf';
+export type LocalAISource = 'ollama' | 'lmstudio' | 'llamacpp' | 'openai-compatible' | 'gguf';
 
 export interface SavedItem {
   /** UUID v4 */
@@ -107,6 +107,8 @@ export interface AISettings {
   localGgufName?: string;
   /** Whether local AI mode is enabled */
   localEnabled?: boolean;
+  /** Context window size in tokens (local inference) */
+  localContextLength?: number;
 }
 
 export type AppearanceStyle = 'classic' | 'material-you' | 'expressive';

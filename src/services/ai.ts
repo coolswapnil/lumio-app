@@ -251,11 +251,12 @@ function resolveLocalBaseUrl(
 ): string {
   if (customUrl?.trim()) return customUrl.trim().replace(/\/$/, '');
   switch (source) {
-    case 'lmstudio': return 'http://localhost:1234/v1';
-    case 'llamacpp': return 'http://localhost:8080/v1';
-    case 'gguf':     return 'http://localhost:8080/v1';
+    case 'lmstudio':          return 'http://localhost:1234/v1';
+    case 'llamacpp':          return 'http://localhost:8080/v1';
+    case 'openai-compatible': return 'http://localhost:8080/v1';
+    case 'gguf':              return 'http://localhost:8080/v1';
     case 'ollama':
-    default:         return 'http://localhost:11434/v1';
+    default:                  return 'http://localhost:11434/v1';
   }
 }
 
