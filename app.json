@@ -54,7 +54,7 @@
             { "mimeType": "text/plain" },
             { "mimeType": "text/html" }
           ],
-          "category": ["DEFAULT"]
+          "category": ["DEFAULT", "BROWSABLE"]
         }
       ]
     },

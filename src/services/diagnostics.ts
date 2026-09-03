@@ -19,6 +19,12 @@ import * as Sharing from 'expo-sharing';
 
 export type DiagEventType =
   | 'SHARE_INTENT_RECEIVED'
+  | 'SHARE_ACTION'
+  | 'SHARE_MIME_TYPE'
+  | 'SHARE_TEXT'
+  | 'SHARE_URL_EXTRACTED'
+  | 'SHARE_SCREEN_OPENED'
+  | 'SHARE_FORM_POPULATED'
   | 'SHARE_INTENT_PARSED'
   | 'METADATA_FOUND'
   | 'AI_REQUEST_STARTED'

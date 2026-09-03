@@ -57,6 +57,14 @@ function guessContentType(url: string, text: string): ContentType {
   return 'idea';
 }
 
+/** Extract the first https?:// URL from a plain-text string (e.g. Instagram share text). */
+function extractUrlFromText(text: string): string {
+  const match = text.match(/https?:\/\/[^\s]+/);
+  if (!match) return '';
+  // Trim trailing punctuation that was captured as part of the URL
+  return match[0].replace(/[.)>]+$/, '');
+}
+
 export default function ShareScreen() {
   const { colors } = useTheme();
   const paper = useAppTheme();
@@ -64,7 +72,9 @@ export default function ShareScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  // Sanitize all deep-link params before use
+  // Sanitize all deep-link params before use.
+  // Note: after the native bridge in MainActivity, ACTION_SEND intents arrive
+  // here as lumio://share?url=<extracted-url>&text=<remaining-text>&title=<subject>
   const sharedUrl = sanitizeUrl(asString(params.url as string | string[] | undefined));
   const sharedText = sanitizeText(asString(params.text as string | string[] | undefined), LIMITS.DESCRIPTION);
   const sharedTitle = sanitizeText(asString(params.title as string | string[] | undefined), LIMITS.TITLE);
@@ -79,20 +89,41 @@ export default function ShareScreen() {
   const [aiLoading, setAiLoading] = useState(false);
 
   // Pre-fill from share params.
-  // FIX C-2: include all three derived param values in the dep array so the
-  // effect re-runs if the component is reused while a second share arrives
-  // (e.g. user shares a second link while the modal is still mounted).
+  // Covers three entry paths:
+  //   1. Deep-link: lumio://share?url=https://...  (browser share, manifest VIEW filter)
+  //   2. ACTION_SEND bridge: lumio://share?url=https://instagram.com/reels/...
+  //   3. Fallback: url param absent but text param contains a raw URL (e.g. Instagram posts)
   useEffect(() => {
-    const resolvedUrl = sharedUrl || (sharedText?.startsWith('http') ? sharedText : '');
-    const resolvedTitle = sharedTitle || (!sharedText?.startsWith('http') ? sharedText : '');
+    const rawText = sharedText ?? '';
 
-    diagLog.addEntry('SHARE_INTENT_RECEIVED', `url="${resolvedUrl.slice(0, 120)}" text="${(sharedText ?? '').slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
+    diagLog.addEntry('SHARE_INTENT_RECEIVED', `url="${(sharedUrl ?? '').slice(0, 120)}" text="${rawText.slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
+    diagLog.addEntry('SHARE_ACTION', 'ACTION_SEND or deep-link — received by share screen');
+    diagLog.addEntry('SHARE_MIME_TYPE', sharedUrl ? 'url-param (deep-link)' : rawText ? 'text/plain (ACTION_SEND bridge)' : 'unknown');
+    diagLog.addEntry('SHARE_TEXT', `rawText="${rawText.slice(0, 120)}"`);
+
+    // If the bridge didn't extract a URL (edge case), attempt JS-side extraction from text
+    let resolvedUrl = sharedUrl ?? '';
+    if (!resolvedUrl && rawText) {
+      if (rawText.startsWith('http')) {
+        resolvedUrl = sanitizeUrl(rawText.trim()) ?? '';
+      } else {
+        const extracted = extractUrlFromText(rawText);
+        resolvedUrl = sanitizeUrl(extracted) ?? '';
+      }
+    }
+
+    diagLog.addEntry('SHARE_URL_EXTRACTED', `resolvedUrl="${resolvedUrl.slice(0, 120)}"`);
+
+    const resolvedTitle = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
+
+    diagLog.addEntry('SHARE_SCREEN_OPENED', `resolvedUrl="${resolvedUrl.slice(0, 120)}" resolvedTitle="${resolvedTitle.slice(0, 80)}"`);
 
     setUrl(resolvedUrl);
     setTitle(resolvedTitle);
-    const guessed = guessContentType(resolvedUrl, sharedText);
+    const guessed = guessContentType(resolvedUrl, rawText);
     setContentType(guessed);
 
+    diagLog.addEntry('SHARE_FORM_POPULATED', `url="${resolvedUrl.slice(0, 120)}" title="${resolvedTitle.slice(0, 80)}" contentType=${guessed}`);
     diagLog.addEntry('SHARE_INTENT_PARSED', `resolvedUrl="${resolvedUrl.slice(0, 120)}" resolvedTitle="${resolvedTitle.slice(0, 80)}" contentType=${guessed}`);
   }, [sharedUrl, sharedText, sharedTitle]);
 
