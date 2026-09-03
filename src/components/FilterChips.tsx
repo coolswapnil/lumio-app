@@ -1,8 +1,9 @@
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { Chip, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import type { FilterOption } from '../types';
+import { useTheme } from '../context/ThemeContext';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../constants';
 
 const FILTER_OPTIONS: Array<{ id: FilterOption; label: string; icon: string }> = [
@@ -24,6 +25,7 @@ interface FilterChipsProps {
 
 export function FilterChips({ active, onSelect, counts }: FilterChipsProps) {
   const paper = usePaperTheme();
+  const { layout } = useTheme();
 
   return (
     <ScrollView
@@ -48,6 +50,7 @@ export function FilterChips({ active, onSelect, counts }: FilterChipsProps) {
             selectedColor={paper.colors.onPrimaryContainer}
             style={[
               styles.chip,
+              { borderRadius: layout.isExpressive ? 20 : 8, minHeight: layout.touchTarget },
               isActive && { backgroundColor: paper.colors.primaryContainer },
             ]}
             textStyle={[

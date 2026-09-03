@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, TextInput, ActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
@@ -18,8 +19,27 @@ import { AI_PROVIDERS } from '../../src/constants';
 import type { AISettings, AIProvider } from '../../src/types';
 import { Button } from '../../src/components/Button';
 
+const APPEARANCE_STYLES = [
+  { id: 'classic', label: 'Lumio Classic', description: 'Lumio blue and indigo across every device' },
+  { id: 'material-you', label: 'Material You', description: 'Wallpaper colors when Android supports them' },
+  { id: 'expressive', label: 'Material You Expressive', description: 'Larger shapes, richer surfaces, and motion' },
+] as const;
+
+const APPEARANCE_TOGGLES = [
+  { key: 'dynamicColors', label: 'Dynamic Colors', description: 'Use wallpaper colors on supported Android devices' },
+  { key: 'useThemedIcon', label: 'Use Themed Icon', description: 'Use Lumio’s monochrome adaptive icon when supported' },
+  { key: 'amoledBlack', label: 'AMOLED Black Theme', description: 'Use pure black surfaces in dark mode' },
+  { key: 'edgeToEdge', label: 'Edge-to-Edge Layout', description: 'Draw safely behind system bars' },
+  { key: 'dynamicNavigationBar', label: 'Dynamic Navigation Bar', description: 'Match navigation bar to the active theme' },
+  { key: 'dynamicStatusBar', label: 'Dynamic Status Bar', description: 'Match status bar icons to the active theme' },
+  { key: 'reduceMotion', label: 'Reduce Motion', description: 'Minimize interface animations' },
+  { key: 'compactLayout', label: 'Compact Layout', description: 'Use denser list and content spacing' },
+  { key: 'largeTouchTargets', label: 'Large Touch Targets', description: 'Increase controls to at least 56dp' },
+  { key: 'highContrast', label: 'Higher Contrast', description: 'Strengthen boundaries for readability' },
+] as const;
+
 export default function SettingsScreen() {
-  const { colors, settings, updateSettings } = useTheme();
+  const { colors, settings, updateSettings, layout } = useTheme();
   const paper = usePaperTheme();
   const insets = useSafeAreaInsets();
   const { items, collections } = useData();
@@ -127,6 +147,54 @@ export default function SettingsScreen() {
                 )}
               </TouchableOpacity>
               {i < arr.length - 1 && <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />}
+            </React.Fragment>
+          ))}
+        </View>
+
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant, borderRadius: layout.cardRadius }]}>
+          <Text variant="labelMedium" style={[styles.appearanceHeading, { color: paper.colors.onSurfaceVariant }]}>THEME STYLE</Text>
+          {APPEARANCE_STYLES.map((style, i) => (
+            <React.Fragment key={style.id}>
+              <TouchableOpacity
+                onPress={() => updateSettings({ appearanceStyle: style.id })}
+                style={[styles.row, { minHeight: layout.touchTarget }]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: settings.appearanceStyle === style.id }}
+              >
+                <View style={styles.rowLeft}>
+                  <Ionicons name={style.id === 'classic' ? 'color-palette' : style.id === 'material-you' ? 'phone-portrait' : 'sparkles'} size={20} color={paper.colors.onSurfaceVariant} />
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>{style.label}</Text>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{style.description}</Text>
+                  </View>
+                </View>
+                {settings.appearanceStyle === style.id && <Ionicons name="checkmark-circle" size={20} color={paper.colors.primary} />}
+              </TouchableOpacity>
+              {i < APPEARANCE_STYLES.length - 1 && <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />}
+            </React.Fragment>
+          ))}
+        </View>
+
+        <View style={[styles.card, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant, borderRadius: layout.cardRadius }]}>
+          <Text variant="labelMedium" style={[styles.appearanceHeading, { color: paper.colors.onSurfaceVariant }]}>OPTIONS</Text>
+          {APPEARANCE_TOGGLES.map((toggle, i) => (
+            <React.Fragment key={toggle.key}>
+              <View style={[styles.row, { minHeight: layout.touchTarget }]}>
+                <View style={styles.rowLeft}>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>{toggle.label}</Text>
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{toggle.description}</Text>
+                  </View>
+                </View>
+                <Switch
+                  value={Boolean(settings[toggle.key])}
+                  onValueChange={(value) => updateSettings({ [toggle.key]: value })}
+                  trackColor={{ false: colors.surfaceContainerHigh, true: paper.colors.primary }}
+                  thumbColor={settings[toggle.key] ? paper.colors.onPrimary : paper.colors.outline}
+                  accessibilityLabel={toggle.label}
+                />
+              </View>
+              {i < APPEARANCE_TOGGLES.length - 1 && <View style={[styles.divider, { backgroundColor: paper.colors.outlineVariant }]} />}
             </React.Fragment>
           ))}
         </View>
@@ -349,6 +417,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 8,
+  },
+  appearanceHeading: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    letterSpacing: 0.7,
   },
   cardPadding: {
     padding: 14,

@@ -15,6 +15,7 @@ import type { SavedItem } from '../types';
 import { CONTENT_TYPE_CONFIG } from '../constants';
 import { toggleFavorite, toggleCompleted, deleteItem } from '../database/items';
 import { useData } from '../context/DataContext';
+import { useTheme } from '../context/ThemeContext';
 
 dayjs.extend(relativeTime);
 
@@ -37,6 +38,7 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
   const { refreshAll } = useData();
   const router = useRouter();
   const config = CONTENT_TYPE_CONFIG[item.contentType];
+  const { layout } = useTheme();
 
   // ── Swipe-to-delete ──────────────────────────────────────────────────────
   const translateX = useRef(new Animated.Value(0)).current;
@@ -121,7 +123,7 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
         <Card
           mode="elevated"
           onPress={handlePress}
-          style={[styles.card, { borderLeftColor: config.color, borderLeftWidth: 4 }]}
+          style={[styles.card, { borderLeftColor: config.color, borderLeftWidth: 4, borderRadius: layout.cardRadius }]}
           contentStyle={styles.cardContent}
           accessible
           accessibilityLabel={item.title}

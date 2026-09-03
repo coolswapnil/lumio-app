@@ -4,6 +4,7 @@ import { Card, Text, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { Collection } from '../types';
+import { useTheme } from '../context/ThemeContext';
 
 interface CollectionCardProps {
   collection: Collection;
@@ -16,12 +17,13 @@ interface CollectionCardProps {
 function CollectionCardBase({ collection }: CollectionCardProps) {
   const paper = usePaperTheme();
   const router = useRouter();
+  const { layout } = useTheme();
 
   return (
     <Card
       mode="elevated"
       onPress={() => router.push(`/collection/${collection.id}`)}
-      style={styles.card}
+      style={[styles.card, { borderRadius: layout.cardRadius }]}
       contentStyle={styles.content}
       accessible
       accessibilityLabel={`${collection.name}, ${collection.itemCount ?? 0} items`}

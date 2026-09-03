@@ -84,8 +84,21 @@ export interface AISettings {
   localBaseUrl?: string;
 }
 
+export type AppearanceStyle = 'classic' | 'material-you' | 'expressive';
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
+  appearanceStyle?: AppearanceStyle;
+  dynamicColors?: boolean;
+  useThemedIcon?: boolean;
+  amoledBlack?: boolean;
+  edgeToEdge?: boolean;
+  dynamicNavigationBar?: boolean;
+  dynamicStatusBar?: boolean;
+  reduceMotion?: boolean;
+  compactLayout?: boolean;
+  largeTouchTargets?: boolean;
+  highContrast?: boolean;
   defaultCollection?: string;
   aiSettings?: AISettings;
   mapDefaultLat?: number;

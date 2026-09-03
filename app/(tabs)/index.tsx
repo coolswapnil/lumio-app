@@ -60,7 +60,7 @@ const FAB_MARGIN = 16;
 const TAB_BAR_HEIGHT = 52;
 
 export default function LibraryScreen() {
-  const { colors } = useTheme();
+  const { colors, settings, layout } = useTheme();
   const paper = usePaperTheme();
   const insets = useSafeAreaInsets();
   const {
@@ -77,6 +77,7 @@ export default function LibraryScreen() {
   } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [fabExtended, setFabExtended] = React.useState(true);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -149,6 +150,7 @@ export default function LibraryScreen() {
         updateCellsBatchingPeriod={50}
         contentContainerStyle={[
           styles.listContent,
+          settings.compactLayout && { paddingTop: 8 },
           // Clear space for FAB + tab bar + nav bar so the last item is never hidden.
           // FAB sits at (insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN) from screen bottom.
           { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + FAB_HEIGHT + FAB_MARGIN + 8 },
@@ -156,8 +158,17 @@ export default function LibraryScreen() {
         ]}
         refreshing={refreshing}
         onRefresh={onRefresh}
+        onScroll={(event) => {
+          if (!layout.isExpressive) return;
+          const nextExtended = event.nativeEvent.contentOffset.y < 12;
+          if (nextExtended !== fabExtended) setFabExtended(nextExtended);
+        }}
+        scrollEventThrottle={16}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
+          <View style={[
+            styles.emptyState,
+            layout.isExpressive && { backgroundColor: colors.surfaceContainer, borderRadius: layout.cardRadius, marginHorizontal: 16, paddingHorizontal: 24 },
+          ]}>
             <Text style={[styles.emptyIcon, { color: colors.textMuted }]}>🔖</Text>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               {searchQuery ? 'No results found' : 'Nothing saved yet'}
@@ -179,12 +190,13 @@ export default function LibraryScreen() {
       {/* MD3 Extended FAB — clears tab bar (TAB_BAR_HEIGHT) + gesture nav inset */}
       <FAB
         icon="plus"
-        label="Save"
+        label={layout.isExpressive && !fabExtended ? undefined : 'Save'}
         onPress={() => router.push('/save')}
         style={[
           styles.fab,
           {
-            backgroundColor: paper.colors.primaryContainer,
+            backgroundColor: layout.isExpressive ? paper.colors.primaryContainer : paper.colors.primaryContainer,
+            borderRadius: layout.isExpressive ? 20 : 16,
             // bottom = nav-bar inset + fixed tab bar content height + design margin
             bottom: insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN,
           },

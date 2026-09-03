@@ -9,7 +9,7 @@ import { SyncProvider } from '../src/context/SyncContext';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 
 function AppContent() {
-  const { isDark, colors } = useTheme();
+  const { isDark, colors, settings } = useTheme();
 
   return (
     // SafeAreaProvider must wrap all useSafeAreaInsets() consumers.
@@ -22,12 +22,16 @@ function AppContent() {
           app background draws behind it. Combined with the transparent
           navigationBarColor in styles.xml this gives true edge-to-edge.
         */}
-        <StatusBar style={isDark ? 'light' : 'dark'} translucent />
+        <StatusBar
+          style={isDark ? 'light' : 'dark'}
+          translucent={settings.edgeToEdge}
+          backgroundColor={settings.dynamicStatusBar ? colors.background : undefined}
+        />
         <Stack
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.background },
-            animation: 'slide_from_right',
+            animation: settings.reduceMotion ? 'none' : 'slide_from_right',
           }}
         >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -35,14 +39,14 @@ function AppContent() {
             name="save"
             options={{
               presentation: 'modal',
-              animation: 'slide_from_bottom',
+              animation: settings.reduceMotion ? 'none' : 'slide_from_bottom',
             }}
           />
           <Stack.Screen
             name="share"
             options={{
               presentation: 'modal',
-              animation: 'slide_from_bottom',
+              animation: settings.reduceMotion ? 'none' : 'slide_from_bottom',
             }}
           />
           <Stack.Screen name="item/[id]" options={{ headerShown: false }} />
