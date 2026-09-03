@@ -18,8 +18,8 @@ export default function TabsLayout() {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          // Respect device bottom inset (home bar / gesture area)
-          height: 52 + insets.bottom,
+          // 60dp content height plus the gesture-navigation inset.
+          height: 60 + insets.bottom,
           paddingBottom: insets.bottom,
           paddingTop: 8,
         },

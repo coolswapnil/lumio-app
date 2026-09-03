@@ -50,14 +50,10 @@ const skeletonStyles = StyleSheet.create({
   descLine: { height: 12, width: '50%', borderRadius: 8 },
 });
 
-// MD3 extended FAB dimensions
+// Keep the FAB above the tab bar and gesture-navigation inset.
 const FAB_HEIGHT = 56;
 const FAB_MARGIN = 16;
-// Tab bar fixed content height (matches _layout.tsx tabBarStyle height base).
-// The tab bar total height = TAB_BAR_HEIGHT + insets.bottom.
-// The FAB is position:absolute relative to the full screen, so it must clear
-// both the nav-bar inset AND the tab bar's fixed content height.
-const TAB_BAR_HEIGHT = 52;
+const TAB_BAR_HEIGHT = 60;
 
 export default function LibraryScreen() {
   const { colors, settings, layout } = useTheme();
@@ -151,9 +147,8 @@ export default function LibraryScreen() {
         contentContainerStyle={[
           styles.listContent,
           settings.compactLayout && { paddingTop: 8 },
-          // Clear space for FAB + tab bar + nav bar so the last item is never hidden.
-          // FAB sits at (insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN) from screen bottom.
-          { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + FAB_HEIGHT + FAB_MARGIN + 8 },
+          // Clear the FAB, tab bar, and gesture-navigation inset so items remain reachable.
+          { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + FAB_HEIGHT + (FAB_MARGIN * 2) },
           items.length === 0 && styles.emptyList,
         ]}
         refreshing={refreshing}
@@ -187,7 +182,7 @@ export default function LibraryScreen() {
         }
       />
 
-      {/* MD3 Extended FAB — clears tab bar (TAB_BAR_HEIGHT) + gesture nav inset */}
+      {/* Floating above the tab bar, including Android gesture-navigation space. */}
       <FAB
         icon="plus"
         label={layout.isExpressive && !fabExtended ? undefined : 'Save'}
@@ -197,7 +192,6 @@ export default function LibraryScreen() {
           {
             backgroundColor: layout.isExpressive ? paper.colors.primaryContainer : paper.colors.primaryContainer,
             borderRadius: layout.isExpressive ? 20 : 16,
-            // bottom = nav-bar inset + fixed tab bar content height + design margin
             bottom: insets.bottom + TAB_BAR_HEIGHT + FAB_MARGIN,
           },
         ]}
