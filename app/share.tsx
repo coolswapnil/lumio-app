@@ -75,7 +75,10 @@ export default function ShareScreen() {
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Pre-fill from share params
+  // Pre-fill from share params.
+  // FIX C-2: include all three derived param values in the dep array so the
+  // effect re-runs if the component is reused while a second share arrives
+  // (e.g. user shares a second link while the modal is still mounted).
   useEffect(() => {
     const resolvedUrl = sharedUrl || (sharedText?.startsWith('http') ? sharedText : '');
     const resolvedTitle = sharedTitle || (!sharedText?.startsWith('http') ? sharedText : '');
@@ -83,7 +86,7 @@ export default function ShareScreen() {
     setUrl(resolvedUrl);
     setTitle(resolvedTitle);
     setContentType(guessContentType(resolvedUrl, sharedText));
-  }, []);
+  }, [sharedUrl, sharedText, sharedTitle]);
 
   const handleAISummarize = async () => {
     if (!title.trim() && !url.trim()) {
