@@ -33,6 +33,7 @@ import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
 import { getAISettings } from '../src/services/settings';
 import { summarizeItem } from '../src/services/ai';
+import { fetchPageMetadata, formatMetadataForAI } from '../src/services/metadata';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../src/constants';
 import type { ContentType, SavedItem } from '../src/types';
 import { Button } from '../src/components/Button';
@@ -100,11 +101,18 @@ export default function ShareScreen() {
     }
     setAiLoading(true);
     try {
+      const metadata = url.trim() ? await fetchPageMetadata(url) : null;
+      if (url.trim() && !metadata) {
+        Alert.alert('Could not extract metadata', 'AI auto-fill will use the title you provided instead.');
+      }
+      const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
+        .filter(Boolean)
+        .join('\n');
       const result = await summarizeItem(
         aiSettings,
-        title.trim() || url,
-        url.trim() || undefined,
-        description.trim() || undefined,
+        metadata?.title || title.trim() || url,
+        undefined,
+        metadataText || undefined,
         contentType,
       );
       if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);

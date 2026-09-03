@@ -4,17 +4,22 @@ export const CONTENT_TYPE_CONFIG: Record<
   ContentType,
   { label: string; icon: IconName; color: string }
 > = {
-  link: { label: 'Web Link', icon: 'link', color: '#3b82f6' },
-  video: { label: 'Video', icon: 'play-circle', color: '#ef4444' },
-  recipe: { label: 'Recipe', icon: 'restaurant', color: '#f97316' },
-  book: { label: 'Book', icon: 'book', color: '#10b981' },
-  movie: { label: 'Movie / Show', icon: 'film', color: '#8b5cf6' },
-  workout: { label: 'Workout', icon: 'barbell', color: '#ef4444' },
-  place: { label: 'Place', icon: 'location', color: '#06b6d4' },
-  restaurant: { label: 'Restaurant', icon: 'cafe', color: '#f59e0b' },
-  tool: { label: 'Tool / App', icon: 'construct', color: '#6366f1' },
-  idea: { label: 'Idea', icon: 'bulb', color: '#eab308' },
-  travel: { label: 'Travel', icon: 'airplane', color: '#06b6d4' },
+  link:       { label: 'Web Link',   icon: 'link',            color: '#3b82f6' },
+  article:    { label: 'Article',    icon: 'newspaper',       color: '#0ea5e9' },
+  video:      { label: 'Video',      icon: 'play-circle',     color: '#ef4444' },
+  social:     { label: 'Social Post',icon: 'chatbubbles',     color: '#ec4899' },
+  recipe:     { label: 'Recipe',     icon: 'restaurant',      color: '#f97316' },
+  book:       { label: 'Book',       icon: 'book',            color: '#10b981' },
+  podcast:    { label: 'Podcast',    icon: 'mic',             color: '#a855f7' },
+  course:     { label: 'Course',     icon: 'school',          color: '#14b8a6' },
+  movie:      { label: 'Movie',      icon: 'film',            color: '#8b5cf6' },
+  product:    { label: 'Product',    icon: 'cart',            color: '#f59e0b' },
+  workout:    { label: 'Workout',    icon: 'barbell',         color: '#ef4444' },
+  place:      { label: 'Place',      icon: 'location',        color: '#06b6d4' },
+  restaurant: { label: 'Restaurant', icon: 'cafe',            color: '#f59e0b' },
+  tool:       { label: 'Tool / App', icon: 'construct',       color: '#6366f1' },
+  idea:       { label: 'Idea',       icon: 'bulb',            color: '#eab308' },
+  travel:     { label: 'Travel',     icon: 'airplane',        color: '#06b6d4' },
 };
 
 export const ALL_CONTENT_TYPES = Object.keys(CONTENT_TYPE_CONFIG) as ContentType[];

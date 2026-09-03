@@ -318,9 +318,8 @@ export async function summarizeItem(
 ): Promise<AISummarizeResult> {
   const context = [
     `Title: ${title}`,
-    url ? `URL: ${url}` : '',
     contentType ? `Type: ${contentType}` : '',
-    description ? `Description: ${description}` : '',
+    description ? `Extracted page metadata: ${description}` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -330,6 +329,8 @@ export async function summarizeItem(
       role: 'system',
       content:
         'You are a helpful assistant that summarizes saved content for a personal knowledge manager. ' +
+        'Use only the supplied title and extracted page metadata. Do not claim to access a URL or webpage. ' +
+        'If there is insufficient information, return an empty summary. ' +
         'Respond only with valid JSON in this exact format: ' +
         '{"summary":"...","suggestedTags":["tag1","tag2"],"suggestedTitle":"..."}',
     },
@@ -343,13 +344,19 @@ export async function summarizeItem(
   try {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]) as AISummarizeResult;
+      const result = JSON.parse(jsonMatch[0]) as AISummarizeResult;
+      const summary = result.summary?.trim() ?? '';
+      const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
+      return {
+        summary: isRefusal ? '' : summary,
+        suggestedTags: Array.isArray(result.suggestedTags) ? result.suggestedTags : [],
+        suggestedTitle: result.suggestedTitle?.trim() || undefined,
+      };
     }
   } catch (parseErr) {
     logError(parseErr, { action: 'parseAISummarizeResult', provider: settings.provider });
-    // Fallback: return raw text as summary
   }
-  return { summary: raw, suggestedTags: [] };
+  return { summary: '', suggestedTags: [] };
 }
 
 export async function chatWithAI(

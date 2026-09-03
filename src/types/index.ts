@@ -10,6 +10,7 @@ export type IconName = ComponentProps<typeof Ionicons>['name'];
 
 export type ContentType =
   | 'link'
+  | 'article'
   | 'video'
   | 'recipe'
   | 'book'
@@ -19,7 +20,11 @@ export type ContentType =
   | 'restaurant'
   | 'tool'
   | 'idea'
-  | 'travel';
+  | 'travel'
+  | 'social'
+  | 'podcast'
+  | 'course'
+  | 'product';
 
 export type AIProvider =
   | 'openai'

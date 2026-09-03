@@ -64,13 +64,23 @@ describe('summarizeItem — OpenAI provider', () => {
     expect(headers['Authorization']).toBe('Bearer test-key-openai');
   });
 
-  it('handles non-JSON text response gracefully', async () => {
+  it('does not use non-JSON AI text as a description', async () => {
     mockFetch.mockResolvedValueOnce(
       mockResponse({ choices: [{ message: { content: 'plain text summary' } }] })
     );
     const result = await summarizeItem(baseSettings, 'Title');
-    expect(result.summary).toBe('plain text summary');
+    expect(result.summary).toBe('');
     expect(result.suggestedTags).toEqual([]);
+  });
+
+  it('filters URL-access refusal text from the summary', async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({
+        choices: [{ message: { content: '{"summary":"I cannot access that URL.","suggestedTags":[]}' } }],
+      })
+    );
+    const result = await summarizeItem(baseSettings, 'Title');
+    expect(result.summary).toBe('');
   });
 
   it('throws on non-2xx response', async () => {
