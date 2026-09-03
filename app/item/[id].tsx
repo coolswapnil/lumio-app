@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
@@ -20,6 +20,7 @@ import { getItemById, deleteItem, toggleFavorite, toggleCompleted, updateItem } 
 import { getAISettings } from '../../src/services/settings';
 import { summarizeItem } from '../../src/services/ai';
 import { CONTENT_TYPE_CONFIG } from '../../src/constants';
+import { logError, getUserMessage } from '../../src/utils/errors';
 import type { SavedItem } from '../../src/types';
 
 export default function ItemDetailScreen() {
@@ -29,6 +30,7 @@ export default function ItemDetailScreen() {
   const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
+  const navigation = useNavigation(); // FIX C-5: needed to guard back navigation
   const [item, setItem] = useState<SavedItem | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editNotes, setEditNotes] = useState('');
@@ -113,8 +115,10 @@ export default function ItemDetailScreen() {
       );
       await updateItem(item.id, { aiSummary: result.summary });
       await loadItem();
-    } catch {
-      Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
+    } catch (err) {
+      // FIX C-4: log structured error and show safe user-facing message
+      logError(err, { screen: 'item', action: 'aiSummarize' });
+      Alert.alert('AI Error', getUserMessage(err));
     }
     setAiLoading(false);
   };
@@ -123,7 +127,17 @@ export default function ItemDetailScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       {/* Navigation Bar */}
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => {
+            // FIX C-5: guard against no back history (e.g. opened via deep-link)
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }}
+          style={styles.backBtn}
+        >
           <Ionicons name="chevron-back" size={20} color={paper.colors.primary} />
           <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Back</Text>
         </TouchableOpacity>

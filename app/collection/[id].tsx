@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
@@ -25,6 +25,7 @@ export default function CollectionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
+  const navigation = useNavigation(); // FIX C-5: needed to guard back navigation
   const [items, setItems] = useState<SavedItem[]>([]);
 
   const collection = collections.find((c) => c.id === id);
@@ -67,7 +68,17 @@ export default function CollectionDetailScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => {
+            // FIX C-5: guard against no back history (e.g. opened via deep-link)
+            if (navigation.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }}
+          style={styles.backBtn}
+        >
           <Ionicons name="chevron-back" size={20} color={paper.colors.primary} />
           <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Back</Text>
         </TouchableOpacity>
