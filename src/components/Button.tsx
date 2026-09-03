@@ -1,6 +1,7 @@
 import React from 'react';
 import { ViewStyle, TextStyle } from 'react-native';
 import { Button as PaperButton } from 'react-native-paper';
+import { useAppTheme } from '../constants/colors';
 
 interface ButtonProps {
   title: string;
@@ -33,6 +34,8 @@ export function Button({
   textStyle,
   fullWidth = false,
 }: ButtonProps) {
+  const paper = useAppTheme();
+
   const modeMap: Record<string, 'contained' | 'outlined' | 'text' | 'contained-tonal' | 'elevated'> = {
     primary: 'contained',
     secondary: 'outlined',
@@ -49,9 +52,9 @@ export function Button({
       onPress={onPress}
       loading={loading}
       disabled={disabled || loading}
-      buttonColor={variant === 'danger' ? undefined : undefined}
-      // Pass buttonColor only for danger to use error role
-      {...(variant === 'danger' && { buttonColor: undefined, theme: { colors: { primary: '#BA1A1A' } } })}
+      // For the danger variant, override buttonColor with the theme's error token
+      // so AMOLED / Material You / dark themes all get the correct error hue.
+      buttonColor={variant === 'danger' ? paper.colors.error : undefined}
       contentStyle={{
         paddingVertical: paddingMap[size],
         width: fullWidth ? '100%' : undefined,

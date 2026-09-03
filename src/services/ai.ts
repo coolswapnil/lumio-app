@@ -24,7 +24,8 @@ async function callOpenAICompatible(
   baseUrl: string,
   apiKey: string,
   model: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -34,15 +35,22 @@ async function callOpenAICompatible(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: 512,
+    temperature: 0.3,
+  };
+  // json_object mode instructs the model to output raw JSON with no prose or markdown.
+  // Supported by: OpenAI, Groq, DeepSeek, most OpenAI-compatible servers.
+  if (jsonMode) {
+    body['response_format'] = { type: 'json_object' };
+  }
+
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: 512,
-      temperature: 0.3,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -61,13 +69,15 @@ async function callOpenAICompatible(
 async function callOpenAI(
   apiKey: string,
   model: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   return callOpenAICompatible(
     'https://api.openai.com/v1',
     apiKey,
     model || 'gpt-4o-mini',
-    messages
+    messages,
+    jsonMode
   );
 }
 
@@ -163,15 +173,31 @@ async function callWatsonx(
 async function callGemini(
   apiKey: string,
   model: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   const geminiModel = model || 'gemini-2.0-flash';
+  const systemMsg = messages.find((m) => m.role === 'system')?.content;
   const contents = messages
     .filter((m) => m.role !== 'system')
     .map((m) => ({
       role: m.role === 'user' ? 'user' : 'model',
       parts: [{ text: m.content }],
     }));
+
+  const requestBody: Record<string, unknown> = { contents };
+
+  // Pass the system instruction via the dedicated field so Gemini treats it
+  // with full system-prompt authority rather than as a turn in the conversation.
+  if (systemMsg) {
+    requestBody['systemInstruction'] = { parts: [{ text: systemMsg }] };
+  }
+
+  // responseMimeType enforces JSON-only output at the API level — the model
+  // cannot emit prose, markdown fences, or any non-JSON text when this is set.
+  if (jsonMode) {
+    requestBody['generationConfig'] = { responseMimeType: 'application/json' };
+  }
 
   // API key sent via header (not URL query param) to prevent exposure in logs/history
   const response = await fetch(
@@ -182,7 +208,7 @@ async function callGemini(
         'Content-Type': 'application/json',
         'x-goog-api-key': apiKey,
       },
-      body: JSON.stringify({ contents }),
+      body: JSON.stringify(requestBody),
     }
   );
 
@@ -201,13 +227,15 @@ async function callGemini(
 async function callDeepSeek(
   apiKey: string,
   model: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   return callOpenAICompatible(
     'https://api.deepseek.com/v1',
     apiKey,
     model || 'deepseek-chat',
-    messages
+    messages,
+    jsonMode
   );
 }
 
@@ -217,13 +245,15 @@ async function callDeepSeek(
 async function callGroq(
   apiKey: string,
   model: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   return callOpenAICompatible(
     'https://api.groq.com/openai/v1',
     apiKey,
     model || 'llama-3.3-70b-versatile',
-    messages
+    messages,
+    jsonMode
   );
 }
 
@@ -234,10 +264,11 @@ async function callIndus(
   apiKey: string,
   model: string,
   baseUrl: string,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   const url = (baseUrl || 'https://api.indusai.in/v1').replace(/\/$/, '');
-  return callOpenAICompatible(url, apiKey, model || 'indus-1', messages);
+  return callOpenAICompatible(url, apiKey, model || 'indus-1', messages, jsonMode);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -269,11 +300,12 @@ async function callLocalLLM(
   model: string,
   baseUrl: string,
   messages: AIMessage[],
-  source?: import('../types').LocalAISource
+  source?: import('../types').LocalAISource,
+  jsonMode = false
 ): Promise<string> {
   const url = resolveLocalBaseUrl(source, baseUrl);
   const defaultModel = (source === 'lmstudio') ? 'local-model' : 'llama3.2';
-  return callOpenAICompatible(url, apiKey, model || defaultModel, messages);
+  return callOpenAICompatible(url, apiKey, model || defaultModel, messages, jsonMode);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -281,30 +313,32 @@ async function callLocalLLM(
 // ────────────────────────────────────────────────────────────────────────────
 async function callAI(
   settings: AISettings,
-  messages: AIMessage[]
+  messages: AIMessage[],
+  jsonMode = false
 ): Promise<string> {
   switch (settings.provider) {
     case 'openai':
-      return callOpenAI(settings.apiKey, settings.model ?? 'gpt-4o-mini', messages);
+      return callOpenAI(settings.apiKey, settings.model ?? 'gpt-4o-mini', messages, jsonMode);
 
     case 'anthropic':
       return callAnthropic(settings.apiKey, settings.model ?? 'claude-3-haiku-20240307', messages);
 
     case 'gemini':
-      return callGemini(settings.apiKey, settings.model ?? 'gemini-2.0-flash', messages);
+      return callGemini(settings.apiKey, settings.model ?? 'gemini-2.0-flash', messages, jsonMode);
 
     case 'deepseek':
-      return callDeepSeek(settings.apiKey, settings.model ?? 'deepseek-chat', messages);
+      return callDeepSeek(settings.apiKey, settings.model ?? 'deepseek-chat', messages, jsonMode);
 
     case 'groq':
-      return callGroq(settings.apiKey, settings.model ?? 'llama-3.3-70b-versatile', messages);
+      return callGroq(settings.apiKey, settings.model ?? 'llama-3.3-70b-versatile', messages, jsonMode);
 
     case 'indus':
       return callIndus(
         settings.apiKey,
         settings.model ?? 'indus-1',
         settings.localBaseUrl ?? 'https://api.indusai.in/v1',
-        messages
+        messages,
+        jsonMode
       );
 
     case 'watsonx':
@@ -322,7 +356,8 @@ async function callAI(
         settings.model ?? 'llama3.2',
         settings.localBaseUrl ?? '',
         messages,
-        settings.localSource
+        settings.localSource,
+        jsonMode
       );
 
     default:
@@ -338,6 +373,52 @@ async function callAI(
 // to safe empty/fallback results. The description field is NEVER populated
 // with an AI error message — callers receive { summary:'', suggestedTags:[] }.
 // ────────────────────────────────────────────────────────────────────────────
+/**
+ * Extract the first valid JSON object from a raw AI response string.
+ *
+ * Handles:
+ *   1. Plain JSON          { "summary": "..." }
+ *   2. Markdown-fenced     ```json\n{ ... }\n```
+ *   3. Prose with embedded { ... } anywhere in the text
+ *
+ * Strategy: strip any markdown fence first, then walk candidate substrings
+ * starting at each '{' character and attempt JSON.parse on each. Returns the
+ * first substring that parses successfully, or null if none do.
+ */
+function extractJsonObject(raw: string): Record<string, unknown> | null {
+  // 1. Try stripping a markdown code fence (```json ... ``` or ``` ... ```)
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidates = fenceMatch ? [fenceMatch[1].trim(), raw] : [raw];
+
+  for (const text of candidates) {
+    // Walk every '{' position and try to parse outward
+    let idx = 0;
+    while (idx < text.length) {
+      const start = text.indexOf('{', idx);
+      if (start === -1) break;
+      // Find the matching closing brace by tracking depth
+      let depth = 0;
+      let end = -1;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') {
+          depth--;
+          if (depth === 0) { end = i; break; }
+        }
+      }
+      if (end === -1) break; // unmatched brace — no point continuing
+      try {
+        const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+        return parsed;
+      } catch {
+        // This substring wasn't valid JSON; try the next '{'
+        idx = start + 1;
+      }
+    }
+  }
+  return null;
+}
+
 export async function summarizeItem(
   settings: AISettings,
   title: string,
@@ -359,8 +440,9 @@ export async function summarizeItem(
       content:
         'You are a helpful assistant that summarizes saved content for a personal knowledge manager. ' +
         'Use only the supplied title and extracted page metadata. Do not claim to access a URL or webpage. ' +
-        'If there is insufficient information, return an empty summary. ' +
-        'Respond only with valid JSON in this exact format: ' +
+        'If there is insufficient information, return an empty summary with empty tags. ' +
+        'Output ONLY a single raw JSON object — no prose, no markdown, no code fences, no explanation. ' +
+        'The JSON must have exactly these keys: ' +
         '{"summary":"...","suggestedTags":["tag1","tag2"],"suggestedTitle":"..."}',
     },
     {
@@ -371,7 +453,8 @@ export async function summarizeItem(
 
   let raw: string;
   try {
-    raw = await callAI(settings, messages);
+    raw = await callAI(settings, messages, true);
+    diagLog.addEntry('AI_RESPONSE_RAW', `provider=${settings.provider} model=${settings.model ?? '(default)'} length=${raw.length} content="${raw.slice(0, 1000)}"`);
     diagLog.addEntry('AI_RESPONSE_RECEIVED', `provider=${settings.provider} rawLength=${raw.length} preview="${raw.slice(0, 120)}"`);
   } catch (callErr) {
     // Surface the error to the caller via the `error` field so the UI can show
@@ -384,29 +467,24 @@ export async function summarizeItem(
 
   try {
     diagLog.addEntry('AI_RESPONSE_PARSED', 'attempting JSON extraction');
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]) as {
-        summary?: string;
-        suggestedTags?: unknown;
-        suggestedTitle?: string;
-      };
-      const summary = parsed.summary?.trim() ?? '';
+    const parsed = extractJsonObject(raw) as { summary?: string; suggestedTags?: unknown; suggestedTitle?: string } | null;
+    if (parsed) {
+      const summary = (typeof parsed.summary === 'string' ? parsed.summary : '').trim();
       const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
       const result: AISummarizeResult = {
         summary: isRefusal ? '' : summary,
         suggestedTags: Array.isArray(parsed.suggestedTags) ? (parsed.suggestedTags as string[]) : [],
-        suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
+        suggestedTitle: typeof parsed.suggestedTitle === 'string' ? parsed.suggestedTitle.trim() || undefined : undefined,
       };
       diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}"`);
       return result;
     }
-    // Raw response contained no JSON object — treat as parse failure
+    // Raw response contained no parseable JSON object — treat as parse failure
     diagLog.addEntry('AI_RESPONSE_PARSED', `no JSON found raw="${raw.slice(0, 200)}"`);
     return { summary: '', suggestedTags: [], error: 'AI returned an unexpected response format.' };
   } catch (parseErr) {
     logError(parseErr, { action: 'parseAISummarizeResult', provider: settings.provider });
-    diagLog.addEntry('AI_RESPONSE_PARSED', `JSON.parse threw: ${String(parseErr)}`);
+    diagLog.addEntry('AI_RESPONSE_PARSED', `extraction threw: ${String(parseErr)}`);
     return { summary: '', suggestedTags: [], error: 'AI response could not be parsed.' };
   }
 }

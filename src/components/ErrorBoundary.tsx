@@ -93,7 +93,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#F9F9FF',
+    // No hardcoded background — Paper's Surface + PaperProvider handle theming.
+    // A transparent container lets the app's root background show through.
   },
   card: {
     borderRadius: 20,
@@ -112,11 +113,14 @@ const styles = StyleSheet.create({
   },
   devBox: {
     maxHeight: 200,
+    // Intentionally fixed dark background — this is a dev-only stack trace viewer
+    // that must be legible regardless of the active theme.
     backgroundColor: '#1a1b20',
     borderRadius: 8,
     padding: 12,
   },
   devText: {
+    // Intentionally fixed error-red — dev-only stack trace text, not user-facing.
     color: '#ff6b6b',
     fontFamily: 'monospace',
     fontSize: 11,

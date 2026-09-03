@@ -6,10 +6,10 @@
  *
  *   Share intent:    SHARE_INTENT_RECEIVED | SHARE_INTENT_PARSED
  *   Metadata:        METADATA_FOUND
- *   AI pipeline:     AI_REQUEST_STARTED | AI_RESPONSE_RECEIVED |
- *                    AI_RESPONSE_PARSED | PROVIDER_ERROR
+ *   AI pipeline:     AI_REQUEST_STARTED | AI_RESPONSE_RAW |
+ *                    AI_RESPONSE_RECEIVED | AI_RESPONSE_PARSED | PROVIDER_ERROR
  *   Save workflow:   SAVE_STARTED | SAVE_COMPLETED | SAVE_FAILED
- *   Form:            FORM_UPDATE_COMPLETED
+ *   Form:            FORM_UPDATE_STARTED | FORM_UPDATE_COMPLETED
  *
  * Keeps the latest MAX_ENTRIES entries. Safe to call when disabled — calls
  * are silently ignored so instrumented code paths carry zero overhead.
@@ -28,12 +28,14 @@ export type DiagEventType =
   | 'SHARE_INTENT_PARSED'
   | 'METADATA_FOUND'
   | 'AI_REQUEST_STARTED'
+  | 'AI_RESPONSE_RAW'
   | 'AI_RESPONSE_RECEIVED'
   | 'AI_RESPONSE_PARSED'
   | 'PROVIDER_ERROR'
   | 'SAVE_STARTED'
   | 'SAVE_COMPLETED'
   | 'SAVE_FAILED'
+  | 'FORM_UPDATE_STARTED'
   | 'FORM_UPDATE_COMPLETED';
 
 export interface DiagEntry {

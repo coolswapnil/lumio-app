@@ -235,7 +235,7 @@ export default function CollectionsScreen() {
                     ]}
                   >
                     {selectedColor === color ? (
-                      <Ionicons name="checkmark" size={14} color="#fff" />
+                      <Ionicons name="checkmark" size={14} color={paper.colors.onPrimary} />
                     ) : (
                       <View />
                     )}
@@ -246,7 +246,7 @@ export default function CollectionsScreen() {
           </ScrollView>
 
           {saving && (
-            <View style={styles.savingOverlay}>
+            <View style={[styles.savingOverlay, { backgroundColor: paper.colors.scrim + '26' }]}>
               <ActivityIndicator size="large" color={paper.colors.primary} />
             </View>
           )}
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
   },
   savingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.15)',
+    // backgroundColor is set inline at render time using paper.colors.scrim + opacity hex '26' (≈15%)
     alignItems: 'center',
     justifyContent: 'center',
   },

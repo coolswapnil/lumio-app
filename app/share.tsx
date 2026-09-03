@@ -265,8 +265,8 @@ export default function ShareScreen() {
                       { backgroundColor: isActive ? config.color : paper.colors.surfaceContainerHigh, borderColor: isActive ? config.color : paper.colors.outlineVariant },
                     ]}
                   >
-                    <Ionicons name={config.icon as any} size={14} color={isActive ? '#fff' : paper.colors.onSurfaceVariant} />
-                    <Text style={[styles.typeChipText, { color: isActive ? '#fff' : paper.colors.onSurfaceVariant }]}>{config.label}</Text>
+                    <Ionicons name={config.icon as any} size={14} color={isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant} />
+                    <Text style={[styles.typeChipText, { color: isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant }]}>{config.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -354,8 +354,8 @@ export default function ShareScreen() {
                     { backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceContainerHigh, borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
                   ]}
                 >
-                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant} />
-                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant }]}>{col.name}</Text>
+                  <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? paper.colors.onPrimary : paper.colors.onSurfaceVariant} />
+                  <Text style={[styles.typeChipText, { color: collectionId === col.id ? paper.colors.onPrimary : paper.colors.onSurfaceVariant }]}>{col.name}</Text>
                 </TouchableOpacity>
               ))}
             </View>

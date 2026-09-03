@@ -12,7 +12,7 @@ import {
   Animated,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -329,9 +329,9 @@ function TypeChip({ type, isActive, onPress, paper, colors }: TypeChipProps) {
         <Ionicons
           name={config.icon as React.ComponentProps<typeof Ionicons>['name']}
           size={15}
-          color={isActive ? '#fff' : paper.colors.onSurfaceVariant}
+          color={isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant}
         />
-        <Text style={[chipStyles.text, { color: isActive ? '#fff' : paper.colors.onSurfaceVariant }]}>
+        <Text style={[chipStyles.text, { color: isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant }]}>
           {config.label}
         </Text>
       </TouchableOpacity>
@@ -365,30 +365,56 @@ interface SaveFABProps {
 }
 
 function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
-  // Spring-in entrance animation
+  // ── Entrance animations ───────────────────────────────────────────────────
+  //
+  // Compact:    simple scale spring (standard M3 FAB appear)
+  // Expressive: scale spring + label opacity fade-in + pill width expansion
+  //             reproduces the M3 Expressive "container morphs open" motion
   const scale = useRef(new Animated.Value(0)).current;
-  // Callout visibility (expressive only, fades after 2.5 s)
-  const calloutOpacity = useRef(new Animated.Value(isExpressive ? 1 : 0)).current;
+
+  // Expressive-only: label fades in after the pill has mostly expanded
+  const labelOpacity = useRef(new Animated.Value(isExpressive ? 0 : 1)).current;
+  // Expressive-only: pill padding animates from icon-only width → full label width
+  const padAnim = useRef(new Animated.Value(isExpressive ? 0 : 1)).current;
 
   useEffect(() => {
-    Animated.spring(scale, {
-      toValue: 1,
-      tension: 80,
-      friction: 7,
-      useNativeDriver: true,
-    }).start();
-
     if (isExpressive) {
-      const timer = setTimeout(() => {
-        Animated.timing(calloutOpacity, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }).start();
-      }, 2500);
-      return () => clearTimeout(timer);
+      // Phase 1: scale in the pill (quick pop)
+      Animated.spring(scale, {
+        toValue: 1,
+        tension: 100,
+        friction: 8,
+        useNativeDriver: true,
+      }).start();
+      // Phase 2 (staggered): expand padding then fade label
+      Animated.sequence([
+        Animated.delay(80),
+        Animated.parallel([
+          Animated.spring(padAnim, {
+            toValue: 1,
+            tension: 70,
+            friction: 10,
+            useNativeDriver: false, // padding is not a transform — must be false
+          }),
+          Animated.sequence([
+            Animated.delay(60),
+            Animated.timing(labelOpacity, {
+              toValue: 1,
+              duration: 160,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]),
+      ]).start();
+    } else {
+      Animated.spring(scale, {
+        toValue: 1,
+        tension: 80,
+        friction: 7,
+        useNativeDriver: true,
+      }).start();
     }
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Press spring: squeeze down then bounce back
   const pressScale = useRef(new Animated.Value(1)).current;
@@ -397,83 +423,56 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
   const handlePressOut = () =>
     Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
 
-  if (isExpressive) {
-    // ── Expressive: squircle FAB (bottom-right) with gradient simulation + callout ──
-    return (
-      <Animated.View style={[fabStyles.expressiveWrap, { transform: [{ scale }] }]}>
-        <Animated.View
-          style={[
-            fabStyles.callout,
-            {
-              backgroundColor: paper.colors.inverseSurface,
-              opacity: calloutOpacity,
-            },
-          ]}
-        >
-          <Text style={[fabStyles.calloutText, { color: paper.colors.inverseOnSurface }]}>Save Item</Text>
-          <View style={[fabStyles.calloutArrow, { borderLeftColor: paper.colors.inverseSurface }]} />
-        </Animated.View>
-        <Pressable
-          onPress={loading ? undefined : onPress}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          accessibilityRole="button"
-          accessibilityLabel="Save item"
-        >
-          <Animated.View
-            style={[
-              fabStyles.expressiveFab,
-              {
-                backgroundColor: paper.colors.secondary,
-                transform: [{ scale: pressScale }],
-              },
-            ]}
-          >
-            {/* Gradient simulation: a semi-transparent primary overlay */}
-            <View
-              style={[
-                fabStyles.expressiveFabOverlay,
-                { backgroundColor: paper.colors.primary },
-              ]}
-            />
-            {loading ? (
-              <Animated.View style={fabStyles.expressiveIcon}>
-                <View style={fabStyles.loadingDot} />
-              </Animated.View>
-            ) : (
-              <Ionicons name="checkmark" size={26} color={paper.colors.onSecondary} style={fabStyles.expressiveIcon} />
-            )}
-          </Animated.View>
-        </Pressable>
-      </Animated.View>
-    );
-  }
+  // Interpolate padding: 0→1 maps to icon-only (16) → full label (32)
+  const animatedPadH = padAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 32],
+  });
 
-  // ── Standard: full-width extended FAB ──
+  const fabBg = isExpressive ? paper.colors.secondary : paper.colors.primary;
+  const fabFg = isExpressive ? paper.colors.onSecondary : paper.colors.onPrimary;
+
   return (
-    <Animated.View style={[fabStyles.extWrap, { transform: [{ scale }] }]}>
+    <Animated.View
+      style={[
+        fabStyles.wrap,
+        isExpressive ? fabStyles.wrapCentered : fabStyles.wrapRight,
+        { transform: [{ scale }] },
+      ]}
+    >
       <Pressable
         onPress={loading ? undefined : onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         accessibilityRole="button"
         accessibilityLabel="Save item"
-        style={({ pressed }) => [
-          fabStyles.extFab,
-          { backgroundColor: paper.colors.primary, opacity: pressed ? 0.88 : 1 },
-        ]}
       >
         <Animated.View
-          style={[fabStyles.extFabInner, { transform: [{ scale: pressScale }] }]}
+          style={[
+            fabStyles.fab,
+            isExpressive ? fabStyles.fabExpressive : fabStyles.fabCompact,
+            {
+              backgroundColor: fabBg,
+              shadowColor: paper.colors.shadow,
+              // For expressive: animate paddingHorizontal as the pill morphs open
+              paddingHorizontal: isExpressive ? animatedPadH : 24,
+              transform: [{ scale: pressScale }],
+            },
+          ]}
         >
           {loading ? (
-            <View style={fabStyles.loadingDot} />
+            <View style={[fabStyles.loadingDot, { backgroundColor: fabFg + 'B3' }]} />
           ) : (
-            <Ionicons name="checkmark" size={22} color={paper.colors.onPrimary} />
+            <Ionicons name="checkmark" size={isExpressive ? 24 : 22} color={fabFg} />
           )}
-          <Text style={[fabStyles.extFabLabel, { color: paper.colors.onPrimary }]}>
+          <Animated.Text
+            style={[
+              fabStyles.fabLabel,
+              { color: fabFg, opacity: labelOpacity },
+            ]}
+          >
             {loading ? 'Saving…' : 'Save Item'}
-          </Text>
+          </Animated.Text>
         </Animated.View>
       </Pressable>
     </Animated.View>
@@ -481,94 +480,87 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
 }
 
 const fabStyles = StyleSheet.create({
-  // ── Extended FAB ──────────────────────────────
-  extWrap: {
+  // ── Wrapper ───────────────────────────────────
+  // The parent container handles absolute positioning and inset offset;
+  // the wrapper only controls horizontal alignment of the pill itself.
+  wrap: {
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 16,
   },
-  extFab: {
+  // Expressive: center the pill across the full container width
+  wrapCentered: {
+    alignItems: 'center',
+  },
+  // Compact: pin the pill to the right edge
+  wrapRight: {
+    alignItems: 'flex-end',
+  },
+
+  // ── Pill ──────────────────────────────────────
+  // paddingHorizontal is intentionally omitted here — set inline (animated for
+  // expressive, static 24 for compact) so the pill morphs open on entrance.
+  fab: {
     height: 56,
     borderRadius: 28,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    gap: 10,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.18,
     shadowRadius: 8,
     elevation: 6,
+    overflow: 'hidden',
   },
-  extFabInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  // Expressive: enforce minimum width so the pill never collapses to icon-only
+  // at rest; the animated paddingHorizontal handles the morph.
+  fabExpressive: {
+    minWidth: 56,
   },
-  extFabLabel: {
+  // Compact: no extra constraints — width driven by content + padding.
+  fabCompact: {},
+
+  // ── Label ─────────────────────────────────────
+  fabLabel: {
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
 
-  // ── Expressive FAB ────────────────────────────
-  expressiveWrap: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    alignItems: 'flex-end',
-  },
-  callout: {
-    position: 'absolute',
-    right: 66,
-    bottom: 12,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  calloutText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  calloutArrow: {
-    position: 'absolute',
-    right: -6,
-    top: '50%',
-    marginTop: -5,
-    width: 0,
-    height: 0,
-    borderTopWidth: 5,
-    borderBottomWidth: 5,
-    borderLeftWidth: 6,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-  },
-  expressiveFab: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  expressiveFabOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.45,
-  },
-  expressiveIcon: {
-    zIndex: 1,
-  },
-
-  // ── Shared ────────────────────────────────────
+  // ── Loading indicator ─────────────────────────
   loadingDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    // backgroundColor set inline using the theme onPrimary/onSecondary token
   },
 });
+
+// ─── SaveFABContainer ────────────────────────────────────────────────────────
+//
+// Absolutely-positioned shell that:
+//   • reads the device bottom safe-area inset (home indicator / nav bar)
+//   • places itself above that inset with a 16 pt gap
+//   • lets SaveFAB control horizontal alignment internally
+//
+// Keeping this as a separate component avoids calling useSafeAreaInsets inside
+// the heavy SaveScreen render and makes the positioning logic self-contained.
+function SaveFABContainer(props: SaveFABProps) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: insets.bottom + 16,
+        pointerEvents: 'box-none',
+      }}
+    >
+      <SaveFAB {...props} />
+    </View>
+  );
+}
 
 export default function SaveScreen() {
   const { colors, layout } = useTheme();
@@ -588,6 +580,7 @@ export default function SaveScreen() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [lastMetadata, setLastMetadata] = useState<PageMetadata | null>(null);
   const [metadataFailed, setMetadataFailed] = useState(false);
   // clipboardUrl: URL found in clipboard, null = none or already dismissed for this session
@@ -652,8 +645,9 @@ export default function SaveScreen() {
   };
 
   const handleAISummarize = async () => {
+    setAiError(null);
     if (!title.trim() && !url.trim()) {
-      Alert.alert('Add content first', 'Enter a title or URL before analyzing.');
+      setAiError('Enter a title or URL before analyzing.');
       return;
     }
 
@@ -661,7 +655,7 @@ export default function SaveScreen() {
     const aiSettings = await getAISettings();
     if (!aiSettings) {
       diagLog.addEntry('AI_REQUEST_STARTED', 'no AI provider configured');
-      Alert.alert('No AI provider available', 'Go to Settings to configure your AI provider and API key.');
+      setAiError('No AI provider configured. Go to Settings → AI to add one.');
       return;
     }
     diagLog.addEntry('AI_REQUEST_STARTED', `provider=${aiSettings.provider} model=${aiSettings.model ?? '(default)'}`);
@@ -706,11 +700,12 @@ export default function SaveScreen() {
         // user still gets value from the metadata extraction that succeeded.
         applyMetadataFallback(metadata);
         diagLog.addEntry('FORM_UPDATE_COMPLETED', 'AI failed — metadata fallback applied');
-        Alert.alert('AI analysis failed', result.error);
+        setAiError(result.error);
         return;
       }
 
       // ── Step 4: Form update ───────────────────────────────────────────────
+      diagLog.addEntry('FORM_UPDATE_STARTED', `suggestedTitle="${(result.suggestedTitle ?? '').slice(0, 80)}" tags=${result.suggestedTags.length} summaryLen=${result.summary.length}`);
 
       let updated = false;
       if (result.suggestedTitle && !title.trim()) { setTitle(result.suggestedTitle); updated = true; }
@@ -729,7 +724,7 @@ export default function SaveScreen() {
     } catch (err) {
       logError(err, { screen: 'save', action: 'aiSummarize' });
       applyMetadataFallback(null);
-      Alert.alert('AI analysis failed', 'An unexpected error occurred. Check your API key in Settings.');
+      setAiError('An unexpected error occurred. Check your API key in Settings.');
     } finally {
       setAiLoading(false);
     }
@@ -816,7 +811,7 @@ export default function SaveScreen() {
           </View>
 
           <ScrollView
-            contentContainerStyle={[styles.content, { paddingHorizontal: sp, paddingBottom: layout.isExpressive ? 96 : 88, gap: layout.isExpressive ? 4 : 2 }]}
+            contentContainerStyle={[styles.content, { paddingHorizontal: sp, paddingBottom: 120, gap: layout.isExpressive ? 4 : 2 }]}
             keyboardShouldPersistTaps="handled"
           >
             {/* ── Content Type ── */}
@@ -840,7 +835,7 @@ export default function SaveScreen() {
             <SectionLabel text="TITLE *" colors={colors} topSpacing={layout.isExpressive ? 20 : 10} />
             <TextInput
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(t) => { setTitle(t); if (aiError) setAiError(null); }}
               placeholder="What are you saving?"
               placeholderTextColor={colors.placeholder}
               style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, borderRadius: inputRadius }]}
@@ -848,17 +843,8 @@ export default function SaveScreen() {
 
             {/* ── URL / Link ── */}
             <SectionLabel text="URL / LINK" colors={colors} topSpacing={layout.isExpressive ? 20 : 10} />
-            <TextInput
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://..."
-              placeholderTextColor={colors.placeholder}
-              style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, borderRadius: inputRadius }]}
-              keyboardType="url"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {/* ── Clipboard banner (shown only when URL field is empty and clipboard has a URL) ── */}
+            {/* ── Clipboard suggestion card — shown ABOVE the URL field when clipboard
+                has a URL and the field is empty. Non-blocking, session-scoped dismiss. ── */}
             {clipboardUrl != null && !url.trim() && (
               <ClipboardBanner
                 clipUrl={clipboardUrl}
@@ -868,6 +854,16 @@ export default function SaveScreen() {
                 paper={paper}
               />
             )}
+            <TextInput
+              value={url}
+              onChangeText={(t) => { setUrl(t); if (aiError) setAiError(null); }}
+              placeholder="https://..."
+              placeholderTextColor={colors.placeholder}
+              style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text, borderColor: colors.border, borderRadius: inputRadius }]}
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
             {/* URL platform preview */}
             <UrlPreview url={url} colors={colors} paper={paper} />
 
@@ -895,6 +891,22 @@ export default function SaveScreen() {
                 {aiLoading ? 'Analyzing…' : 'Analyze Content'}
               </Text>
             </TouchableOpacity>
+
+            {/* ── Inline AI error — replaces modal Alert ── */}
+            {aiError != null && (
+              <View style={[styles.aiErrorBanner, { backgroundColor: paper.colors.errorContainer, borderColor: paper.colors.error + '55', borderRadius: inputRadius }]}>
+                <Ionicons name="alert-circle-outline" size={15} color={paper.colors.onErrorContainer} />
+                <Text style={[styles.aiErrorText, { color: paper.colors.onErrorContainer }]}>{aiError}</Text>
+                <Pressable
+                  onPress={() => setAiError(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss error"
+                >
+                  <Ionicons name="close" size={15} color={paper.colors.onErrorContainer} />
+                </Pressable>
+              </View>
+            )}
 
             {/* Metadata status card */}
             {lastMetadata && <MetadataCard metadata={lastMetadata} paper={paper} colors={colors} />}
@@ -973,8 +985,8 @@ export default function SaveScreen() {
                         borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
                     ]}
                   >
-                    <Ionicons name={col.icon as React.ComponentProps<typeof Ionicons>['name']} size={14} color={collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant} />
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant }}>
+                    <Ionicons name={col.icon as React.ComponentProps<typeof Ionicons>['name']} size={14} color={collectionId === col.id ? paper.colors.onPrimary : paper.colors.onSurfaceVariant} />
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: collectionId === col.id ? paper.colors.onPrimary : paper.colors.onSurfaceVariant }}>
                       {col.name}
                     </Text>
                   </TouchableOpacity>
@@ -1019,14 +1031,15 @@ export default function SaveScreen() {
           </ScrollView>
 
           {/* ── Save FAB ── */}
-          <SafeAreaView edges={['bottom']} style={layout.isExpressive ? { position: 'absolute', bottom: 0, right: 0 } : undefined}>
-            <SaveFAB
-              onPress={handleSave}
-              loading={saving}
-              isExpressive={layout.isExpressive}
-              paper={paper}
-            />
-          </SafeAreaView>
+          {/* Positioned absolutely above the bottom safe-area inset so it sits
+              flush above the home indicator / navigation bar without overlapping it.
+              A 16 pt gap is added between the inset edge and the FAB bottom.     */}
+          <SaveFABContainer
+            onPress={handleSave}
+            loading={saving}
+            isExpressive={layout.isExpressive}
+            paper={paper}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -1076,6 +1089,20 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderWidth: 1.5,
     gap: 8,
+  },
+  aiErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    marginTop: 6,
+  },
+  aiErrorText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
   metaFailBanner: {
     flexDirection: 'row',

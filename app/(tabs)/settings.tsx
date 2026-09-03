@@ -77,12 +77,14 @@ const DIAG_EVENT_ROLES: Record<import('../../src/services/diagnostics').DiagEven
   SHARE_INTENT_PARSED:   'secondary',
   METADATA_FOUND:        'tertiary',
   AI_REQUEST_STARTED:    'tertiary',
+  AI_RESPONSE_RAW:       'primary',
   AI_RESPONSE_RECEIVED:  'secondary',
   AI_RESPONSE_PARSED:    'secondary',
   PROVIDER_ERROR:        'error',
   SAVE_STARTED:          'surface',
   SAVE_COMPLETED:        'tertiary',
   SAVE_FAILED:           'error',
+  FORM_UPDATE_STARTED:   'surface',
   FORM_UPDATE_COMPLETED: 'surface',
 };
 
@@ -1673,7 +1675,7 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setProviderModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: paper.colors.scrim + '73' }]}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setProviderModalVisible(false)} />
           <View style={[styles.modalSheet, {
             backgroundColor: paper.colors.surfaceContainer,
@@ -1778,7 +1780,7 @@ export default function SettingsScreen() {
         animationType="slide"
         onRequestClose={() => setDiagModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
+        <View style={[styles.modalBackdrop, { backgroundColor: paper.colors.scrim + '73' }]}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setDiagModalVisible(false)} />
           <View style={[styles.modalSheet, styles.diagSheet, {
             backgroundColor: paper.colors.surfaceContainer,
@@ -2065,7 +2067,7 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    // backgroundColor is set inline at render time using paper.colors.scrim + opacity hex '73' (≈45%)
   },
   modalSheet: {
     paddingHorizontal: 16,
