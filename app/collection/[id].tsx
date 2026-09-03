@@ -9,9 +9,9 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import { useTheme as usePaperTheme } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
 import { ItemCard } from '../../src/components/ItemCard';
 import { getItemsByCollection } from '../../src/database/items';
@@ -21,7 +21,7 @@ import type { SavedItem } from '../../src/types';
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();

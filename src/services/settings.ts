@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   compactLayout: false,
   largeTouchTargets: false,
   highContrast: false,
+  diagnosticsEnabled: false,
 };
 
 export async function getAppSettings(): Promise<AppSettings> {

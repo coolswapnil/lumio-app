@@ -13,7 +13,7 @@
  *    user confirm + save in one tap.
  */
 import React, { useState, useEffect } from 'react';
-import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
+import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -29,6 +29,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../src/context/ThemeContext';
+import { useAppTheme } from '../src/constants/colors';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
 import { getAISettings } from '../src/services/settings';
@@ -40,6 +41,7 @@ import { Button } from '../src/components/Button';
 import { generateId } from '../src/utils/uuid';
 import { asString, sanitizeText, parseTags, sanitizeUrl, LIMITS } from '../src/utils/validation';
 import { logError, getUserMessage } from '../src/utils/errors';
+import { diagLog } from '../src/services/diagnostics';
 
 /** Guess content type from URL/text heuristics */
 function guessContentType(url: string, text: string): ContentType {
@@ -57,7 +59,7 @@ function guessContentType(url: string, text: string): ContentType {
 
 export default function ShareScreen() {
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const { collections, refreshAll } = useData();
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -84,9 +86,14 @@ export default function ShareScreen() {
     const resolvedUrl = sharedUrl || (sharedText?.startsWith('http') ? sharedText : '');
     const resolvedTitle = sharedTitle || (!sharedText?.startsWith('http') ? sharedText : '');
 
+    diagLog.addEntry('SHARE_INTENT_RECEIVED', `url="${resolvedUrl.slice(0, 120)}" text="${(sharedText ?? '').slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
+
     setUrl(resolvedUrl);
     setTitle(resolvedTitle);
-    setContentType(guessContentType(resolvedUrl, sharedText));
+    const guessed = guessContentType(resolvedUrl, sharedText);
+    setContentType(guessed);
+
+    diagLog.addEntry('SHARE_INTENT_PARSED', `resolvedUrl="${resolvedUrl.slice(0, 120)}" resolvedTitle="${resolvedTitle.slice(0, 80)}" contentType=${guessed}`);
   }, [sharedUrl, sharedText, sharedTitle]);
 
   const handleAISummarize = async () => {
@@ -94,31 +101,48 @@ export default function ShareScreen() {
       Alert.alert('Add content first', 'Enter a title or URL before running AI auto-fill.');
       return;
     }
+    diagLog.addEntry('AI_REQUEST_STARTED', 'share screen: checking AI settings');
     const aiSettings = await getAISettings();
     if (!aiSettings) {
+      diagLog.addEntry('AI_REQUEST_STARTED', 'share screen: no AI provider configured');
       Alert.alert('No AI provider', 'Go to Settings to configure your AI provider and API key.');
       return;
     }
+    diagLog.addEntry('AI_REQUEST_STARTED', `share screen: provider=${aiSettings.provider} model=${aiSettings.model ?? '(default)'}`);
     setAiLoading(true);
     try {
+      diagLog.addEntry('METADATA_FOUND', `share screen: fetching metadata for url="${url.slice(0, 120)}"`);
       const metadata = url.trim() ? await fetchPageMetadata(url) : null;
       if (url.trim() && !metadata) {
+        diagLog.addEntry('METADATA_FOUND', 'share screen: extraction failed or returned null');
         Alert.alert('Could not extract metadata', 'AI auto-fill will use the title you provided instead.');
+      } else if (metadata) {
+        diagLog.addEntry('METADATA_FOUND', `share screen: source=${metadata.source} title="${(metadata.title ?? '').slice(0, 80)}"`);
       }
       const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
         .filter(Boolean)
         .join('\n');
+      const aiInputTitle = metadata?.title || title.trim() || url;
+      diagLog.addEntry('AI_REQUEST_STARTED', `share screen: calling summarizeItem title="${aiInputTitle.slice(0, 80)}" metadataLen=${metadataText.length}`);
       const result = await summarizeItem(
         aiSettings,
-        metadata?.title || title.trim() || url,
+        aiInputTitle,
         undefined,
         metadataText || undefined,
         contentType,
       );
-      if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);
-      if (result.suggestedTags.length > 0 && !tags.trim()) setTags(result.suggestedTags.join(', '));
-      if (result.summary && !description.trim()) setDescription(result.summary);
-    } catch {
+      diagLog.addEntry('AI_RESPONSE_RECEIVED', `share screen: summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} error=${result.error ?? 'none'}`);
+      if (result.error) {
+        diagLog.addEntry('PROVIDER_ERROR', `share screen: ${result.error}`);
+        Alert.alert('AI Error', result.error);
+      } else {
+        if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);
+        if (result.suggestedTags.length > 0 && !tags.trim()) setTags(result.suggestedTags.join(', '));
+        if (result.summary && !description.trim()) setDescription(result.summary);
+        diagLog.addEntry('FORM_UPDATE_COMPLETED', `share screen: title=${Boolean(result.suggestedTitle)} tags=${result.suggestedTags.length} desc=${Boolean(result.summary)}`);
+      }
+    } catch (err) {
+      diagLog.addEntry('PROVIDER_ERROR', `share screen: unexpected error — ${err instanceof Error ? err.message : String(err)}`);
       Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
     }
     setAiLoading(false);
@@ -135,6 +159,7 @@ export default function ShareScreen() {
       Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
       return;
     }
+    diagLog.addEntry('SAVE_STARTED', `share screen: title="${cleanTitle.slice(0, 80)}" url="${(cleanUrl ?? '').slice(0, 120)}" type=${contentType}`);
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -153,9 +178,11 @@ export default function ShareScreen() {
       };
       await saveItem(item);
       await refreshAll();
+      diagLog.addEntry('SAVE_COMPLETED', `share screen: id=${item.id} title="${cleanTitle.slice(0, 80)}"`);
       router.replace('/(tabs)');
     } catch (err) {
       logError(err, { screen: 'share', action: 'saveItem' });
+      diagLog.addEntry('SAVE_FAILED', `share screen: ${err instanceof Error ? err.message : String(err)}`);
       Alert.alert('Save failed', getUserMessage(err));
     } finally {
       setSaving(false);
@@ -183,7 +210,7 @@ export default function ShareScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {/* Shared content preview */}
           {(sharedUrl || sharedText) ? (
-            <View style={[styles.sharedPreview, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <View style={[styles.sharedPreview, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
               <Ionicons name="arrow-redo" size={14} color={colors.textMuted} />
               <Text style={[styles.sharedPreviewText, { color: colors.textMuted }]} numberOfLines={2}>
                 {sharedUrl || sharedText}
@@ -204,7 +231,7 @@ export default function ShareScreen() {
                     onPress={() => setContentType(type)}
                     style={[
                       styles.typeChip,
-                      { backgroundColor: isActive ? config.color : paper.colors.surfaceVariant, borderColor: isActive ? config.color : paper.colors.outlineVariant },
+                      { backgroundColor: isActive ? config.color : paper.colors.surfaceContainerHigh, borderColor: isActive ? config.color : paper.colors.outlineVariant },
                     ]}
                   >
                     <Ionicons name={config.icon as any} size={14} color={isActive ? '#fff' : paper.colors.onSurfaceVariant} />
@@ -282,7 +309,7 @@ export default function ShareScreen() {
                 onPress={() => setCollectionId(undefined)}
                 style={[
                   styles.typeChip,
-                  { backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceVariant, borderColor: !collectionId ? paper.colors.primary : paper.colors.outlineVariant },
+                  { backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceContainerHigh, borderColor: !collectionId ? paper.colors.primary : paper.colors.outlineVariant },
                 ]}
               >
                 <Text style={[styles.typeChipText, { color: !collectionId ? paper.colors.onPrimaryContainer : paper.colors.onSurfaceVariant }]}>None</Text>
@@ -293,7 +320,7 @@ export default function ShareScreen() {
                   onPress={() => setCollectionId(col.id)}
                   style={[
                     styles.typeChip,
-                    { backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceVariant, borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
+                    { backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceContainerHigh, borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
                   ]}
                 >
                   <Ionicons name={col.icon as any} size={14} color={collectionId === col.id ? '#fff' : paper.colors.onSurfaceVariant} />

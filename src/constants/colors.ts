@@ -1,4 +1,5 @@
-import { MD3LightTheme, MD3DarkTheme } from 'react-native-paper';
+import { MD3LightTheme, MD3DarkTheme, useTheme } from 'react-native-paper';
+import type { MD3Theme } from 'react-native-paper';
 
 // ─── MD3 Expressive static seed palette (blue-toned, Material You fallback) ───
 const md3Seeds = {
@@ -116,6 +117,18 @@ const md3SeedsDark = {
   warningContainer: '#5E4200',
 };
 
+// ─── AMOLED overrides — pure black surfaces, preserve accent colors ───────────
+const amoledOverrides = {
+  background: '#000000',
+  surface: '#000000',
+  surfaceVariant: '#0A0A0A',
+  surfaceContainerLowest: '#000000',
+  surfaceContainerLow: '#000000',
+  surfaceContainer: '#0A0A0A',
+  surfaceContainerHigh: '#0F0F0F',
+  surfaceContainerHighest: '#141414',
+};
+
 // ─── Static Paper themes (used when Material You palette is unavailable) ──────
 export const LightTheme = {
   ...MD3LightTheme,
@@ -133,31 +146,40 @@ export const DarkTheme = {
   },
 };
 
-export type AppTheme = typeof LightTheme;
-
 /**
- * Builds a Paper MD3 theme by merging the Android 12+ Material You dynamic
- * palette on top of the static seed palette. On Android < 12 and iOS the
- * dynamic palette is null, so the static seed colors are used unchanged.
+ * Builds a Paper MD3 theme by merging:
+ *  1. The static seed palette as base.
+ *  2. The Android 12+ Material You dynamic palette (when available).
+ *  3. AMOLED pure-black surface overrides (when amoledBlack && isDark).
  *
- * The Material You palette keys returned by `react-native-material-you-colors`
- * map closely to MD3 role names (primary, onPrimary, primaryContainer, etc.).
+ * All Paper components (Card, Chip, Searchbar…) use `paper.colors.*` directly,
+ * so every surface override MUST live in the Paper theme — not just in the
+ * custom ThemeContext `colors` object.
  */
 export function buildDynamicPaperTheme(
   isDark: boolean,
-  dynamicPalette: Record<string, string> | null
+  dynamicPalette: Record<string, string> | null,
+  amoledBlack = false
 ) {
   const base = isDark ? DarkTheme : LightTheme;
-  if (!dynamicPalette) return base;
 
-  // Merge dynamic palette keys that match MD3 color roles
-  return {
-    ...base,
-    colors: {
-      ...base.colors,
-      ...dynamicPalette,
-    },
-  };
+  // Start from base, then apply dynamic palette if available
+  const withDynamic = dynamicPalette
+    ? { ...base, colors: { ...base.colors, ...dynamicPalette } }
+    : base;
+
+  // Apply AMOLED overrides on top when dark mode is active
+  if (amoledBlack && isDark) {
+    return {
+      ...withDynamic,
+      colors: {
+        ...withDynamic.colors,
+        ...amoledOverrides,
+      },
+    };
+  }
+
+  return withDynamic;
 }
 
 // ─── Legacy color map for components not yet on Paper ─────────────────────────
@@ -208,3 +230,30 @@ export const Colors = {
 };
 
 export type ThemeColors = typeof Colors.light;
+
+/**
+ * Extended MD3 color roles added on top of the base react-native-paper palette.
+ * These are the MD3 Expressive surface container tokens that Paper's type
+ * definitions don't include yet (MD3Colors is a `type` alias, not an interface,
+ * so declaration merging is not possible).
+ */
+export type AppColors = MD3Theme['colors'] & {
+  surfaceContainerLowest: string;
+  surfaceContainerLow: string;
+  surfaceContainer: string;
+  surfaceContainerHigh: string;
+  surfaceContainerHighest: string;
+};
+
+export type AppTheme = Omit<MD3Theme, 'colors'> & {
+  colors: AppColors;
+};
+
+/**
+ * Typed variant of react-native-paper's `useTheme` that returns `AppTheme`.
+ * Use this instead of `useTheme as usePaperTheme` so that
+ * `paper.colors.surfaceContainerHigh` etc. are properly typed.
+ */
+export function useAppTheme() {
+  return useTheme<AppTheme>();
+}

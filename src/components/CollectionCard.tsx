@@ -1,10 +1,11 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Card, Text, useTheme as usePaperTheme } from 'react-native-paper';
+import { Card, Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import type { Collection } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useAppTheme } from '../constants/colors';
 
 interface CollectionCardProps {
   collection: Collection;
@@ -15,7 +16,7 @@ interface CollectionCardProps {
  * Uses elevated mode for a subtle tonal surface lift.
  */
 function CollectionCardBase({ collection }: CollectionCardProps) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const router = useRouter();
   const { layout } = useTheme();
 

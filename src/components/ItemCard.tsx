@@ -6,7 +6,7 @@ import {
   PanResponder,
   Alert,
 } from 'react-native';
-import { Card, Text, Chip, IconButton, useTheme as usePaperTheme } from 'react-native-paper';
+import { Card, Text, Chip, IconButton } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
@@ -16,6 +16,7 @@ import { CONTENT_TYPE_CONFIG } from '../constants';
 import { toggleFavorite, toggleCompleted, deleteItem } from '../database/items';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAppTheme } from '../constants/colors';
 
 dayjs.extend(relativeTime);
 
@@ -34,11 +35,11 @@ export const ITEM_CARD_HEIGHT_COMPACT = 72;
 const SWIPE_THRESHOLD = -80;
 
 function ItemCardBase({ item, compact = false }: ItemCardProps) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const { refreshAll } = useData();
   const router = useRouter();
   const config = CONTENT_TYPE_CONFIG[item.contentType];
-  const { layout } = useTheme();
+  const { layout, colors } = useTheme();
 
   // ── Swipe-to-delete ──────────────────────────────────────────────────────
   const translateX = useRef(new Animated.Value(0)).current;
@@ -106,9 +107,9 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
   })();
 
   return (
-    <View style={styles.wrapper}>
+    <View style={[styles.wrapper, { borderRadius: layout.cardRadius }]}>
       {/* Delete background revealed on left-swipe */}
-      <View style={[styles.deleteBackground, { backgroundColor: paper.colors.error }]}>
+      <View style={[styles.deleteBackground, { backgroundColor: paper.colors.error, borderRadius: layout.cardRadius }]}>
         <IconButton
           icon="trash-can"
           iconColor={paper.colors.onError}
@@ -203,7 +204,7 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
                 <Chip
                   key={tag}
                   compact
-                  style={{ backgroundColor: paper.colors.surfaceVariant }}
+                  style={{ backgroundColor: colors.surfaceContainerHigh }}
                   textStyle={{ color: paper.colors.onSurfaceVariant, fontSize: 11 }}
                 >
                   #{tag}
@@ -239,7 +240,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 10,
     overflow: 'hidden',
-    borderRadius: 16,
+    // borderRadius set inline via layout.cardRadius
   },
   deleteBackground: {
     position: 'absolute',
@@ -247,7 +248,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: 80,
-    borderRadius: 16,
+    // borderRadius set inline via layout.cardRadius
     alignItems: 'center',
     justifyContent: 'center',
   },

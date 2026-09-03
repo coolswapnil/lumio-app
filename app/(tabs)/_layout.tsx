@@ -2,12 +2,12 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme as usePaperTheme } from 'react-native-paper';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 
 export default function TabsLayout() {
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
 
   return (

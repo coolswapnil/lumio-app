@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   TouchableRipple,
-  useTheme as usePaperTheme,
   ActivityIndicator,
 } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +19,7 @@ import { generateId } from '../../src/utils/uuid';
 import { sanitizeText, LIMITS } from '../../src/utils/validation';
 import { logError, getUserMessage } from '../../src/utils/errors';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
 import { CollectionCard } from '../../src/components/CollectionCard';
 import { saveCollection } from '../../src/database/collections';
@@ -36,7 +36,7 @@ const TAB_BAR_HEIGHT = 52;
 
 export default function CollectionsScreen() {
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { collections, refreshCollections } = useData();
   const [modalVisible, setModalVisible] = useState(false);
@@ -200,7 +200,7 @@ export default function CollectionsScreen() {
                         {
                           backgroundColor: selectedIcon === icon
                             ? selectedColor + '25'
-                            : paper.colors.surfaceVariant,
+                            : paper.colors.surfaceContainerHigh,
                           borderWidth: 2,
                           borderColor: selectedIcon === icon ? selectedColor : 'transparent',
                         },

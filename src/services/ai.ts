@@ -1,6 +1,7 @@
 import type { AISettings } from '../types';
 import { logError } from '../utils/errors';
 import { safeErrorMessage } from './aiHealth';
+import { diagLog } from './diagnostics';
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';
@@ -11,6 +12,8 @@ export interface AISummarizeResult {
   summary: string;
   suggestedTags: string[];
   suggestedTitle?: string;
+  /** Set when the AI call itself failed (network, auth, parse). Distinct from an empty-but-valid response. */
+  error?: string;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -369,28 +372,43 @@ export async function summarizeItem(
   let raw: string;
   try {
     raw = await callAI(settings, messages);
+    diagLog.addEntry('AI_RESPONSE_RECEIVED', `provider=${settings.provider} rawLength=${raw.length} preview="${raw.slice(0, 120)}"`);
   } catch (callErr) {
-    // FAIL-SAFE: never let the raw error message reach description fields.
+    // Surface the error to the caller via the `error` field so the UI can show
+    // a meaningful message instead of silently doing nothing.
     logError(callErr, { action: 'summarizeItem:callAI', provider: settings.provider });
-    return { summary: '', suggestedTags: [] };
+    const safeMsg = safeErrorMessage(callErr);
+    diagLog.addEntry('PROVIDER_ERROR', `provider=${settings.provider} err="${safeMsg}"`);
+    return { summary: '', suggestedTags: [], error: safeMsg };
   }
 
   try {
+    diagLog.addEntry('AI_RESPONSE_PARSED', 'attempting JSON extraction');
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]) as AISummarizeResult;
-      const summary = result.summary?.trim() ?? '';
-      const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
-      return {
-        summary: isRefusal ? '' : summary,
-        suggestedTags: Array.isArray(result.suggestedTags) ? result.suggestedTags : [],
-        suggestedTitle: result.suggestedTitle?.trim() || undefined,
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        summary?: string;
+        suggestedTags?: unknown;
+        suggestedTitle?: string;
       };
+      const summary = parsed.summary?.trim() ?? '';
+      const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
+      const result: AISummarizeResult = {
+        summary: isRefusal ? '' : summary,
+        suggestedTags: Array.isArray(parsed.suggestedTags) ? (parsed.suggestedTags as string[]) : [],
+        suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
+      };
+      diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}"`);
+      return result;
     }
+    // Raw response contained no JSON object — treat as parse failure
+    diagLog.addEntry('AI_RESPONSE_PARSED', `no JSON found raw="${raw.slice(0, 200)}"`);
+    return { summary: '', suggestedTags: [], error: 'AI returned an unexpected response format.' };
   } catch (parseErr) {
     logError(parseErr, { action: 'parseAISummarizeResult', provider: settings.provider });
+    diagLog.addEntry('AI_RESPONSE_PARSED', `JSON.parse threw: ${String(parseErr)}`);
+    return { summary: '', suggestedTags: [], error: 'AI response could not be parsed.' };
   }
-  return { summary: '', suggestedTags: [] };
 }
 
 export async function chatWithAI(

@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
-import { Searchbar, useTheme as usePaperTheme } from 'react-native-paper';
+import { Searchbar } from 'react-native-paper';
 import { useTheme } from '../context/ThemeContext';
+import { useAppTheme } from '../constants/colors';
 
 interface SearchBarProps {
   value: string;
@@ -20,7 +21,7 @@ export function SearchBar({
   placeholder = 'Search saved items…',
   onClear,
 }: SearchBarProps) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const { layout, colors } = useTheme();
 
   return (
@@ -32,7 +33,7 @@ export function SearchBar({
       style={[
         styles.bar,
         {
-          backgroundColor: layout.isExpressive ? colors.surfaceContainerHigh : paper.colors.surfaceVariant,
+          backgroundColor: colors.surfaceContainerHigh,
           borderRadius: layout.isExpressive ? 28 : 24,
           elevation: layout.isExpressive ? 2 : 0,
         },

@@ -10,21 +10,23 @@ import {
   Platform,
   Alert,
   Animated,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Location from 'expo-location';
-import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
-import type { MD3Theme } from 'react-native-paper';
+import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
 import { generateId } from '../src/utils/uuid';
 import { sanitizeText, parseTags, sanitizeUrl, extractSafeUrl, LIMITS } from '../src/utils/validation';
 import { logError, getUserMessage } from '../src/utils/errors';
 import { useTheme } from '../src/context/ThemeContext';
+import { useAppTheme, type AppTheme } from '../src/constants/colors';
 import { useData } from '../src/context/DataContext';
 import { saveItem } from '../src/database/items';
 import { getAISettings } from '../src/services/settings';
+import { diagLog } from '../src/services/diagnostics';
 import { summarizeItem } from '../src/services/ai';
 import {
   fetchPageMetadata,
@@ -38,14 +40,165 @@ import {
 } from '../src/services/metadata';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../src/constants';
 import type { ContentType, SavedItem } from '../src/types';
-import { Button } from '../src/components/Button';
+
+// ─── Clipboard Banner ────────────────────────────────────────────────────────
+
+interface ClipboardBannerProps {
+  clipUrl: string;
+  onPaste: () => void;
+  onDismiss: () => void;
+  isExpressive: boolean;
+  paper: AppTheme;
+}
+
+function ClipboardBanner({ clipUrl, onPaste, onDismiss, isExpressive, paper }: ClipboardBannerProps) {
+  const translateY = useRef(new Animated.Value(-12)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(translateY, { toValue: 0, tension: 90, friction: 10, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  let hostname = clipUrl;
+  try { hostname = new URL(clipUrl).hostname.replace(/^www\./, ''); } catch { /* keep raw */ }
+
+  const cardRadius = isExpressive ? 20 : 12;
+
+  return (
+    <Animated.View
+      style={[
+        clipStyles.card,
+        {
+          backgroundColor: paper.colors.secondaryContainer,
+          borderColor: paper.colors.secondary + '55',
+          borderRadius: cardRadius,
+          transform: [{ translateY }],
+          opacity,
+        },
+      ]}
+      accessibilityRole="alert"
+      accessibilityLabel={`Link detected in clipboard: ${hostname}`}
+    >
+      {/* Left: icon + text */}
+      <View style={clipStyles.body}>
+        <View style={[clipStyles.iconWrap, { backgroundColor: paper.colors.secondary + '22', borderRadius: isExpressive ? 12 : 8 }]}>
+          <Text style={clipStyles.iconEmoji}>📋</Text>
+        </View>
+        <View style={clipStyles.textBlock}>
+          <Text style={[clipStyles.heading, { color: paper.colors.onSecondaryContainer }]}>
+            Link detected in clipboard
+          </Text>
+          <Text style={[clipStyles.hostname, { color: paper.colors.onSecondaryContainer + 'CC' }]} numberOfLines={1}>
+            {hostname}
+          </Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={clipStyles.actions}>
+        <Pressable
+          onPress={onDismiss}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss clipboard suggestion"
+          style={({ pressed }) => [
+            clipStyles.actionBtn,
+            clipStyles.dismissBtn,
+            {
+              borderColor: paper.colors.outline + '66',
+              borderRadius: isExpressive ? 20 : 8,
+              opacity: pressed ? 0.6 : 1,
+            },
+          ]}
+        >
+          <Text style={[clipStyles.actionText, { color: paper.colors.onSecondaryContainer }]}>Dismiss</Text>
+        </Pressable>
+        <Pressable
+          onPress={onPaste}
+          accessibilityRole="button"
+          accessibilityLabel="Paste clipboard URL"
+          style={({ pressed }) => [
+            clipStyles.actionBtn,
+            clipStyles.pasteBtn,
+            {
+              backgroundColor: paper.colors.secondary,
+              borderRadius: isExpressive ? 20 : 8,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <Ionicons name="clipboard-outline" size={13} color={paper.colors.onSecondary} />
+          <Text style={[clipStyles.actionText, { color: paper.colors.onSecondary, fontWeight: '700' }]}>Paste</Text>
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
+
+const clipStyles = StyleSheet.create({
+  card: {
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 2,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 10,
+    gap: 10,
+  },
+  body: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  iconEmoji: { fontSize: 18 },
+  textBlock: { flex: 1 },
+  heading: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  hostname: {
+    fontSize: 12,
+    marginTop: 1,
+    lineHeight: 16,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  dismissBtn: {
+    borderWidth: 1,
+  },
+  pasteBtn: {},
+  actionText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});
 
 // ─── URL Preview ─────────────────────────────────────────────────────────────
 
 interface UrlPreviewProps {
   url: string;
   colors: ReturnType<typeof useTheme>['colors'];
-  paper: MD3Theme;
+  paper: AppTheme;
 }
 function UrlPreview({ url, colors, paper }: UrlPreviewProps) {
   if (!url.trim()) return null;
@@ -59,7 +212,7 @@ function UrlPreview({ url, colors, paper }: UrlPreviewProps) {
   const label = URL_SOURCE_LABELS[source];
   const iconName = URL_SOURCE_ICONS[source] as React.ComponentProps<typeof Ionicons>['name'];
   return (
-    <View style={[previewStyles.row, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}>
+    <View style={[previewStyles.row, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant }]}>
       <View style={[previewStyles.iconWrap, { backgroundColor: paper.colors.secondaryContainer }]}>
         <Ionicons name={iconName} size={18} color={paper.colors.onSecondaryContainer} />
       </View>
@@ -99,7 +252,7 @@ const previewStyles = StyleSheet.create({
 
 interface MetadataCardProps {
   metadata: PageMetadata;
-  paper: MD3Theme;
+  paper: AppTheme;
   colors: ReturnType<typeof useTheme>['colors'];
 }
 function MetadataCard({ metadata, paper, colors }: MetadataCardProps) {
@@ -145,7 +298,7 @@ interface TypeChipProps {
   type: ContentType;
   isActive: boolean;
   onPress: () => void;
-  paper: MD3Theme;
+  paper: AppTheme;
   colors: ReturnType<typeof useTheme>['colors'];
 }
 function TypeChip({ type, isActive, onPress, paper, colors }: TypeChipProps) {
@@ -168,7 +321,7 @@ function TypeChip({ type, isActive, onPress, paper, colors }: TypeChipProps) {
         style={[
           chipStyles.chip,
           {
-            backgroundColor: isActive ? config.color : paper.colors.surfaceVariant,
+            backgroundColor: isActive ? config.color : paper.colors.surfaceContainerHigh,
             borderColor: isActive ? config.color : paper.colors.outlineVariant,
           },
         ]}
@@ -176,9 +329,9 @@ function TypeChip({ type, isActive, onPress, paper, colors }: TypeChipProps) {
         <Ionicons
           name={config.icon as React.ComponentProps<typeof Ionicons>['name']}
           size={15}
-          color={isActive ? '#fff' : colors.textSecondary}
+          color={isActive ? '#fff' : paper.colors.onSurfaceVariant}
         />
-        <Text style={[chipStyles.text, { color: isActive ? '#fff' : colors.textSecondary }]}>
+        <Text style={[chipStyles.text, { color: isActive ? '#fff' : paper.colors.onSurfaceVariant }]}>
           {config.label}
         </Text>
       </TouchableOpacity>
@@ -202,9 +355,219 @@ const chipStyles = StyleSheet.create({
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
+// ─── Save FAB ────────────────────────────────────────────────────────────────
+
+interface SaveFABProps {
+  onPress: () => void;
+  loading: boolean;
+  isExpressive: boolean;
+  paper: AppTheme;
+}
+
+function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
+  // Spring-in entrance animation
+  const scale = useRef(new Animated.Value(0)).current;
+  // Callout visibility (expressive only, fades after 2.5 s)
+  const calloutOpacity = useRef(new Animated.Value(isExpressive ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(scale, {
+      toValue: 1,
+      tension: 80,
+      friction: 7,
+      useNativeDriver: true,
+    }).start();
+
+    if (isExpressive) {
+      const timer = setTimeout(() => {
+        Animated.timing(calloutOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start();
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Press spring: squeeze down then bounce back
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const handlePressIn = () =>
+    Animated.spring(pressScale, { toValue: 0.92, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
+  const handlePressOut = () =>
+    Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
+
+  if (isExpressive) {
+    // ── Expressive: squircle FAB (bottom-right) with gradient simulation + callout ──
+    return (
+      <Animated.View style={[fabStyles.expressiveWrap, { transform: [{ scale }] }]}>
+        <Animated.View style={[fabStyles.callout, { opacity: calloutOpacity }]}>
+          <Text style={fabStyles.calloutText}>Save Item</Text>
+          <View style={fabStyles.calloutArrow} />
+        </Animated.View>
+        <Pressable
+          onPress={loading ? undefined : onPress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          accessibilityRole="button"
+          accessibilityLabel="Save item"
+        >
+          <Animated.View
+            style={[
+              fabStyles.expressiveFab,
+              {
+                backgroundColor: paper.colors.secondary,
+                transform: [{ scale: pressScale }],
+              },
+            ]}
+          >
+            {/* Gradient simulation: a semi-transparent primary overlay */}
+            <View
+              style={[
+                fabStyles.expressiveFabOverlay,
+                { backgroundColor: paper.colors.primary },
+              ]}
+            />
+            {loading ? (
+              <Animated.View style={fabStyles.expressiveIcon}>
+                <View style={fabStyles.loadingDot} />
+              </Animated.View>
+            ) : (
+              <Ionicons name="checkmark" size={26} color="#fff" style={fabStyles.expressiveIcon} />
+            )}
+          </Animated.View>
+        </Pressable>
+      </Animated.View>
+    );
+  }
+
+  // ── Standard: full-width extended FAB ──
+  return (
+    <Animated.View style={[fabStyles.extWrap, { transform: [{ scale }] }]}>
+      <Pressable
+        onPress={loading ? undefined : onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel="Save item"
+        style={({ pressed }) => [
+          fabStyles.extFab,
+          { backgroundColor: paper.colors.primary, opacity: pressed ? 0.88 : 1 },
+        ]}
+      >
+        <Animated.View
+          style={[fabStyles.extFabInner, { transform: [{ scale: pressScale }] }]}
+        >
+          {loading ? (
+            <View style={fabStyles.loadingDot} />
+          ) : (
+            <Ionicons name="checkmark" size={22} color={paper.colors.onPrimary} />
+          )}
+          <Text style={[fabStyles.extFabLabel, { color: paper.colors.onPrimary }]}>
+            {loading ? 'Saving…' : 'Save Item'}
+          </Text>
+        </Animated.View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+const fabStyles = StyleSheet.create({
+  // ── Extended FAB ──────────────────────────────
+  extWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  extFab: {
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  extFabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  extFabLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  // ── Expressive FAB ────────────────────────────
+  expressiveWrap: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    alignItems: 'flex-end',
+  },
+  callout: {
+    position: 'absolute',
+    right: 66,
+    bottom: 12,
+    backgroundColor: '#1f2328',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  calloutText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calloutArrow: {
+    position: 'absolute',
+    right: -6,
+    top: '50%',
+    marginTop: -5,
+    width: 0,
+    height: 0,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 6,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: '#1f2328',
+  },
+  expressiveFab: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  expressiveFabOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.45,
+  },
+  expressiveIcon: {
+    zIndex: 1,
+  },
+
+  // ── Shared ────────────────────────────────────
+  loadingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+});
+
 export default function SaveScreen() {
   const { colors, layout } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const { collections, refreshAll } = useData();
   const router = useRouter();
 
@@ -222,6 +585,8 @@ export default function SaveScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const [lastMetadata, setLastMetadata] = useState<PageMetadata | null>(null);
   const [metadataFailed, setMetadataFailed] = useState(false);
+  // clipboardUrl: URL found in clipboard, null = none or already dismissed for this session
+  const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
 
   // Suggest content type when URL changes
   useEffect(() => {
@@ -239,25 +604,24 @@ export default function SaveScreen() {
     }
   }, [url]);
 
-  // Ask user before reading clipboard — privacy best practice
+  // Silently read clipboard and surface banner if a URL is found.
+  // No blocking dialog — user stays in control via the inline card.
   useEffect(() => {
-    Alert.alert(
-      'Paste from clipboard?',
-      'Lumio can pre-fill the URL field with your clipboard contents.',
-      [
-        { text: 'No thanks', style: 'cancel' },
-        {
-          text: 'Paste URL',
-          onPress: () => {
-            Clipboard.getStringAsync().then((text) => {
-              const safeUrl = extractSafeUrl(text ?? '');
-              if (safeUrl) setUrl(safeUrl);
-            });
-          },
-        },
-      ]
-    );
+    Clipboard.getStringAsync().then((text) => {
+      const safeUrl = extractSafeUrl(text ?? '');
+      if (safeUrl) setClipboardUrl(safeUrl);
+    });
   }, []);
+
+  const handleClipboardPaste = () => {
+    if (clipboardUrl) setUrl(clipboardUrl);
+    setClipboardUrl(null);
+  };
+
+  const handleClipboardDismiss = () => {
+    // Remember dismissal for this session — clear state so banner never reappears
+    setClipboardUrl(null);
+  };
 
   const handleGetLocation = async () => {
     setLocationLoading(true);
@@ -287,39 +651,97 @@ export default function SaveScreen() {
       Alert.alert('Add content first', 'Enter a title or URL before analyzing.');
       return;
     }
+
+    diagLog.addEntry('AI_REQUEST_STARTED', 'checking AI settings');
     const aiSettings = await getAISettings();
     if (!aiSettings) {
-      Alert.alert('No AI provider', 'Go to Settings to configure your AI provider and API key.');
+      diagLog.addEntry('AI_REQUEST_STARTED', 'no AI provider configured');
+      Alert.alert('No AI provider available', 'Go to Settings to configure your AI provider and API key.');
       return;
     }
+    diagLog.addEntry('AI_REQUEST_STARTED', `provider=${aiSettings.provider} model=${aiSettings.model ?? '(default)'}`);
+
     setAiLoading(true);
     setLastMetadata(null);
     setMetadataFailed(false);
+
     try {
+      // ── Step 1: Metadata extraction ──────────────────────────────────────
+      diagLog.addEntry('METADATA_FOUND', `fetching page metadata for: ${url.trim() || '(no url)'}`);
       const metadata = url.trim() ? await fetchPageMetadata(url) : null;
       if (url.trim() && !metadata) {
         setMetadataFailed(true);
+        diagLog.addEntry('METADATA_FOUND', 'extraction failed or returned null');
       } else if (metadata) {
         setLastMetadata(metadata);
+        diagLog.addEntry('METADATA_FOUND', `source=${metadata.source} title=${(metadata.title ?? '').slice(0, 80)}`);
       }
+
       const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
         .filter(Boolean)
         .join('\n');
+
+      // ── Step 2: AI request ────────────────────────────────────────────────
+      const aiInputTitle = metadata?.title || title.trim() || url;
+      diagLog.addEntry('AI_REQUEST_STARTED', `calling summarizeItem title="${aiInputTitle.slice(0, 80)}" metadataLen=${metadataText.length}`);
+
       const result = await summarizeItem(
         aiSettings,
-        metadata?.title || title.trim() || url,
+        aiInputTitle,
         undefined,
         metadataText || undefined,
         contentType
       );
-      if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);
-      if (result.suggestedTags.length > 0 && !tags.trim()) setTags(result.suggestedTags.join(', '));
-      if (result.summary && !description.trim()) setDescription(result.summary);
+
+      diagLog.addEntry('AI_RESPONSE_RECEIVED', `summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} error=${result.error ?? 'none'}`);
+
+      // ── Step 3: Handle AI failure ─────────────────────────────────────────
+      if (result.error) {
+        // AI call failed — apply whatever we can from raw metadata so the
+        // user still gets value from the metadata extraction that succeeded.
+        applyMetadataFallback(metadata);
+        diagLog.addEntry('FORM_UPDATE_COMPLETED', 'AI failed — metadata fallback applied');
+        Alert.alert('AI analysis failed', result.error);
+        return;
+      }
+
+      // ── Step 4: Form update ───────────────────────────────────────────────
+
+      let updated = false;
+      if (result.suggestedTitle && !title.trim()) { setTitle(result.suggestedTitle); updated = true; }
+      if (result.suggestedTags.length > 0 && !tags.trim()) { setTags(result.suggestedTags.join(', ')); updated = true; }
+      if (result.summary && !description.trim()) { setDescription(result.summary); updated = true; }
+
+      diagLog.addEntry('FORM_UPDATE_COMPLETED', `fieldsUpdated=${updated} title=${Boolean(result.suggestedTitle)} tags=${result.suggestedTags.length} desc=${Boolean(result.summary)}`);
+
+      // If AI returned a completely empty result (no error, but nothing useful),
+      // fall back to filling from metadata so the user isn't left empty-handed.
+      if (!updated) {
+        diagLog.addEntry('FORM_UPDATE_COMPLETED', 'AI result was empty — metadata fallback applied');
+        applyMetadataFallback(metadata);
+      }
+
     } catch (err) {
       logError(err, { screen: 'save', action: 'aiSummarize' });
-      Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
+      applyMetadataFallback(null);
+      Alert.alert('AI analysis failed', 'An unexpected error occurred. Check your API key in Settings.');
+    } finally {
+      setAiLoading(false);
     }
-    setAiLoading(false);
+  };
+
+  /**
+   * Best-effort form fill from raw page metadata, used when AI is unavailable or returns nothing.
+   * Only populates fields that are currently empty — never overwrites user input.
+   */
+  const applyMetadataFallback = (metadata: import('../src/services/metadata').PageMetadata | null) => {
+    if (!metadata) return;
+    if (metadata.title && !title.trim()) setTitle(metadata.title);
+    if (metadata.description && !description.trim()) setDescription(metadata.description);
+    // Derive a tag from the source platform (e.g. "youtube", "instagram")
+    if (!tags.trim() && metadata.source && metadata.source !== 'website') {
+      setTags(metadata.source);
+    }
   };
 
   const handleSave = async () => {
@@ -333,6 +755,7 @@ export default function SaveScreen() {
       Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
       return;
     }
+    diagLog.addEntry('SAVE_STARTED', `save screen: title="${cleanTitle.slice(0, 80)}" url="${(cleanUrl ?? '').slice(0, 120)}" type=${contentType}`);
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -355,9 +778,11 @@ export default function SaveScreen() {
       };
       await saveItem(item);
       await refreshAll();
+      diagLog.addEntry('SAVE_COMPLETED', `save screen: id=${item.id} title="${cleanTitle.slice(0, 80)}"`);
       router.back();
     } catch (err) {
       logError(err, { screen: 'save', action: 'saveItem' });
+      diagLog.addEntry('SAVE_FAILED', `save screen: ${err instanceof Error ? err.message : String(err)}`);
       Alert.alert('Save failed', getUserMessage(err));
     } finally {
       setSaving(false);
@@ -381,11 +806,12 @@ export default function SaveScreen() {
               <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Save Item</Text>
-            <Button title="Save" onPress={handleSave} loading={saving} size="sm" />
+            {/* Spacer to keep title centred — Save action moved to FAB */}
+            <View style={{ width: 54 }} />
           </View>
 
           <ScrollView
-            contentContainerStyle={[styles.content, { paddingHorizontal: sp, paddingBottom: 80, gap: layout.isExpressive ? 4 : 2 }]}
+            contentContainerStyle={[styles.content, { paddingHorizontal: sp, paddingBottom: layout.isExpressive ? 96 : 88, gap: layout.isExpressive ? 4 : 2 }]}
             keyboardShouldPersistTaps="handled"
           >
             {/* ── Content Type ── */}
@@ -427,6 +853,16 @@ export default function SaveScreen() {
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {/* ── Clipboard banner (shown only when URL field is empty and clipboard has a URL) ── */}
+            {clipboardUrl != null && !url.trim() && (
+              <ClipboardBanner
+                clipUrl={clipboardUrl}
+                onPaste={handleClipboardPaste}
+                onDismiss={handleClipboardDismiss}
+                isExpressive={layout.isExpressive}
+                paper={paper}
+              />
+            )}
             {/* URL platform preview */}
             <UrlPreview url={url} colors={colors} paper={paper} />
 
@@ -458,7 +894,7 @@ export default function SaveScreen() {
             {/* Metadata status card */}
             {lastMetadata && <MetadataCard metadata={lastMetadata} paper={paper} colors={colors} />}
             {metadataFailed && (
-              <View style={[styles.metaFailBanner, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}>
+              <View style={[styles.metaFailBanner, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}>
                 <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
                 <Text style={[styles.metaFailText, { color: colors.textSecondary }]}>
                   Could not extract metadata. You can still save manually.
@@ -513,7 +949,7 @@ export default function SaveScreen() {
                   style={[
                     chipStyles.chip,
                     { borderRadius: chipRadius,
-                      backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceVariant,
+                      backgroundColor: !collectionId ? paper.colors.primaryContainer : paper.colors.surfaceContainerHigh,
                       borderColor: !collectionId ? paper.colors.primary : paper.colors.outlineVariant },
                   ]}
                 >
@@ -528,7 +964,7 @@ export default function SaveScreen() {
                     style={[
                       chipStyles.chip,
                       { borderRadius: chipRadius,
-                        backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceVariant,
+                        backgroundColor: collectionId === col.id ? col.color : paper.colors.surfaceContainerHigh,
                         borderColor: collectionId === col.id ? col.color : paper.colors.outlineVariant },
                     ]}
                   >
@@ -553,7 +989,7 @@ export default function SaveScreen() {
             <TouchableOpacity
               onPress={handleGetLocation}
               disabled={locationLoading}
-              style={[styles.gpsBtn, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}
+              style={[styles.gpsBtn, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}
             >
               {locationLoading ? (
                 <PaperActivityIndicator size="small" color={paper.colors.onSurfaceVariant} />
@@ -576,6 +1012,16 @@ export default function SaveScreen() {
               Type/paste the place name from the content. GPS coordinates are stored as extra metadata.
             </Text>
           </ScrollView>
+
+          {/* ── Save FAB ── */}
+          <SafeAreaView edges={['bottom']} style={layout.isExpressive ? { position: 'absolute', bottom: 0, right: 0 } : undefined}>
+            <SaveFAB
+              onPress={handleSave}
+              loading={saving}
+              isExpressive={layout.isExpressive}
+              paper={paper}
+            />
+          </SafeAreaView>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

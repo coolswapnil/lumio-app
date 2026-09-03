@@ -1,9 +1,10 @@
 import React from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
-import { Chip, useTheme as usePaperTheme } from 'react-native-paper';
+import { Chip } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import type { FilterOption } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import { useAppTheme } from '../constants/colors';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../constants';
 
 const FILTER_OPTIONS: Array<{ id: FilterOption; label: string; icon: string }> = [
@@ -24,7 +25,7 @@ interface FilterChipsProps {
 }
 
 export function FilterChips({ active, onSelect, counts }: FilterChipsProps) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const { layout } = useTheme();
 
   return (
@@ -45,13 +46,20 @@ export function FilterChips({ active, onSelect, counts }: FilterChipsProps) {
             key={opt.id}
             selected={isActive}
             onPress={() => onSelect(opt.id)}
-            // MD3 filter chip uses 'outlined' mode; selected state uses primary container
-            mode={isActive ? 'flat' : 'outlined'}
+            // MD3 filter chip: flat + primaryContainer when selected,
+            // surfaceContainerHigh background when inactive so chips are
+            // visible and correctly tinted in all themes including dark / AMOLED.
+            mode="flat"
             selectedColor={paper.colors.onPrimaryContainer}
             style={[
               styles.chip,
-              { borderRadius: layout.isExpressive ? 20 : 8, minHeight: layout.touchTarget },
-              isActive && { backgroundColor: paper.colors.primaryContainer },
+              {
+                borderRadius: layout.isExpressive ? 20 : 8,
+                minHeight: layout.touchTarget,
+                backgroundColor: isActive
+                  ? paper.colors.primaryContainer
+                  : paper.colors.surfaceContainerHigh,
+              },
             ]}
             textStyle={[
               styles.chipText,

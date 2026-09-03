@@ -7,12 +7,13 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, useTheme as usePaperTheme } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
 import { SearchBar } from '../../src/components/SearchBar';
 import { CONTENT_TYPE_CONFIG } from '../../src/constants';
@@ -39,7 +40,7 @@ function openInGoogleMaps(item: SavedItem) {
 
 export default function LocationsScreen() {
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { items } = useData();
   const router = useRouter();
@@ -67,7 +68,7 @@ export default function LocationsScreen() {
       <TouchableOpacity
         onPress={() => router.push(`/item/${item.id}`)}
         activeOpacity={0.75}
-        style={[styles.card, { backgroundColor: paper.colors.surface, borderColor: paper.colors.outlineVariant }]}
+        style={[styles.card, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant }]}
       >
         {/* Left accent */}
         <View style={[styles.accentBar, { backgroundColor: config.color }]} />

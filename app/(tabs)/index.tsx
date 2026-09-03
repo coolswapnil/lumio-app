@@ -7,7 +7,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { FAB, IconButton, useTheme as usePaperTheme } from 'react-native-paper';
+import { FAB, IconButton } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useData } from '../../src/context/DataContext';
@@ -17,6 +17,7 @@ import { ItemCard, ITEM_CARD_HEIGHT } from '../../src/components/ItemCard';
 import type { SavedItem } from '../../src/types';
 
 import type { ThemeColors } from '../../src/constants/colors';
+import { useAppTheme } from '../../src/constants/colors';
 
 /** Simple shimmer skeleton card shown while data loads */
 function SkeletonCard({ colors }: { colors: ThemeColors }) {
@@ -30,12 +31,12 @@ function SkeletonCard({ colors }: { colors: ThemeColors }) {
     ).start();
   }, []);
   return (
-    <Animated.View style={[skeletonStyles.card, { backgroundColor: colors.card, borderColor: colors.border, opacity }]}>
+    <Animated.View style={[skeletonStyles.card, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border, opacity }]}>
       <View style={[skeletonStyles.accentBar, { backgroundColor: colors.border }]} />
       <View style={skeletonStyles.body}>
-        <View style={[skeletonStyles.badge, { backgroundColor: colors.surfaceSecondary }]} />
-        <View style={[skeletonStyles.titleLine, { backgroundColor: colors.surfaceSecondary }]} />
-        <View style={[skeletonStyles.descLine, { backgroundColor: colors.surfaceSecondary }]} />
+        <View style={[skeletonStyles.badge, { backgroundColor: colors.surfaceContainer }]} />
+        <View style={[skeletonStyles.titleLine, { backgroundColor: colors.surfaceContainer }]} />
+        <View style={[skeletonStyles.descLine, { backgroundColor: colors.surfaceContainer }]} />
       </View>
     </Animated.View>
   );
@@ -57,7 +58,7 @@ const TAB_BAR_HEIGHT = 60;
 
 export default function LibraryScreen() {
   const { colors, settings, layout } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const {
     items,
@@ -115,7 +116,7 @@ export default function LibraryScreen() {
             iconColor={colors.icon}
             size={22}
             onPress={() => setSort(sort === 'newest' ? 'alphabetical' : 'newest')}
-            style={{ backgroundColor: colors.surfaceSecondary, borderRadius: 12 }}
+            style={{ backgroundColor: colors.surfaceContainerHigh, borderRadius: 12 }}
           />
         </View>
       </View>

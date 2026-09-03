@@ -169,6 +169,8 @@ export interface AppSettings {
   aiSettings?: AISettings;
   mapDefaultLat?: number;
   mapDefaultLng?: number;
+  /** When true, the in-memory diagnostics log records pipeline events. */
+  diagnosticsEnabled?: boolean;
 }
 
 export type SortOption = 'newest' | 'oldest' | 'alphabetical' | 'type';

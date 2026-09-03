@@ -11,17 +11,21 @@ import {
   Linking,
   Animated,
   UIManager,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text, TextInput, ActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
+import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
-import { getAISettings, saveAISettings, clearAISettings } from '../../src/services/settings';
+import { getAISettings, saveAISettings, clearAISettings, getAppSettings, saveAppSettings } from '../../src/services/settings';
+import { diagLog, type DiagEntry } from '../../src/services/diagnostics';
+import * as Clipboard from 'expo-clipboard';
 import { exportAsJSON, exportAsCSV } from '../../src/services/export';
 import { testConnection, loadHealth, clearHealth, formatRelativeTime } from '../../src/services/aiHealth';
 import { AI_PROVIDERS, LOCAL_AI_SOURCES } from '../../src/constants';
@@ -56,6 +60,21 @@ const APPEARANCE_TOGGLES = [
 ] as const;
 
 type SectionKey = 'appearance' | 'ai' | 'storage' | 'advanced' | 'about';
+
+// ─── Diagnostics event → badge colour (static, theme-agnostic tints) ──────────
+const DIAG_EVENT_COLORS: Record<import('../../src/services/diagnostics').DiagEventType, string> = {
+  SHARE_INTENT_RECEIVED: '#dbeafe', // blue-100
+  SHARE_INTENT_PARSED:   '#dbeafe',
+  METADATA_FOUND:        '#d1fae5', // green-100
+  AI_REQUEST_STARTED:    '#fef9c3', // yellow-100
+  AI_RESPONSE_RECEIVED:  '#e0e7ff', // indigo-100
+  AI_RESPONSE_PARSED:    '#e0e7ff',
+  PROVIDER_ERROR:        '#fee2e2', // red-100
+  SAVE_STARTED:          '#fce7f3', // pink-100
+  SAVE_COMPLETED:        '#dcfce7', // green-200
+  SAVE_FAILED:           '#fee2e2',
+  FORM_UPDATE_COMPLETED: '#f3f4f6', // gray-100
+};
 
 // ─── RAM / Compatibility helpers ──────────────────────────────────────────────
 
@@ -101,7 +120,7 @@ function formatBytes(bytes: number): string {
 // ─── ConnectionStatusBadge ────────────────────────────────────────────────────
 
 function ConnectionStatusBadge({ status }: { status: AIConnectionStatus }) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const cfg: Record<AIConnectionStatus, { emoji: string; label: string; bg: string; fg: string }> = {
     connected:  { emoji: '🟢', label: 'Connected',  bg: paper.colors.primaryContainer,   fg: paper.colors.onPrimaryContainer },
     limited:    { emoji: '🟡', label: 'Limited',    bg: paper.colors.secondaryContainer, fg: paper.colors.onSecondaryContainer },
@@ -140,7 +159,7 @@ function SectionCard({
   children,
   cardRadius,
 }: SectionCardProps) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const chevronAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
 
   useEffect(() => {
@@ -162,7 +181,7 @@ function SectionCard({
       style={[
         styles.sectionCard,
         {
-          backgroundColor: paper.colors.surfaceVariant,
+          backgroundColor: paper.colors.surfaceContainer,
           borderColor: paper.colors.outlineVariant,
           borderRadius: cardRadius,
         },
@@ -183,7 +202,7 @@ function SectionCard({
               {
                 backgroundColor: isExpanded
                   ? paper.colors.primaryContainer
-                  : paper.colors.surface,
+                  : paper.colors.surfaceContainerHigh,
               },
             ]}
           >
@@ -222,7 +241,7 @@ function SectionCard({
 // ─── Compatibility badge ──────────────────────────────────────────────────────
 
 function CompatBadge({ compat }: { compat: CompatInfo }) {
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const p = paper.colors;
   const colorMap: Record<CompatStatus, { bg: string; fg: string }> = {
     compatible:   { bg: p.primaryContainer,   fg: p.onPrimaryContainer },
@@ -245,7 +264,7 @@ function CompatBadge({ compat }: { compat: CompatInfo }) {
 
 export default function SettingsScreen() {
   const { colors, settings, updateSettings, layout } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { items, collections } = useData();
 
@@ -275,6 +294,10 @@ export default function SettingsScreen() {
   const [dbSize, setDbSize]                   = useState<string>('—');
   const [health, setHealth]                   = useState<AIHealthStatus | null>(null);
   const [testingConn, setTestingConn]         = useState(false);
+  const [diagnosticsEnabled, setDiagnosticsEnabled] = useState(false);
+  const [diagModalVisible, setDiagModalVisible]     = useState(false);
+  const [diagEntries, setDiagEntries]               = useState<DiagEntry[]>([]);
+  const [diagCopied, setDiagCopied]                 = useState(false);
 
   // Load persisted collapse state
   useEffect(() => {
@@ -305,6 +328,12 @@ export default function SettingsScreen() {
     });
     loadHealth().then((h) => {
       if (h) setHealth(h);
+    });
+    // Sync diagnostics enabled flag from persisted settings
+    getAppSettings().then((s) => {
+      const enabled = s.diagnosticsEnabled ?? false;
+      setDiagnosticsEnabled(enabled);
+      diagLog.setEnabled(enabled);
     });
   }, []);
 
@@ -463,6 +492,52 @@ export default function SettingsScreen() {
       .catch(() => Alert.alert('Error', 'Unable to open repository link.'));
   };
 
+  const handleToggleDiagnostics = useCallback(async (value: boolean) => {
+    setDiagnosticsEnabled(value);
+    diagLog.setEnabled(value);
+    if (!value) diagLog.clearEntries();
+    const current = await getAppSettings();
+    await saveAppSettings({ ...current, diagnosticsEnabled: value });
+  }, []);
+
+  const handleOpenDiagnostics = useCallback(() => {
+    setDiagEntries(diagLog.getEntries());
+    setDiagModalVisible(true);
+  }, []);
+
+  const handleCopyDiagnostics = useCallback(async () => {
+    const text = diagLog.formatForExport();
+    await Clipboard.setStringAsync(text);
+    setDiagCopied(true);
+    setTimeout(() => setDiagCopied(false), 2000);
+  }, []);
+
+  const handleExportDiagnostics = useCallback(async () => {
+    try {
+      await diagLog.exportForSharing();
+    } catch (err) {
+      Alert.alert('Export failed', err instanceof Error ? err.message : 'Could not export diagnostics.');
+    }
+  }, []);
+
+  const handleClearDiagnostics = useCallback(() => {
+    Alert.alert(
+      'Clear Diagnostics',
+      'This will permanently delete all recorded diagnostic entries.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            diagLog.clearEntries();
+            setDiagEntries([]);
+          },
+        },
+      ]
+    );
+  }, []);
+
   const cardRadius        = layout.cardRadius ?? 16;
   const innerRadius       = Math.max(cardRadius - 4, 8);
   const cloudProviders    = AI_PROVIDERS.filter((p) => p.id !== 'local');
@@ -616,7 +691,7 @@ export default function SettingsScreen() {
               style={[
                 styles.providerSelectorRow,
                 {
-                  backgroundColor: paper.colors.surface,
+                  backgroundColor: paper.colors.surfaceContainerHigh,
                   borderColor: paper.colors.outlineVariant,
                   borderRadius: innerRadius,
                 },
@@ -672,7 +747,7 @@ export default function SettingsScreen() {
 
             {/* Status overview card */}
             <View style={[styles.statusCard, {
-              backgroundColor: paper.colors.surface,
+              backgroundColor: paper.colors.surfaceContainerHigh,
               borderColor: paper.colors.outlineVariant,
               borderRadius: innerRadius,
             }]}>
@@ -796,7 +871,7 @@ export default function SettingsScreen() {
             {/* Quota details — shown when available */}
             {health?.quota && (health.quota.requestsRemaining !== undefined || health.quota.tokensRemaining !== undefined) && (
               <View style={[styles.quotaGrid, {
-                backgroundColor: paper.colors.surface,
+                backgroundColor: paper.colors.surfaceContainerHigh,
                 borderColor: paper.colors.outlineVariant,
                 borderRadius: innerRadius,
                 marginTop: 8,
@@ -825,7 +900,7 @@ export default function SettingsScreen() {
               onPress={handleTestConnection}
               disabled={testingConn}
               style={[styles.testConnBtn, {
-                backgroundColor: testingConn ? paper.colors.surfaceVariant : paper.colors.primaryContainer,
+                backgroundColor: testingConn ? paper.colors.surfaceContainerHigh : paper.colors.primaryContainer,
                 borderColor: paper.colors.primary,
                 borderRadius: innerRadius,
                 marginTop: 10,
@@ -948,7 +1023,7 @@ export default function SettingsScreen() {
                     <View style={[styles.sectionIconContainer, {
                       backgroundColor: aiSettings.localEnabled
                         ? paper.colors.primaryContainer
-                        : paper.colors.surface,
+                        : paper.colors.surfaceContainerHigh,
                     }]}>
                       <Ionicons
                         name="hardware-chip"
@@ -1034,7 +1109,7 @@ export default function SettingsScreen() {
                         {/* Placeholder / selected state */}
                         {!aiSettings.localGgufPath ? (
                           <View style={[styles.ggufEmptyState, {
-                            backgroundColor: paper.colors.surface,
+                            backgroundColor: paper.colors.surfaceContainerHigh,
                             borderColor: paper.colors.outlineVariant,
                             borderRadius: innerRadius,
                           }]}>
@@ -1065,7 +1140,7 @@ export default function SettingsScreen() {
                           </View>
                         ) : (
                           <View style={[styles.ggufSelectedCard, {
-                            backgroundColor: paper.colors.surface,
+                            backgroundColor: paper.colors.surfaceContainerHigh,
                             borderColor: paper.colors.outlineVariant,
                             borderRadius: innerRadius,
                           }]}>
@@ -1124,7 +1199,7 @@ export default function SettingsScreen() {
                           MODEL COMPATIBILITY
                         </Text>
                         <View style={[styles.compatCard, {
-                          backgroundColor: paper.colors.surface,
+                          backgroundColor: paper.colors.surfaceContainerHigh,
                           borderColor: paper.colors.outlineVariant,
                           borderRadius: innerRadius,
                         }]}>
@@ -1226,7 +1301,7 @@ export default function SettingsScreen() {
 
                     {/* Status / Estimated RAM read-only block */}
                     <View style={[styles.metricsBlock, {
-                      backgroundColor: paper.colors.surface,
+                      backgroundColor: paper.colors.surfaceContainerHigh,
                       borderColor: paper.colors.outlineVariant,
                       borderRadius: innerRadius,
                     }]}>
@@ -1282,7 +1357,7 @@ export default function SettingsScreen() {
           <View style={styles.subSection}>
             {/* Metrics grid */}
             <View style={[styles.metricsGrid, {
-              backgroundColor: paper.colors.surface,
+              backgroundColor: paper.colors.surfaceContainerHigh,
               borderColor: paper.colors.outlineVariant,
               borderRadius: innerRadius,
             }]}>
@@ -1348,64 +1423,161 @@ export default function SettingsScreen() {
           cardRadius={cardRadius}
         >
           <View style={styles.subSection}>
-            {[
-              {
-                icon: 'pulse' as IconName,
-                label: 'System Diagnostics',
-                desc: 'Inspect SQLite, storage and hardware capability',
-                onPress: () => Alert.alert('Diagnostics', 'All local systems healthy.\nSQLite WAL: Enabled\nSecureStore: Available'),
-                chevron: true,
-                danger: false,
-              },
-              {
-                icon: 'receipt' as IconName,
-                label: 'Activity Logs',
-                desc: 'Local execution trace & errors',
-                onPress: () => Alert.alert('App Logs', 'No active diagnostic log entries found.'),
-                chevron: true,
-                danger: false,
-              },
-              {
-                icon: 'trash-bin' as IconName,
-                label: 'Clear Cache',
-                desc: 'Free temporary preview and export files',
-                onPress: handleClearCache,
-                chevron: false,
-                danger: false,
-              },
-              {
-                icon: 'refresh-circle' as IconName,
-                label: 'Reset AI Settings',
-                desc: 'Wipe saved keys and restore default providers',
-                onPress: handleClearAI,
-                chevron: false,
-                danger: true,
-              },
-            ].map((item, i, arr) => (
-              <React.Fragment key={item.label}>
-                <TouchableOpacity
-                  style={[styles.row, { minHeight: layout.touchTarget }]}
-                  onPress={item.onPress}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.rowLeft}>
-                    <Ionicons
-                      name={item.icon}
-                      size={20}
-                      color={item.danger ? paper.colors.error : paper.colors.onSurfaceVariant}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text variant="bodyLarge" style={{ color: item.danger ? paper.colors.error : paper.colors.onSurface, fontWeight: item.danger ? '600' : '400' }}>
-                        {item.label}
-                      </Text>
-                      <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{item.desc}</Text>
-                    </View>
-                  </View>
-                  {item.chevron && <Ionicons name="chevron-forward" size={18} color={paper.colors.onSurfaceVariant} />}
-                </TouchableOpacity>
-                {i < arr.length - 1 && <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />}
-              </React.Fragment>
-            ))}
+
+            {/* ── Original rows ─────────────────────────────── */}
+
+            {/* System Diagnostics */}
+            <TouchableOpacity
+              style={[styles.row, { minHeight: layout.touchTarget }]}
+              onPress={() => Alert.alert('System Diagnostics', 'All local systems healthy.\nSQLite WAL: Enabled\nSecureStore: Available')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <Ionicons name="pulse" size={20} color={paper.colors.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>System Diagnostics</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>Inspect SQLite, storage and hardware capability</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={paper.colors.onSurfaceVariant} />
+            </TouchableOpacity>
+
+            <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />
+
+            {/* Activity Log */}
+            <TouchableOpacity
+              style={[styles.row, { minHeight: layout.touchTarget }]}
+              onPress={() => Alert.alert('Activity Log', 'No active log entries found.')}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <Ionicons name="receipt" size={20} color={paper.colors.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Activity Log</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>Local execution trace &amp; errors</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={paper.colors.onSurfaceVariant} />
+            </TouchableOpacity>
+
+            <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />
+
+            {/* Clear Cache */}
+            <TouchableOpacity
+              style={[styles.row, { minHeight: layout.touchTarget }]}
+              onPress={handleClearCache}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <Ionicons name="trash-bin" size={20} color={paper.colors.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Clear Cache</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>Free temporary preview and export files</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />
+
+            {/* Reset AI Settings */}
+            <TouchableOpacity
+              style={[styles.row, { minHeight: layout.touchTarget }]}
+              onPress={handleClearAI}
+              activeOpacity={0.7}
+            >
+              <View style={styles.rowLeft}>
+                <Ionicons name="refresh-circle" size={20} color={paper.colors.error} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.error, fontWeight: '600' }}>Reset AI Settings</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>Wipe saved keys and restore default providers</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+          </View>
+
+          {/* ── Developer Diagnostics sub-block ──────────────────── */}
+          <View style={[styles.subSection, styles.diagSubSection, { borderTopColor: paper.colors.outlineVariant }]}>
+
+            {/* Section label */}
+            <Text variant="labelSmall" style={[styles.groupLabel, { color: paper.colors.primary, marginBottom: 12 }]}>
+              DEVELOPER DIAGNOSTICS
+            </Text>
+
+            {/* Enable Developer Diagnostics toggle */}
+            <View style={[styles.row, { minHeight: layout.touchTarget }]}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="bug-outline" size={20} color={paper.colors.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Enable Developer Diagnostics</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>
+                    Record share, metadata, AI and save events for bug reporting
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={diagnosticsEnabled}
+                onValueChange={handleToggleDiagnostics}
+                trackColor={{ false: paper.colors.surfaceVariant, true: paper.colors.primary }}
+                thumbColor={diagnosticsEnabled ? paper.colors.onPrimary : paper.colors.outline}
+              />
+            </View>
+
+            {/* Action buttons — only shown when enabled */}
+            {diagnosticsEnabled && (
+              <>
+                <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 8 }]} />
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginBottom: 10 }}>
+                  {diagLog.getEntries().length === 0
+                    ? 'No entries yet — trigger an AI analysis, save, or share.'
+                    : `${diagLog.getEntries().length} entr${diagLog.getEntries().length === 1 ? 'y' : 'ies'} recorded`}
+                </Text>
+                <View style={styles.diagActionGrid}>
+                  {/* Open Diagnostics */}
+                  <TouchableOpacity
+                    style={[styles.diagActionBtn, { backgroundColor: paper.colors.primaryContainer, borderColor: paper.colors.primary }]}
+                    onPress={handleOpenDiagnostics}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="eye-outline" size={16} color={paper.colors.onPrimaryContainer} />
+                    <Text variant="labelMedium" style={{ color: paper.colors.onPrimaryContainer, fontWeight: '600' }}>Open</Text>
+                  </TouchableOpacity>
+
+                  {/* Copy Diagnostics */}
+                  <TouchableOpacity
+                    style={[styles.diagActionBtn, { backgroundColor: paper.colors.secondaryContainer, borderColor: paper.colors.secondary }]}
+                    onPress={handleCopyDiagnostics}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={diagCopied ? 'checkmark-circle' : 'copy-outline'} size={16} color={paper.colors.onSecondaryContainer} />
+                    <Text variant="labelMedium" style={{ color: paper.colors.onSecondaryContainer, fontWeight: '600' }}>
+                      {diagCopied ? 'Copied!' : 'Copy'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Export Diagnostics */}
+                  <TouchableOpacity
+                    style={[styles.diagActionBtn, { backgroundColor: paper.colors.tertiaryContainer, borderColor: paper.colors.tertiary }]}
+                    onPress={handleExportDiagnostics}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="share-outline" size={16} color={paper.colors.onTertiaryContainer} />
+                    <Text variant="labelMedium" style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600' }}>Export</Text>
+                  </TouchableOpacity>
+
+                  {/* Clear Diagnostics */}
+                  <TouchableOpacity
+                    style={[styles.diagActionBtn, { backgroundColor: paper.colors.errorContainer, borderColor: paper.colors.error }]}
+                    onPress={handleClearDiagnostics}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={paper.colors.onErrorContainer} />
+                    <Text variant="labelMedium" style={{ color: paper.colors.onErrorContainer, fontWeight: '600' }}>Clear</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
           </View>
         </SectionCard>
 
@@ -1481,7 +1653,7 @@ export default function SettingsScreen() {
         <View style={styles.modalBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setProviderModalVisible(false)} />
           <View style={[styles.modalSheet, {
-            backgroundColor: paper.colors.surface,
+            backgroundColor: paper.colors.surfaceContainer,
             borderTopLeftRadius: 28,
             borderTopRightRadius: 28,
           }]}>
@@ -1572,6 +1744,103 @@ export default function SettingsScreen() {
 
               <View style={{ height: 20 }} />
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── DIAGNOSTICS MODAL ──────────────────────────────────────────────── */}
+      <Modal
+        visible={diagModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDiagModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={() => setDiagModalVisible(false)} />
+          <View style={[styles.modalSheet, styles.diagSheet, {
+            backgroundColor: paper.colors.surfaceContainer,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+          }]}>
+            <View style={[styles.sheetHandle, { backgroundColor: paper.colors.outlineVariant }]} />
+
+            <View style={styles.modalHeaderRow}>
+              <Text variant="titleLarge" style={{ color: paper.colors.onSurface, fontWeight: '700' }}>
+                Diagnostics
+              </Text>
+              <TouchableOpacity onPress={() => setDiagModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close-circle" size={26} color={paper.colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Entry count + hint */}
+            <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginBottom: 10 }}>
+              {diagEntries.length === 0
+                ? 'No entries yet — trigger an AI analysis, save, or share.'
+                : `${diagEntries.length} entr${diagEntries.length === 1 ? 'y' : 'ies'} · latest 100 kept · newest first`}
+            </Text>
+
+            {/* Log list */}
+            <FlatList
+              data={[...diagEntries].reverse()}
+              keyExtractor={(item) => String(item.seq)}
+              style={styles.diagList}
+              showsVerticalScrollIndicator
+              ListEmptyComponent={
+                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, textAlign: 'center', paddingVertical: 24 }}>
+                  No entries
+                </Text>
+              }
+              renderItem={({ item }) => (
+                <View style={[styles.diagEntry, { borderBottomColor: paper.colors.outlineVariant }]}>
+                  <View style={styles.diagEntryHeader}>
+                    <View style={[styles.diagEventBadge, { backgroundColor: DIAG_EVENT_COLORS[item.event] ?? paper.colors.secondaryContainer }]}>
+                      <Text variant="labelSmall" style={{ color: paper.colors.onSecondaryContainer, fontWeight: '700', fontSize: 10 }}>
+                        {item.event}
+                      </Text>
+                    </View>
+                    <Text variant="labelSmall" style={{ color: paper.colors.onSurfaceVariant, fontSize: 10 }}>
+                      #{item.seq} · {item.timestamp.replace('T', ' ').replace('Z', '').slice(0, 19)}
+                    </Text>
+                  </View>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurface, marginTop: 4, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' }}>
+                    {item.detail}
+                  </Text>
+                </View>
+              )}
+            />
+
+            {/* Action row: Copy · Export · Clear */}
+            <View style={[styles.diagModalActions, { marginTop: 12 }]}>
+              <TouchableOpacity
+                style={[styles.diagModalActionBtn, { backgroundColor: diagCopied ? paper.colors.secondaryContainer : paper.colors.primaryContainer }]}
+                onPress={handleCopyDiagnostics}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={diagCopied ? 'checkmark-circle' : 'copy-outline'} size={16} color={diagCopied ? paper.colors.onSecondaryContainer : paper.colors.onPrimaryContainer} />
+                <Text variant="labelMedium" style={{ color: diagCopied ? paper.colors.onSecondaryContainer : paper.colors.onPrimaryContainer, fontWeight: '600' }}>
+                  {diagCopied ? 'Copied!' : 'Copy'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.diagModalActionBtn, { backgroundColor: paper.colors.tertiaryContainer }]}
+                onPress={handleExportDiagnostics}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="share-outline" size={16} color={paper.colors.onTertiaryContainer} />
+                <Text variant="labelMedium" style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600' }}>Export</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.diagModalActionBtn, { backgroundColor: paper.colors.errorContainer }]}
+                onPress={handleClearDiagnostics}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={16} color={paper.colors.onErrorContainer} />
+                <Text variant="labelMedium" style={{ color: paper.colors.onErrorContainer, fontWeight: '600' }}>Clear</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1838,5 +2107,63 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 16,
     borderWidth: 1,
+  },
+
+  // Diagnostics modal
+  diagSheet: {
+    maxHeight: '80%',
+    paddingBottom: 24,
+  },
+  diagList: {
+    maxHeight: 400,
+    flexGrow: 0,
+  },
+  diagEntry: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  diagEntryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  diagEventBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  // Developer Diagnostics sub-block
+  diagSubSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: 14,
+  },
+  diagActionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  diagActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  // Diagnostics modal action row
+  diagModalActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  diagModalActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 10,
   },
 });

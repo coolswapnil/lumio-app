@@ -11,10 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
-import { ActivityIndicator as PaperActivityIndicator, useTheme as usePaperTheme } from 'react-native-paper';
+import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import dayjs from 'dayjs';
 import { useTheme } from '../../src/context/ThemeContext';
+import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
 import { getItemById, deleteItem, toggleFavorite, toggleCompleted, updateItem } from '../../src/database/items';
 import { getAISettings } from '../../src/services/settings';
@@ -26,7 +27,7 @@ import type { SavedItem } from '../../src/types';
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const paper = usePaperTheme();
+  const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { collections, refreshAll } = useData();
   const router = useRouter();
@@ -184,7 +185,7 @@ export default function ItemDetailScreen() {
         {item.url && (
           <TouchableOpacity
             onPress={handleOpenUrl}
-            style={[styles.urlRow, { backgroundColor: paper.colors.surfaceVariant, borderColor: paper.colors.outlineVariant }]}
+            style={[styles.urlRow, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant }]}
           >
             <Ionicons name="link" size={15} color={paper.colors.primary} />
             <Text style={[styles.urlText, { color: paper.colors.primary }]} numberOfLines={1}>
@@ -196,7 +197,7 @@ export default function ItemDetailScreen() {
 
         {/* Description */}
         {item.description && (
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>DESCRIPTION</Text>
             <Text style={[styles.bodyText, { color: colors.text }]}>{item.description}</Text>
           </View>
@@ -229,7 +230,7 @@ export default function ItemDetailScreen() {
         </View>
 
         {/* Notes */}
-        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>MY NOTES</Text>
             <TouchableOpacity onPress={() => (isEditing ? handleSaveNotes() : setIsEditing(true))}>
@@ -262,7 +263,7 @@ export default function ItemDetailScreen() {
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>TAGS</Text>
             <View style={styles.tagsRow}>
               {item.tags.map((tag) => (
-                <View key={tag} style={[styles.tag, { backgroundColor: colors.surfaceSecondary }]}>
+                <View key={tag} style={[styles.tag, { backgroundColor: colors.surfaceContainerHigh }]}>
                   <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{tag}</Text>
                 </View>
               ))}
@@ -272,7 +273,7 @@ export default function ItemDetailScreen() {
 
         {/* Location */}
         {(item.address || (item.latitude && item.longitude)) && (
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="location" size={14} color={paper.colors.primary} />
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>LOCATION</Text>
@@ -317,7 +318,7 @@ export default function ItemDetailScreen() {
             style={[
               styles.actionBtn,
               {
-                backgroundColor: item.isCompleted ? colors.success + '20' : colors.surfaceSecondary,
+                backgroundColor: item.isCompleted ? colors.success + '20' : colors.surfaceContainerHigh,
                 borderColor: item.isCompleted ? colors.success : colors.border,
               },
             ]}
