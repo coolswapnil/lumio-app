@@ -131,7 +131,7 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.url !== undefined) { fields.push('url = ?'); values.push(updates.url ?? null); }
   if (updates.imageUrl !== undefined) { fields.push('image_url = ?'); values.push(updates.imageUrl ?? null); }
   if (updates.contentType !== undefined) { fields.push('content_type = ?'); values.push(updates.contentType); }
-  if (updates.collectionId !== undefined) { fields.push('collection_id = ?'); values.push(updates.collectionId ?? null); }
+  if ('collectionId' in updates) { fields.push('collection_id = ?'); values.push(updates.collectionId ?? null); }
   if (updates.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(updates.tags)); }
   if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes ?? null); }
   if (updates.address !== undefined) { fields.push('address = ?'); values.push(updates.address ?? null); }

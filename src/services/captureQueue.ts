@@ -18,7 +18,7 @@
  */
 
 import { saveItem, updateItem } from '../database/items';
-import { getAISettings } from './settings';
+import { getAISettings, getAutoAssignRules } from './settings';
 import { summarizeItem } from './ai';
 import {
   fetchPageMetadata,
@@ -61,12 +61,24 @@ export interface CaptureEntry {
   error?: string;
   enqueuedAt: number;
   completedAt?: number;
+  /**
+   * Set after enrichment completes when there is exactly one collection
+   * suggestion AND no auto-assign rule for the category yet.
+   * The UI layer (CaptureQueueContext) reads this to show the prompt.
+   */
+  pendingAutoAssignPrompt?: {
+    category: string;
+    collectionId: string;
+    collectionName: string;
+  };
 }
 
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 let _queue: CaptureEntry[] = [];
 const _listeners: Array<(queue: CaptureEntry[]) => void> = [];
+/** Temporary store for pending auto-assign prompts, keyed by itemId. */
+const _pendingPrompts = new Map<string, NonNullable<CaptureEntry['pendingAutoAssignPrompt']>>();
 
 function notify() {
   const snapshot = [..._queue];
@@ -115,6 +127,8 @@ export async function enqueueCapture(
     /** Collections available for AI matching. */
     collectionNames?: string[];
     collectionIds?: Record<string, string>; // name (lowercase) → id
+    /** id → display name, for building auto-assign prompt text. */
+    collectionDisplayNames?: Record<string, string>;
   } = {}
 ): Promise<string> {
   const cleanUrl = sanitizeUrl(url) ?? url;
@@ -192,6 +206,7 @@ async function _runEnrichment(
     onRefresh?: () => Promise<void>;
     collectionNames?: string[];
     collectionIds?: Record<string, string>;
+    collectionDisplayNames?: Record<string, string>;
   }
 ) {
   const { itemId, url } = entry;
@@ -254,6 +269,16 @@ async function _runEnrichment(
           if (result.category) {
             dbUpdates.category = result.category;
             _markStep(itemId, 'category');
+
+            // Apply auto-assign rule if one exists for this category
+            if (!dbUpdates.collectionId) {
+              const rules: Record<string, string> = await getAutoAssignRules().catch(() => ({}));
+              const ruleCollectionId = rules[result.category];
+              if (ruleCollectionId) {
+                dbUpdates.collectionId = ruleCollectionId;
+                diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: applied auto-assign rule for ${result.category} → ${ruleCollectionId}`);
+              }
+            }
           }
           if (result.suggestedTitle && !(entry.titleHint.trim())) {
             dbUpdates.title = sanitizeText(result.suggestedTitle, LIMITS.TITLE) ?? undefined;
@@ -269,12 +294,33 @@ async function _runEnrichment(
               dbUpdates.suggestedCollections = matchedIds;
               _markStep(itemId, 'collections');
 
-              // Auto-assign first suggestion when confidence ≥ 90%
-              // The AI confidence heuristic: if it suggested exactly one collection
-              // (high specificity) treat that as ≥90% confidence.
+              // Auto-assign first suggestion when AI suggested exactly one collection
+              // (high-specificity = ≥90% confidence heuristic).
               if (matchedIds.length === 1) {
-                dbUpdates.collectionId = matchedIds[0];
-                diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: auto-assigned to collection id=${matchedIds[0]}`);
+                const singleId = matchedIds[0];
+                dbUpdates.collectionId = singleId;
+                diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: auto-assigned to collection id=${singleId}`);
+
+                // Check whether we should prompt the user to create an auto-assign rule.
+                // Only prompt when:
+                //   • there is a detected category, AND
+                //   • no rule already exists for that category.
+                const category = result.category ?? dbUpdates.category;
+                if (category) {
+                  const existingRules: Record<string, string> = await getAutoAssignRules().catch(() => ({}));
+                  if (!existingRules[category]) {
+                    const collectionName =
+                      opts.collectionDisplayNames?.[singleId] ??
+                      Object.entries(opts.collectionIds ?? {}).find(([, v]) => v === singleId)?.[0] ??
+                      singleId;
+                    // Signal to the UI layer to show the prompt after completion
+                    _pendingPrompts.set(itemId, {
+                      category,
+                      collectionId: singleId,
+                      collectionName,
+                    });
+                  }
+                }
               }
             }
           }
@@ -307,10 +353,15 @@ async function _runEnrichment(
     // Refresh the global data context
     if (opts.onRefresh) await opts.onRefresh();
 
+    // Attach pending auto-assign prompt (if any) to the completed entry
+    const prompt = _pendingPrompts.get(itemId);
+    _pendingPrompts.delete(itemId);
+
     updateEntry(itemId, {
       status: 'completed',
       currentStep: undefined,
       completedAt: Date.now(),
+      ...(prompt ? { pendingAutoAssignPrompt: prompt } : {}),
     });
     diagLog.addEntry('SAVE_COMPLETED', `captureQueue: enrichment done for ${itemId}`);
 

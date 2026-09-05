@@ -35,6 +35,7 @@ export default function ItemDetailScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [editNotes, setEditNotes] = useState('');
   const [origDescExpanded, setOrigDescExpanded] = useState(false);
+  const [assigningCollection, setAssigningCollection] = useState<string | null>(null);
 
   const loadItem = async () => {
     if (!id) return;
@@ -73,10 +74,27 @@ export default function ItemDetailScreen() {
   const showOrigDesc = !!item.aiSummary && !!item.description && item.aiSummary !== item.description;
 
   const handleSelectSuggestedCollection = async (targetCollectionId: string) => {
+    if (assigningCollection) return; // prevent double-tap
     const isCurrent = item.collectionId === targetCollectionId;
-    await updateItem(item.id, { collectionId: isCurrent ? undefined : targetCollectionId });
-    await loadItem();
-    await refreshAll();
+    const newCollectionId = isCurrent ? undefined : targetCollectionId;
+
+    // Optimistic update — reflect the change in local state immediately
+    setItem((prev) => prev ? { ...prev, collectionId: newCollectionId } : prev);
+    setAssigningCollection(targetCollectionId);
+
+    try {
+      await updateItem(item.id, { collectionId: newCollectionId });
+      // Reload item from DB to confirm, then refresh global context (updates counts)
+      await loadItem();
+      await refreshAll();
+    } catch (err) {
+      // Roll back optimistic update on failure
+      await loadItem();
+      logError(err, { screen: 'item', action: 'assignCollection' });
+      Alert.alert('Error', getUserMessage(err));
+    } finally {
+      setAssigningCollection(null);
+    }
   };
 
   const handleDelete = () => {
@@ -181,13 +199,13 @@ export default function ItemDetailScreen() {
         {/* ── 2. Title ── */}
         <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
 
-        {/* ── 3. Meta row: date + assigned collection ── */}
+        {/* ── 3. Meta row: date + current collection ── */}
         <View style={styles.metaRow}>
           <Text style={[styles.meta, { color: colors.textMuted }]}>
             {dayjs(item.createdAt).format('MMM D, YYYY')}
           </Text>
           {collection && (
-            <View style={[styles.collectionChip, { backgroundColor: collection.color + '20' }]}>
+            <View style={[styles.collectionChip, { backgroundColor: collection.color + '20', borderColor: collection.color + '40', borderWidth: 1 }]}>
               <Ionicons name={collection.icon as React.ComponentProps<typeof Ionicons>['name']} size={11} color={collection.color} />
               <Text style={[styles.collectionChipText, { color: collection.color }]}>
                 {collection.name}
@@ -276,36 +294,62 @@ export default function ItemDetailScreen() {
         {/* ── 7. Suggested Collections ── */}
         {item.suggestedCollections && item.suggestedCollections.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="folder-outline" size={14} color={paper.colors.primary} />
-              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUGGESTED COLLECTIONS</Text>
+            <View style={[styles.sectionHeader, { marginBottom: 4 }]}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="folder-outline" size={14} color={paper.colors.primary} />
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUGGESTED COLLECTIONS</Text>
+              </View>
+              {assigningCollection && (
+                <PaperActivityIndicator size={14} color={paper.colors.primary} />
+              )}
             </View>
-            <Text style={[styles.hint, { color: colors.textMuted, marginBottom: 8 }]}>
-              Tap to assign this item:
+
+            {/* Current assignment row */}
+            {item.collectionId && collection && (
+              <View style={[styles.currentCollectionRow, { backgroundColor: collection.color + '15', borderColor: collection.color + '40' }]}>
+                <Ionicons name="checkmark-circle" size={15} color={collection.color} />
+                <Text style={[styles.currentCollectionLabel, { color: colors.textMuted }]}>Current:</Text>
+                <Ionicons name={collection.icon as React.ComponentProps<typeof Ionicons>['name']} size={13} color={collection.color} />
+                <Text style={[styles.currentCollectionName, { color: collection.color }]}>{collection.name}</Text>
+              </View>
+            )}
+
+            <Text style={[styles.hint, { color: colors.textMuted, marginBottom: 8, marginTop: item.collectionId ? 8 : 2 }]}>
+              {item.collectionId ? 'Tap to reassign or remove:' : 'Tap to assign this item:'}
             </Text>
+
             <View style={styles.suggestedCollectionsRow}>
               {item.suggestedCollections.map((cid) => {
                 const col = collections.find((c) => c.id === cid);
                 if (!col) return null;
                 const isSelected = item.collectionId === cid;
+                const isAssigning = assigningCollection === cid;
                 return (
                   <TouchableOpacity
                     key={cid}
                     onPress={() => handleSelectSuggestedCollection(cid)}
+                    disabled={!!assigningCollection}
+                    accessibilityRole="button"
+                    accessibilityLabel={isSelected ? `Remove from ${col.name}` : `Assign to ${col.name}`}
                     style={[
                       styles.suggestedColChip,
                       {
                         backgroundColor: isSelected ? col.color : paper.colors.surfaceContainerHighest,
                         borderColor: isSelected ? col.color : paper.colors.secondary + '66',
                         borderStyle: isSelected ? 'solid' : 'dashed',
+                        opacity: assigningCollection && !isAssigning ? 0.5 : 1,
                       },
                     ]}
                   >
-                    <Ionicons
-                      name={isSelected ? 'checkmark' : 'sparkles'}
-                      size={13}
-                      color={isSelected ? '#fff' : paper.colors.secondary}
-                    />
+                    {isAssigning ? (
+                      <PaperActivityIndicator size={13} color={isSelected ? '#fff' : paper.colors.secondary} />
+                    ) : (
+                      <Ionicons
+                        name={isSelected ? 'checkmark' : 'sparkles'}
+                        size={13}
+                        color={isSelected ? '#fff' : paper.colors.secondary}
+                      />
+                    )}
                     <Ionicons
                       name={col.icon as React.ComponentProps<typeof Ionicons>['name']}
                       size={14}
@@ -512,6 +556,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   tagText: { fontSize: 13, fontWeight: '500' },
+  currentCollectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  currentCollectionLabel: { fontSize: 12, fontWeight: '600' },
+  currentCollectionName: { fontSize: 13, fontWeight: '700', flex: 1 },
   suggestedCollectionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   suggestedColChip: {
     flexDirection: 'row',

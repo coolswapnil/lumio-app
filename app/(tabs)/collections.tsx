@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import {
   FAB,
   Text,
@@ -38,7 +39,15 @@ export default function CollectionsScreen() {
   const { colors } = useTheme();
   const paper = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { collections, refreshCollections } = useData();
+  const { collections, refreshCollections, refreshAll } = useData();
+
+  // Re-fetch collection counts whenever this tab gains focus (e.g. after
+  // assigning an item from item detail and navigating back here).
+  useFocusEffect(
+    useCallback(() => {
+      refreshAll();
+    }, [refreshAll])
+  );
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

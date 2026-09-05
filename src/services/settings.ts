@@ -52,3 +52,18 @@ export async function saveAISettings(settings: AISettings): Promise<void> {
 export async function clearAISettings(): Promise<void> {
   await SecureStore.deleteItemAsync(AI_KEY);
 }
+
+/** Read the current auto-assign rules map (category → collectionId). */
+export async function getAutoAssignRules(): Promise<Record<string, string>> {
+  const settings = await getAppSettings();
+  return settings.autoAssignRules ?? {};
+}
+
+/** Persist a new auto-assign rule (category → collectionId). */
+export async function setAutoAssignRule(category: string, collectionId: string): Promise<void> {
+  const settings = await getAppSettings();
+  await saveAppSettings({
+    ...settings,
+    autoAssignRules: { ...(settings.autoAssignRules ?? {}), [category]: collectionId },
+  });
+}

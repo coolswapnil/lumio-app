@@ -222,6 +222,12 @@ export interface AppSettings {
   mapDefaultLng?: number;
   /** When true, the in-memory diagnostics log records pipeline events. */
   diagnosticsEnabled?: boolean;
+  /**
+   * Auto-assign rules: maps ContentCategory → collectionId.
+   * When a rule exists for a category, enriched items in that category are
+   * automatically assigned to the mapped collection without prompting.
+   */
+  autoAssignRules?: Record<string, string>;
 }
 
 export type SortOption = 'newest' | 'oldest' | 'alphabetical' | 'type';
