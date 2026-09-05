@@ -11,6 +11,7 @@ import {
   Alert,
   Animated,
   Pressable,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -32,14 +33,17 @@ import {
   fetchPageMetadata,
   formatMetadataForAI,
   detectUrlSource,
+  detectMediaType,
   getDisplayHostname,
   suggestContentType,
   URL_SOURCE_LABELS,
   URL_SOURCE_ICONS,
+  MEDIA_TYPE_LABELS,
+  MEDIA_TYPE_ICONS,
   type PageMetadata,
 } from '../src/services/metadata';
 import { CONTENT_TYPE_CONFIG, ALL_CONTENT_TYPES } from '../src/constants';
-import type { ContentType, SavedItem } from '../src/types';
+import type { ContentType, SavedItem, ContentCategory, UrlSource, MediaType } from '../src/types';
 
 // ─── Clipboard Banner ────────────────────────────────────────────────────────
 
@@ -252,25 +256,44 @@ const previewStyles = StyleSheet.create({
 
 interface MetadataCardProps {
   metadata: PageMetadata;
+  category?: ContentCategory;
   paper: AppTheme;
   colors: ReturnType<typeof useTheme>['colors'];
 }
-function MetadataCard({ metadata, paper, colors }: MetadataCardProps) {
-  const fields: Array<{ key: string; value: boolean }> = [
-    { key: 'Title', value: !!metadata.title },
-    { key: 'Description', value: !!metadata.description },
-    { key: 'Image', value: !!metadata.image },
-  ];
-  const found = fields.filter((f) => f.value);
-  if (found.length === 0) return null;
+function MetadataCard({ metadata, category, paper, colors }: MetadataCardProps) {
+  const pills: Array<{ icon: string; label: string }> = [];
+  if (metadata.source && metadata.source !== 'website') {
+    pills.push({ icon: URL_SOURCE_ICONS[metadata.source] ?? 'globe', label: URL_SOURCE_LABELS[metadata.source] });
+  }
+  if (metadata.mediaType && metadata.mediaType !== 'web') {
+    pills.push({ icon: MEDIA_TYPE_ICONS[metadata.mediaType] ?? 'document', label: MEDIA_TYPE_LABELS[metadata.mediaType] });
+  }
+  if (metadata.title) pills.push({ icon: 'text', label: 'Title' });
+  if (metadata.description) pills.push({ icon: 'document-text', label: 'Description' });
+  if (metadata.image) pills.push({ icon: 'image', label: 'Thumbnail' });
+  if (metadata.location) {
+    const locLabel = [metadata.location.venue, metadata.location.city, metadata.location.country].filter(Boolean).join(', ');
+    pills.push({ icon: 'location', label: locLabel || 'Location' });
+  }
+  if (category) pills.push({ icon: 'pricetag', label: category });
+
+  if (pills.length === 0) return null;
   return (
     <View style={[cardStyles.container, { backgroundColor: paper.colors.secondaryContainer, borderColor: paper.colors.secondary + '40' }]}>
-      <Text style={[cardStyles.heading, { color: paper.colors.onSecondaryContainer }]}>Source Metadata Found</Text>
+      {metadata.image ? (
+        <Image
+          source={{ uri: metadata.image }}
+          style={cardStyles.thumbnail}
+          resizeMode="cover"
+          accessibilityLabel="Content thumbnail"
+        />
+      ) : null}
+      <Text style={[cardStyles.heading, { color: paper.colors.onSecondaryContainer }]}>Content Detected</Text>
       <View style={cardStyles.row}>
-        {found.map((f) => (
-          <View key={f.key} style={cardStyles.pill}>
-            <Ionicons name="checkmark-circle" size={13} color={paper.colors.secondary} />
-            <Text style={[cardStyles.pillText, { color: paper.colors.onSecondaryContainer }]}>{f.key}</Text>
+        {pills.map((p) => (
+          <View key={p.label} style={cardStyles.pill}>
+            <Ionicons name={p.icon as React.ComponentProps<typeof Ionicons>['name']} size={13} color={paper.colors.secondary} />
+            <Text style={[cardStyles.pillText, { color: paper.colors.onSecondaryContainer }]}>{p.label}</Text>
           </View>
         ))}
       </View>
@@ -285,6 +308,14 @@ const cardStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     marginTop: 6,
+    overflow: 'hidden',
+  },
+  thumbnail: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    marginBottom: 10,
+    backgroundColor: '#0002',
   },
   heading: { fontSize: 12, fontWeight: '700', letterSpacing: 0.4, marginBottom: 6 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
@@ -585,16 +616,27 @@ export default function SaveScreen() {
   const [metadataFailed, setMetadataFailed] = useState(false);
   // clipboardUrl: URL found in clipboard, null = none or already dismissed for this session
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
+  // Smart-categorization state
+  const [detectedSource, setDetectedSource] = useState<UrlSource | undefined>();
+  const [detectedMediaType, setDetectedMediaType] = useState<MediaType | undefined>();
+  const [detectedCategory, setDetectedCategory] = useState<ContentCategory | undefined>();
+  const [suggestedCollectionIds, setSuggestedCollectionIds] = useState<string[]>([]);
+  const [thumbnail, setThumbnail] = useState<string | undefined>();
 
-  // Suggest content type when URL changes
+  // Suggest content type + detect source/media when URL changes
   useEffect(() => {
     if (!url.trim()) {
       setLastMetadata(null);
       setMetadataFailed(false);
+      setDetectedSource(undefined);
+      setDetectedMediaType(undefined);
       return;
     }
     try {
       const source = detectUrlSource(url);
+      const media = detectMediaType(source, url);
+      setDetectedSource(source);
+      setDetectedMediaType(media);
       const suggested = suggestContentType(source);
       if (suggested) setContentType(suggested);
     } catch {
@@ -663,9 +705,24 @@ export default function SaveScreen() {
     setAiLoading(true);
     setLastMetadata(null);
     setMetadataFailed(false);
+    setDetectedCategory(undefined);
+    setSuggestedCollectionIds([]);
 
     try {
-      // ── Step 1: Metadata extraction ──────────────────────────────────────
+      // ── Step 1: Source & media recognition (fast — no network) ───────────
+      if (url.trim()) {
+        try {
+          const src = detectUrlSource(url);
+          const media = detectMediaType(src, url);
+          setDetectedSource(src);
+          setDetectedMediaType(media);
+          diagLog.addEntry('METADATA_FOUND', `source=${src} mediaType=${media}`);
+        } catch {
+          // invalid URL at this point — safe to continue
+        }
+      }
+
+      // ── Step 2: Metadata + thumbnail extraction ───────────────────────────
       diagLog.addEntry('METADATA_FOUND', `fetching page metadata for: ${url.trim() || '(no url)'}`);
       const metadata = url.trim() ? await fetchPageMetadata(url) : null;
       if (url.trim() && !metadata) {
@@ -673,38 +730,39 @@ export default function SaveScreen() {
         diagLog.addEntry('METADATA_FOUND', 'extraction failed or returned null');
       } else if (metadata) {
         setLastMetadata(metadata);
-        diagLog.addEntry('METADATA_FOUND', `source=${metadata.source} title=${(metadata.title ?? '').slice(0, 80)}`);
+        if (metadata.image) setThumbnail(metadata.image);
+        diagLog.addEntry('METADATA_FOUND', `source=${metadata.source} mediaType=${metadata.mediaType} title=${(metadata.title ?? '').slice(0, 80)} hasImage=${!!metadata.image} hasLocation=${!!metadata.location}`);
       }
 
       const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
         .filter(Boolean)
         .join('\n');
 
-      // ── Step 2: AI request ────────────────────────────────────────────────
+      // ── Step 3: AI request ────────────────────────────────────────────────
       const aiInputTitle = metadata?.title || title.trim() || url;
-      diagLog.addEntry('AI_REQUEST_STARTED', `calling summarizeItem title="${aiInputTitle.slice(0, 80)}" metadataLen=${metadataText.length}`);
+      const collectionNames = collections.map((c) => c.name);
+      diagLog.addEntry('AI_REQUEST_STARTED', `calling summarizeItem title="${aiInputTitle.slice(0, 80)}" metadataLen=${metadataText.length} collections=${collectionNames.length}`);
 
       const result = await summarizeItem(
         aiSettings,
         aiInputTitle,
         undefined,
         metadataText || undefined,
-        contentType
+        contentType,
+        collectionNames
       );
 
-      diagLog.addEntry('AI_RESPONSE_RECEIVED', `summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} error=${result.error ?? 'none'}`);
+      diagLog.addEntry('AI_RESPONSE_RECEIVED', `summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} category="${result.category ?? ''}" collections=${result.suggestedCollectionNames?.length ?? 0} error=${result.error ?? 'none'}`);
 
-      // ── Step 3: Handle AI failure ─────────────────────────────────────────
+      // ── Step 4: Handle AI failure ─────────────────────────────────────────
       if (result.error) {
-        // AI call failed — apply whatever we can from raw metadata so the
-        // user still gets value from the metadata extraction that succeeded.
         applyMetadataFallback(metadata);
         diagLog.addEntry('FORM_UPDATE_COMPLETED', 'AI failed — metadata fallback applied');
         setAiError(result.error);
         return;
       }
 
-      // ── Step 4: Form update ───────────────────────────────────────────────
+      // ── Step 5: Form update ───────────────────────────────────────────────
       diagLog.addEntry('FORM_UPDATE_STARTED', `suggestedTitle="${(result.suggestedTitle ?? '').slice(0, 80)}" tags=${result.suggestedTags.length} summaryLen=${result.summary.length}`);
 
       let updated = false;
@@ -712,10 +770,36 @@ export default function SaveScreen() {
       if (result.suggestedTags.length > 0 && !tags.trim()) { setTags(result.suggestedTags.join(', ')); updated = true; }
       if (result.summary && !description.trim()) { setDescription(result.summary); updated = true; }
 
-      diagLog.addEntry('FORM_UPDATE_COMPLETED', `fieldsUpdated=${updated} title=${Boolean(result.suggestedTitle)} tags=${result.suggestedTags.length} desc=${Boolean(result.summary)}`);
+      // ── Step 6: Category, collections, location ────────────────────────────
+      if (result.category) {
+        setDetectedCategory(result.category);
+        updated = true;
+      }
 
-      // If AI returned a completely empty result (no error, but nothing useful),
-      // fall back to filling from metadata so the user isn't left empty-handed.
+      if (result.suggestedCollectionNames && result.suggestedCollectionNames.length > 0) {
+        // Map collection names back to IDs
+        const matchedIds = result.suggestedCollectionNames
+          .map((name) => collections.find((c) => c.name.toLowerCase() === name.toLowerCase()))
+          .filter((c): c is NonNullable<typeof c> => c !== undefined)
+          .map((c) => c.id)
+          .slice(0, 3);
+        if (matchedIds.length > 0) {
+          setSuggestedCollectionIds(matchedIds);
+          updated = true;
+        }
+      }
+
+      // Location from AI — prefill address if empty
+      if (result.location && !address.trim()) {
+        const parts = [result.location.venue, result.location.city, result.location.country].filter(Boolean);
+        if (parts.length > 0) { setAddress(parts.join(', ')); updated = true; }
+        if (result.location.coordinates && !coords) {
+          setCoords({ lat: result.location.coordinates.lat, lng: result.location.coordinates.lng });
+        }
+      }
+
+      diagLog.addEntry('FORM_UPDATE_COMPLETED', `fieldsUpdated=${updated} title=${Boolean(result.suggestedTitle)} tags=${result.suggestedTags.length} desc=${Boolean(result.summary)} category=${result.category ?? ''}`);
+
       if (!updated) {
         diagLog.addEntry('FORM_UPDATE_COMPLETED', 'AI result was empty — metadata fallback applied');
         applyMetadataFallback(metadata);
@@ -764,6 +848,7 @@ export default function SaveScreen() {
         title: cleanTitle,
         description: sanitizeText(description, LIMITS.DESCRIPTION) || undefined,
         url: cleanUrl,
+        imageUrl: thumbnail,
         contentType,
         collectionId,
         tags: parseTags(tags),
@@ -773,6 +858,10 @@ export default function SaveScreen() {
         longitude: coords?.lng,
         isCompleted: false,
         isFavorite: false,
+        source: detectedSource,
+        mediaType: detectedMediaType,
+        category: detectedCategory,
+        suggestedCollections: suggestedCollectionIds,
         createdAt: now,
         updatedAt: now,
       };
@@ -908,8 +997,8 @@ export default function SaveScreen() {
               </View>
             )}
 
-            {/* Metadata status card */}
-            {lastMetadata && <MetadataCard metadata={lastMetadata} paper={paper} colors={colors} />}
+            {/* Metadata + intelligence status card */}
+            {lastMetadata && <MetadataCard metadata={lastMetadata} category={detectedCategory} paper={paper} colors={colors} />}
             {metadataFailed && (
               <View style={[styles.metaFailBanner, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}>
                 <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />
@@ -993,6 +1082,42 @@ export default function SaveScreen() {
                 ))}
               </View>
             </ScrollView>
+
+            {/* ── AI-Suggested Collections ── */}
+            {suggestedCollectionIds.length > 0 && (
+              <>
+                <SectionLabel text="SUGGESTED COLLECTIONS" colors={colors} topSpacing={layout.isExpressive ? 20 : 10} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                  <View style={{ flexDirection: 'row', gap: layout.isExpressive ? 10 : 8 }}>
+                    {suggestedCollectionIds.map((cid) => {
+                      const col = collections.find((c) => c.id === cid);
+                      if (!col) return null;
+                      const isActive = collectionId === cid;
+                      return (
+                        <TouchableOpacity
+                          key={cid}
+                          onPress={() => setCollectionId(isActive ? undefined : cid)}
+                          style={[
+                            chipStyles.chip,
+                            { borderRadius: chipRadius,
+                              backgroundColor: isActive ? col.color : paper.colors.surfaceContainerHigh,
+                              borderColor: isActive ? col.color : paper.colors.secondary + '66',
+                              borderStyle: 'dashed' as const },
+                          ]}
+                        >
+                          <Ionicons name="sparkles" size={12} color={isActive ? paper.colors.onPrimary : paper.colors.secondary} />
+                          <Ionicons name={col.icon as React.ComponentProps<typeof Ionicons>['name']} size={14} color={isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant} />
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: isActive ? paper.colors.onPrimary : paper.colors.onSurfaceVariant }}>
+                            {col.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+                <Text style={[styles.hint, { color: colors.textMuted }]}>AI suggestions — tap to assign</Text>
+              </>
+            )}
 
             {/* ── Location ── */}
             <SectionLabel text="LOCATION / PLACE" colors={colors} topSpacing={layout.isExpressive ? 20 : 10} />

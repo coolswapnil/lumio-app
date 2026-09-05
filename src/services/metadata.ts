@@ -1,21 +1,16 @@
 import { sanitizeUrl } from '../utils/validation';
-import type { ContentType } from '../types';
+import type { ContentType, UrlSource, MediaType, ContentLocation } from '../types';
 
-export type UrlSource =
-  | 'instagram'
-  | 'youtube'
-  | 'twitter'
-  | 'linkedin'
-  | 'medium'
-  | 'news'
-  | 'blog'
-  | 'website';
+export type { UrlSource };
 
 export interface PageMetadata {
   source: UrlSource;
+  mediaType: MediaType;
   title?: string;
   description?: string;
+  /** Best available thumbnail: OG image, Twitter card, or YouTube thumbnail */
   image?: string;
+  location?: ContentLocation;
 }
 
 /** Human-readable name for the detected source platform. */
@@ -25,6 +20,8 @@ export const URL_SOURCE_LABELS: Record<UrlSource, string> = {
   twitter: 'Twitter / X',
   linkedin: 'LinkedIn',
   medium: 'Medium',
+  spotify: 'Spotify',
+  amazon: 'Amazon',
   news: 'News Article',
   blog: 'Blog Post',
   website: 'Web Page',
@@ -37,9 +34,33 @@ export const URL_SOURCE_ICONS: Record<UrlSource, string> = {
   twitter: 'logo-twitter',
   linkedin: 'logo-linkedin',
   medium: 'reader',
+  spotify: 'musical-notes',
+  amazon: 'cart',
   news: 'newspaper',
   blog: 'pencil',
   website: 'globe',
+};
+
+/** Human-readable label for media type. */
+export const MEDIA_TYPE_LABELS: Record<MediaType, string> = {
+  video: 'Video',
+  audio: 'Audio',
+  image: 'Image',
+  article: 'Article',
+  product: 'Product',
+  social_post: 'Social Post',
+  web: 'Web Page',
+};
+
+/** Ionicons icon name for media type. */
+export const MEDIA_TYPE_ICONS: Record<MediaType, string> = {
+  video: 'play-circle',
+  audio: 'mic',
+  image: 'image',
+  article: 'newspaper',
+  product: 'cart',
+  social_post: 'chatbubbles',
+  web: 'globe',
 };
 
 /**
@@ -66,6 +87,8 @@ export function suggestContentType(source: UrlSource): ContentType | null {
     medium: 'article',
     news: 'article',
     blog: 'article',
+    spotify: 'podcast',
+    amazon: 'product',
   };
   return map[source] ?? null;
 }
@@ -89,9 +112,76 @@ export function detectUrlSource(url: string): UrlSource {
   if (hostname === 'twitter.com' || hostname.endsWith('.twitter.com') || hostname === 'x.com' || hostname.endsWith('.x.com')) return 'twitter';
   if (hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com')) return 'linkedin';
   if (hostname === 'medium.com' || hostname.endsWith('.medium.com')) return 'medium';
+  if (hostname === 'spotify.com' || hostname.endsWith('.spotify.com')) return 'spotify';
+  if (hostname === 'amazon.com' || hostname.endsWith('.amazon.com') || hostname === 'amazon.co.uk' || hostname === 'amazon.de' || hostname === 'amazon.in' || hostname === 'amazon.ca' || hostname === 'amazon.com.au' || hostname === 'amazon.fr' || hostname === 'amazon.es' || hostname === 'amazon.it' || hostname === 'amazon.co.jp') return 'amazon';
   if (NEWS_HOSTS.some((host) => hostname === host.slice(0, -1) || hostname.startsWith(host))) return 'news';
   if (hostname.includes('blog') || new URL(url).pathname.startsWith('/blog')) return 'blog';
   return 'website';
+}
+
+/**
+ * Derive the broad media type from the detected source and URL pathname.
+ * Instagram Reels → social_post + video hint is handled in detectMediaType separately.
+ */
+export function detectMediaType(source: UrlSource, url: string): MediaType {
+  const pathname = (() => { try { return new URL(url).pathname.toLowerCase(); } catch { return ''; } })();
+
+  switch (source) {
+    case 'youtube':
+      return 'video';
+    case 'spotify':
+      // Podcasts and episodes → audio; playlists → audio
+      return 'audio';
+    case 'amazon':
+      return 'product';
+    case 'instagram':
+      // Reels are video; regular posts are social_post
+      if (pathname.includes('/reel/') || pathname.includes('/reels/')) return 'video';
+      return 'social_post';
+    case 'twitter':
+    case 'linkedin':
+      return 'social_post';
+    case 'medium':
+    case 'news':
+    case 'blog':
+      return 'article';
+    default:
+      return 'web';
+  }
+}
+
+/**
+ * Extract YouTube video ID from various YouTube URL forms.
+ * Returns null if the URL is not a YouTube video.
+ */
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const hostname = u.hostname.replace(/^www\./, '');
+    if (hostname === 'youtu.be') {
+      return u.pathname.slice(1).split('/')[0] || null;
+    }
+    if (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) {
+      const v = u.searchParams.get('v');
+      if (v) return v;
+      // Embedded / short URLs: /embed/<id>, /shorts/<id>
+      const match = u.pathname.match(/\/(?:embed|shorts|v)\/([A-Za-z0-9_-]{11})/);
+      if (match) return match[1];
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
+ * Returns the best thumbnail URL for the given URL and source.
+ * For YouTube, this is always the hqdefault thumbnail (no network needed).
+ * For other sources, the OG/Twitter card image from fetchPageMetadata is used.
+ */
+export function deriveYouTubeThumbnail(url: string): string | null {
+  const id = extractYouTubeVideoId(url);
+  return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 }
 
 function decodeHtml(value: string): string {
@@ -122,12 +212,62 @@ function getTitle(html: string): string | undefined {
   return cleanValue(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]);
 }
 
+/**
+ * Extract location hints from HTML meta tags and JSON-LD structured data.
+ * Looks for schema.org Place/Event/Article geo annotations and og:locality tags.
+ */
+function extractLocationFromHtml(html: string): ContentLocation | undefined {
+  const location: ContentLocation = {};
+
+  // og:locality, og:country-name (Open Graph extended)
+  const city = getMeta(html, 'og:locality') ?? getMeta(html, 'place:location:city');
+  const country = getMeta(html, 'og:country-name') ?? getMeta(html, 'place:location:country');
+  if (city) location.city = city;
+  if (country) location.country = country;
+
+  // JSON-LD: look for "addressLocality", "addressCountry", "latitude", "longitude"
+  const jsonLdBlocks = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) ?? [];
+  for (const block of jsonLdBlocks) {
+    try {
+      const content = block.replace(/<\/?script[^>]*>/gi, '');
+      const data = JSON.parse(content);
+      const flatten = (obj: unknown): Record<string, unknown> => {
+        if (typeof obj !== 'object' || obj === null) return {};
+        if (Array.isArray(obj)) {
+          return obj.reduce((acc, item) => ({ ...acc, ...flatten(item) }), {});
+        }
+        return obj as Record<string, unknown>;
+      };
+      const flat = flatten(data);
+
+      if (!location.venue && typeof flat.name === 'string') location.venue = flat.name;
+      if (!location.city && typeof flat.addressLocality === 'string') location.city = flat.addressLocality;
+      if (!location.country && typeof flat.addressCountry === 'string') location.country = flat.addressCountry;
+      if (!location.coordinates && typeof flat.latitude === 'number' && typeof flat.longitude === 'number') {
+        location.coordinates = { lat: flat.latitude, lng: flat.longitude };
+      }
+    } catch {
+      // Malformed JSON-LD — skip
+    }
+  }
+
+  const hasData = location.venue || location.city || location.country || location.coordinates;
+  return hasData ? location : undefined;
+}
+
 export function formatMetadataForAI(metadata: PageMetadata): string {
+  const locationParts: string[] = [];
+  if (metadata.location?.venue) locationParts.push(metadata.location.venue);
+  if (metadata.location?.city) locationParts.push(metadata.location.city);
+  if (metadata.location?.country) locationParts.push(metadata.location.country);
+
   return [
     `Source: ${metadata.source}`,
+    `Media type: ${metadata.mediaType}`,
     metadata.title ? `Title: ${metadata.title}` : '',
     metadata.description ? `Description: ${metadata.description}` : '',
-    metadata.image ? `OpenGraph image: ${metadata.image}` : '',
+    metadata.image ? `Thumbnail: ${metadata.image}` : '',
+    locationParts.length > 0 ? `Location: ${locationParts.join(', ')}` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -138,6 +278,11 @@ export async function fetchPageMetadata(url: string): Promise<PageMetadata | nul
   if (!safeUrl) return null;
 
   const source = detectUrlSource(safeUrl);
+  const mediaType = detectMediaType(source, safeUrl);
+
+  // For YouTube, derive thumbnail directly from the video ID — no fetch needed.
+  const ytThumbnail = source === 'youtube' ? deriveYouTubeThumbnail(safeUrl) : null;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
 
@@ -146,21 +291,40 @@ export async function fetchPageMetadata(url: string): Promise<PageMetadata | nul
       headers: { Accept: 'text/html,application/xhtml+xml' },
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      // Even if the page 4xx/5xx, we can still return partial data for YouTube.
+      if (ytThumbnail) {
+        return { source, mediaType, image: ytThumbnail };
+      }
+      return null;
+    }
 
     const html = await response.text();
+
+    // Thumbnail: prefer OG/Twitter, fall back to YouTube derived thumbnail.
+    const ogImage = getMeta(html, 'og:image') ?? getMeta(html, 'twitter:image');
+    const image = ogImage ?? ytThumbnail ?? undefined;
+
+    const location = extractLocationFromHtml(html);
+
     const metadata: PageMetadata = {
       source,
+      mediaType,
       title: getMeta(html, 'og:title') ?? getMeta(html, 'twitter:title') ?? getTitle(html),
       description:
         getMeta(html, 'og:description') ??
         getMeta(html, 'twitter:description') ??
         getMeta(html, 'description'),
-      image: getMeta(html, 'og:image') ?? getMeta(html, 'twitter:image'),
+      image,
+      location,
     };
 
     return metadata.title || metadata.description || metadata.image ? metadata : null;
   } catch {
+    // Network error — still return YouTube thumbnail if we have it.
+    if (ytThumbnail) {
+      return { source, mediaType, image: ytThumbnail };
+    }
     return null;
   } finally {
     clearTimeout(timeout);

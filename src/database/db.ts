@@ -57,12 +57,16 @@ export async function initDatabase(): Promise<void> {
   `);
 
   // -------------------------------------------------------------------------
-  // Additive migration: version column on both entity tables.
-  // ALTER TABLE silently fails if the column already exists (SQLite behaviour).
-  // We catch the error so the rest of init can proceed on upgrade paths.
+  // Additive migrations — silently ignored if the column already exists.
   // -------------------------------------------------------------------------
-  await runSafe(database, `ALTER TABLE saved_items   ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
-  await runSafe(database, `ALTER TABLE collections   ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+  await runSafe(database, `ALTER TABLE collections ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+
+  // Smart-categorization fields (content-intelligence update)
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN source TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN media_type TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN category TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN suggested_collections TEXT NOT NULL DEFAULT '[]'`);
 
   // -------------------------------------------------------------------------
   // Sync infrastructure tables — offline-first queue, tombstones, metadata.

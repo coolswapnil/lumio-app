@@ -1,5 +1,5 @@
 import { getDatabase } from './db';
-import type { SavedItem, ContentType, SortOption, FilterOption } from '../types';
+import type { SavedItem, ContentType, SortOption, FilterOption, UrlSource, MediaType, ContentCategory } from '../types';
 
 function rowToItem(row: Record<string, unknown>): SavedItem {
   return {
@@ -18,6 +18,10 @@ function rowToItem(row: Record<string, unknown>): SavedItem {
     isCompleted: Boolean(row.is_completed),
     isFavorite: Boolean(row.is_favorite),
     aiSummary: row.ai_summary as string | undefined,
+    source: row.source as UrlSource | undefined,
+    mediaType: row.media_type as MediaType | undefined,
+    category: row.category as ContentCategory | undefined,
+    suggestedCollections: JSON.parse((row.suggested_collections as string) || '[]'),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -87,8 +91,10 @@ export async function saveItem(item: SavedItem): Promise<void> {
   await db.runAsync(
     `INSERT OR REPLACE INTO saved_items
      (id, title, description, url, image_url, content_type, collection_id, tags, notes,
-      address, latitude, longitude, is_completed, is_favorite, ai_summary, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      address, latitude, longitude, is_completed, is_favorite, ai_summary,
+      source, media_type, category, suggested_collections,
+      created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
    [
      item.id,
      item.title,
@@ -105,6 +111,10 @@ export async function saveItem(item: SavedItem): Promise<void> {
      item.isCompleted ? 1 : 0,
      item.isFavorite ? 1 : 0,
      item.aiSummary ?? null,
+     item.source ?? null,
+     item.mediaType ?? null,
+     item.category ?? null,
+     JSON.stringify(item.suggestedCollections ?? []),
      item.createdAt,
      item.updatedAt,
    ]
@@ -130,6 +140,10 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.isCompleted !== undefined) { fields.push('is_completed = ?'); values.push(updates.isCompleted ? 1 : 0); }
   if (updates.isFavorite !== undefined) { fields.push('is_favorite = ?'); values.push(updates.isFavorite ? 1 : 0); }
   if (updates.aiSummary !== undefined) { fields.push('ai_summary = ?'); values.push(updates.aiSummary ?? null); }
+  if (updates.source !== undefined) { fields.push('source = ?'); values.push(updates.source ?? null); }
+  if (updates.mediaType !== undefined) { fields.push('media_type = ?'); values.push(updates.mediaType ?? null); }
+  if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category ?? null); }
+  if (updates.suggestedCollections !== undefined) { fields.push('suggested_collections = ?'); values.push(JSON.stringify(updates.suggestedCollections ?? [])); }
 
   if (fields.length === 0) return;
 

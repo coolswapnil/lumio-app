@@ -5,6 +5,7 @@ import {
   Animated,
   PanResponder,
   Alert,
+  Image,
 } from 'react-native';
 import { Card, Text, Chip, IconButton } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -163,6 +164,16 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
             </View>
           </View>
 
+          {/* Thumbnail (non-compact only) */}
+          {!compact && item.imageUrl ? (
+            <Image
+              source={{ uri: item.imageUrl }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+              accessibilityLabel="Content thumbnail"
+            />
+          ) : null}
+
           {/* Title */}
           <Text
             variant={compact ? 'titleSmall' : 'titleMedium'}
@@ -261,6 +272,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
+  thumbnail: {
+    width: '100%',
+    height: 130,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: '#0002',
+  },
   cardContent: {
     padding: 12,
     paddingLeft: 0,
@@ -315,6 +333,7 @@ const ItemCard = React.memo(ItemCardBase, (prev, next) =>
   prev.item.isCompleted === next.item.isCompleted &&
   prev.item.isFavorite === next.item.isFavorite &&
   prev.item.aiSummary === next.item.aiSummary &&
+  prev.item.imageUrl === next.item.imageUrl &&
   prev.item.tags.length === next.item.tags.length
 );
 

@@ -1,4 +1,4 @@
-import type { AISettings } from '../types';
+import type { AISettings, ContentCategory, ContentLocation } from '../types';
 import { logError } from '../utils/errors';
 import { safeErrorMessage } from './aiHealth';
 import { diagLog } from './diagnostics';
@@ -12,6 +12,12 @@ export interface AISummarizeResult {
   summary: string;
   suggestedTags: string[];
   suggestedTitle?: string;
+  /** AI-generated primary category */
+  category?: ContentCategory;
+  /** Up to 3 collection name suggestions (not IDs — matched by name in the UI) */
+  suggestedCollectionNames?: string[];
+  /** Location data extracted from the content */
+  location?: ContentLocation;
   /** Set when the AI call itself failed (network, auth, parse). Distinct from an empty-but-valid response. */
   error?: string;
 }
@@ -424,30 +430,45 @@ export async function summarizeItem(
   title: string,
   url?: string,
   description?: string,
-  contentType?: string
+  contentType?: string,
+  collectionNames?: string[]
 ): Promise<AISummarizeResult> {
   const context = [
     `Title: ${title}`,
     contentType ? `Type: ${contentType}` : '',
-    description ? `Extracted page metadata: ${description}` : '',
+    description ? `Extracted page metadata:\n${description}` : '',
   ]
     .filter(Boolean)
     .join('\n');
+
+  const collectionHint = collectionNames && collectionNames.length > 0
+    ? `\nAvailable collections the user has: ${collectionNames.join(', ')}. Suggest up to 3 that fit best (by exact name). If none fit, return an empty array.`
+    : '';
+
+  const categoryList = 'Finance, Technology, Health, Travel, Food, Career, Learning, Entertainment, Science, Sports, Politics, Design, Business, Lifestyle, Other';
 
   const messages: AIMessage[] = [
     {
       role: 'system',
       content:
-        'You are a helpful assistant that summarizes saved content for a personal knowledge manager. ' +
+        'You are a smart content categorization assistant for a personal knowledge manager. ' +
         'Use only the supplied title and extracted page metadata. Do not claim to access a URL or webpage. ' +
-        'If there is insufficient information, return an empty summary with empty tags. ' +
+        'If there is insufficient information, return empty values. ' +
         'Output ONLY a single raw JSON object — no prose, no markdown, no code fences, no explanation. ' +
-        'The JSON must have exactly these keys: ' +
-        '{"summary":"...","suggestedTags":["tag1","tag2"],"suggestedTitle":"..."}',
+        'The JSON must have exactly these keys:\n' +
+        '{\n' +
+        '  "summary": "2-3 sentence summary of the content",\n' +
+        '  "suggestedTitle": "Concise title, max 8 words, key topic only, no filler or social media phrasing",\n' +
+        '  "suggestedTags": ["tag1", "tag2", "tag3"],\n' +
+        `  "category": "One of: ${categoryList}",\n` +
+        '  "suggestedCollectionNames": ["Name1", "Name2"],\n' +
+        '  "location": { "venue": "...", "city": "...", "country": "..." }\n' +
+        '}\n' +
+        'For location, only include fields that are clearly stated in the content. If no location is evident, use null for the location field.',
     },
     {
       role: 'user',
-      content: `Summarize this saved item and suggest 3-5 relevant tags and an improved title:\n\n${context}`,
+      content: `Analyze this saved item and fill in all fields:\n\n${context}${collectionHint}`,
     },
   ];
 
@@ -467,16 +488,49 @@ export async function summarizeItem(
 
   try {
     diagLog.addEntry('AI_RESPONSE_PARSED', 'attempting JSON extraction');
-    const parsed = extractJsonObject(raw) as { summary?: string; suggestedTags?: unknown; suggestedTitle?: string } | null;
+    const parsed = extractJsonObject(raw) as {
+      summary?: string;
+      suggestedTags?: unknown;
+      suggestedTitle?: string;
+      category?: string;
+      suggestedCollectionNames?: unknown;
+      location?: unknown;
+    } | null;
     if (parsed) {
       const summary = (typeof parsed.summary === 'string' ? parsed.summary : '').trim();
       const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
+
+      // Validate category against the known list
+      const validCategories: ContentCategory[] = ['Finance','Technology','Health','Travel','Food','Career','Learning','Entertainment','Science','Sports','Politics','Design','Business','Lifestyle','Other'];
+      const rawCategory = typeof parsed.category === 'string' ? parsed.category.trim() as ContentCategory : undefined;
+      const category = rawCategory && validCategories.includes(rawCategory) ? rawCategory : undefined;
+
+      // Suggested collection names — up to 3 strings
+      const suggestedCollectionNames = Array.isArray(parsed.suggestedCollectionNames)
+        ? (parsed.suggestedCollectionNames as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 3)
+        : undefined;
+
+      // Location — only accept well-formed objects with at least one string field
+      let location: ContentLocation | undefined;
+      if (parsed.location && typeof parsed.location === 'object' && !Array.isArray(parsed.location)) {
+        const loc = parsed.location as Record<string, unknown>;
+        const venue = typeof loc.venue === 'string' ? loc.venue.trim() || undefined : undefined;
+        const city = typeof loc.city === 'string' ? loc.city.trim() || undefined : undefined;
+        const country = typeof loc.country === 'string' ? loc.country.trim() || undefined : undefined;
+        if (venue || city || country) {
+          location = { venue, city, country };
+        }
+      }
+
       const result: AISummarizeResult = {
         summary: isRefusal ? '' : summary,
         suggestedTags: Array.isArray(parsed.suggestedTags) ? (parsed.suggestedTags as string[]) : [],
         suggestedTitle: typeof parsed.suggestedTitle === 'string' ? parsed.suggestedTitle.trim() || undefined : undefined,
+        category,
+        suggestedCollectionNames,
+        location,
       };
-      diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}"`);
+      diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}" category="${result.category ?? ''}" collections=${result.suggestedCollectionNames?.length ?? 0}`);
       return result;
     }
     // Raw response contained no parseable JSON object — treat as parse failure
