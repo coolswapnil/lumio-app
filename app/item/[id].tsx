@@ -38,6 +38,7 @@ export default function ItemDetailScreen() {
   const [editNotes, setEditNotes] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
 
   const loadItem = async () => {
     if (!id) return;
@@ -316,37 +317,9 @@ export default function ItemDetailScreen() {
           )}
         </View>
 
-        {/* AI Metadata & Confidences */}
-        {(item.category || (item.suggestedCollections && item.suggestedCollections.length > 0)) && (
-          <View style={[styles.section, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: colors.border }]}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="sparkles" size={14} color={paper.colors.secondary} />
-              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI CLASSIFICATION & CONFIDENCE</Text>
-            </View>
-            <View style={styles.confidenceGrid}>
-              {item.category && (
-                <View style={styles.confidenceRow}>
-                  <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Category:</Text>
-                  <Text style={[styles.confidenceValue, { color: colors.text }]}>
-                    {`${item.category} `}
-                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>(95%)</Text>
-                  </Text>
-                </View>
-              )}
-              {item.suggestedCollections && item.suggestedCollections.length > 0 && (
-                <View style={styles.confidenceRow}>
-                  <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Collection:</Text>
-                  <Text style={[styles.confidenceValue, { color: colors.text }]}>
-                    {collections.find((c) => c.id === item.suggestedCollections?.[0])?.name ?? 'Suggested'}{' '}
-                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>(90%)</Text>
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* AI Suggested Collections */}
+        {/* ── AI Suggested Collections (clean chips, no confidence %) ──────
+            Confidence values are hidden from the primary UI and moved into
+            the collapsible "AI Details" section below. */}
         {item.suggestedCollections && item.suggestedCollections.length > 0 && (
           <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
@@ -354,7 +327,7 @@ export default function ItemDetailScreen() {
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUGGESTED COLLECTIONS</Text>
             </View>
             <Text style={[styles.hint, { color: colors.textMuted, marginBottom: 8 }]}>
-              Tap a suggestion below to quickly move or assign this item:
+              Tap a suggestion below to quickly assign this item:
             </Text>
             <View style={styles.suggestedCollectionsRow}>
               {item.suggestedCollections.map((cid) => {
@@ -384,13 +357,7 @@ export default function ItemDetailScreen() {
                       size={14}
                       color={isSelected ? '#fff' : paper.colors.onSurfaceVariant}
                     />
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: '600',
-                        color: isSelected ? '#fff' : paper.colors.onSurfaceVariant,
-                      }}
-                    >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: isSelected ? '#fff' : paper.colors.onSurfaceVariant }}>
                       {col.name}
                     </Text>
                   </TouchableOpacity>
@@ -398,6 +365,73 @@ export default function ItemDetailScreen() {
               })}
             </View>
           </View>
+        )}
+
+        {/* ── AI Details ▼ — collapsible confidence/classification panel ───
+            Confidence percentages are only shown here, never in the primary UI.
+            Only rendered when there is at least one AI-derived signal. */}
+        {(item.category || (item.suggestedCollections && item.suggestedCollections.length > 0) || item.address) && (
+          <TouchableOpacity
+            onPress={() => setAiDetailsExpanded((v) => !v)}
+            activeOpacity={0.8}
+            style={[styles.section, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: colors.border }]}
+            accessibilityRole="button"
+            accessibilityLabel={aiDetailsExpanded ? 'Collapse AI details' : 'Expand AI details'}
+          >
+            {/* Accordion header */}
+            <View style={[styles.sectionHeader, { marginBottom: aiDetailsExpanded ? 10 : 0 }]}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="sparkles" size={14} color={paper.colors.secondary} />
+                <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI DETAILS</Text>
+              </View>
+              <Ionicons
+                name={aiDetailsExpanded ? 'chevron-up' : 'chevron-down'}
+                size={15}
+                color={colors.textMuted}
+              />
+            </View>
+
+            {/* Accordion body — only visible when expanded */}
+            {aiDetailsExpanded && (
+              <View style={styles.confidenceGrid}>
+                {item.category && (
+                  <View style={styles.confidenceRow}>
+                    <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Category Confidence</Text>
+                    <View style={styles.confidenceValueRow}>
+                      <Text style={[styles.confidenceValue, { color: colors.text }]}>{item.category}</Text>
+                      <View style={[styles.confidenceBadge, { backgroundColor: paper.colors.secondaryContainer }]}>
+                        <Text style={[styles.confidenceBadgeText, { color: paper.colors.onSecondaryContainer }]}>95%</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+                {item.suggestedCollections && item.suggestedCollections.length > 0 && (
+                  <View style={styles.confidenceRow}>
+                    <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Collection Confidence</Text>
+                    <View style={styles.confidenceValueRow}>
+                      <Text style={[styles.confidenceValue, { color: colors.text }]}>
+                        {collections.find((c) => c.id === item.suggestedCollections?.[0])?.name ?? 'Suggested'}
+                      </Text>
+                      <View style={[styles.confidenceBadge, { backgroundColor: paper.colors.secondaryContainer }]}>
+                        <Text style={[styles.confidenceBadgeText, { color: paper.colors.onSecondaryContainer }]}>90%</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+                {item.address && (
+                  <View style={styles.confidenceRow}>
+                    <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Location Confidence</Text>
+                    <View style={styles.confidenceValueRow}>
+                      <Text style={[styles.confidenceValue, { color: colors.text }]} numberOfLines={1}>{item.address}</Text>
+                      <View style={[styles.confidenceBadge, { backgroundColor: paper.colors.secondaryContainer }]}>
+                        <Text style={[styles.confidenceBadgeText, { color: paper.colors.onSecondaryContainer }]}>80%</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+          </TouchableOpacity>
         )}
 
         {/* Tags */}
@@ -481,51 +515,6 @@ export default function ItemDetailScreen() {
   );
 }
 
-const detailExtraStyles = StyleSheet.create({
-  badgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  confidenceGrid: {
-    gap: 6,
-    marginTop: 4,
-  },
-  confidenceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  confidenceLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  confidenceValue: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  suggestedCollectionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  suggestedColChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  hint: {
-    fontSize: 12,
-    lineHeight: 16,
-  },
-});
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -541,17 +530,34 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   confidenceRow: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  confidenceLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  confidenceValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  confidenceLabel: {
-    fontSize: 13,
-    fontWeight: '500',
+    gap: 8,
   },
   confidenceValue: {
     fontSize: 13,
     fontWeight: '600',
+    flex: 1,
+  },
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  confidenceBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   suggestedCollectionsRow: {
     flexDirection: 'row',

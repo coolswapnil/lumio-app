@@ -1,18 +1,24 @@
 /**
  * ProcessingBanner.tsx
  *
- * A persistent, expandable banner that shows the capture queue state.
- * Rendered at the root level (above the tab bar) so it is visible
- * across all screens while enrichment is running.
+ * Persistent capture-queue status banner rendered above the system navigation bar.
  *
- * Collapsed:  "Processing 2 items  ▼"  (single pill, tappable)
- * Expanded:   list of queue entries with per-item status
+ * Collapsed pill (always visible when queue is non-empty):
+ *   ● Processing 2 items · Metadata…  ██░░ 45%
  *
- * Dismisses automatically when all items complete/fail and the user
- * taps the dismiss button.
+ * Expanded panel (tap pill to toggle):
+ *   ┌──────────────────────────────────────────┐
+ *   │ Queued: 1   Processing: 1   Done: 2      │
+ *   ├──────────────────────────────────────────┤
+ *   │ ● youtube.com   Metadata… ●●●○○○○○       │
+ *   │ ✓ instagram.com Done       ●●●●●●●●       │
+ *   └──────────────────────────────────────────┘
+ *
+ * Completion toast (auto-dismisses after 3 s):
+ *   ✅ Saved and analyzed
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -29,7 +35,7 @@ import { useAppTheme } from '../constants/colors';
 import { useTheme } from '../context/ThemeContext';
 import type { CaptureEntry, EnrichmentStep } from '../services/captureQueue';
 
-// ─── Step labels ─────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const STEP_LABELS: Record<EnrichmentStep, string> = {
   source:      'Source',
@@ -45,6 +51,79 @@ const STEP_LABELS: Record<EnrichmentStep, string> = {
 const ALL_STEPS: EnrichmentStep[] = [
   'source', 'thumbnail', 'metadata', 'ai_summary', 'tags', 'category', 'collections', 'location',
 ];
+const TOTAL_STEPS = ALL_STEPS.length;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Overall progress 0–100 across all queue entries. */
+function calcOverallProgress(queue: CaptureEntry[]): number {
+  if (queue.length === 0) return 0;
+  let totalSteps = 0;
+  let doneSteps = 0;
+  for (const e of queue) {
+    if (e.status === 'completed') {
+      totalSteps += TOTAL_STEPS;
+      doneSteps += TOTAL_STEPS;
+    } else if (e.status === 'failed') {
+      totalSteps += TOTAL_STEPS;
+      doneSteps += e.completedSteps.length;
+    } else {
+      totalSteps += TOTAL_STEPS;
+      doneSteps += e.completedSteps.length;
+    }
+  }
+  return totalSteps === 0 ? 0 : Math.round((doneSteps / totalSteps) * 100);
+}
+
+/** Current step label from the first actively-processing entry. */
+function currentStepLabel(queue: CaptureEntry[]): string | null {
+  const active = queue.find((e) => e.status === 'processing' && e.currentStep);
+  return active?.currentStep ? STEP_LABELS[active.currentStep] : null;
+}
+
+// ─── Progress bar ─────────────────────────────────────────────────────────────
+
+function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  const widthAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: pct,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [pct]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <View style={pbStyles.track}>
+      <Animated.View
+        style={[
+          pbStyles.fill,
+          {
+            backgroundColor: color,
+            width: widthAnim.interpolate({
+              inputRange: [0, 100],
+              outputRange: ['0%', '100%'],
+            }),
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
+const pbStyles = StyleSheet.create({
+  track: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
+    flex: 1,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+});
 
 // ─── Single queue row ─────────────────────────────────────────────────────────
 
@@ -65,8 +144,9 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
     entry.status === 'failed'    ? 'alert-circle'     :
     'time-outline';
 
-  const stepProgress = ALL_STEPS.indexOf(entry.currentStep ?? 'source');
-  const totalDone = entry.completedSteps.length;
+  const itemPct = entry.status === 'completed'
+    ? 100
+    : Math.round((entry.completedSteps.length / TOTAL_STEPS) * 100);
 
   return (
     <View style={[rowStyles.row, { borderBottomColor: colors.border }]}>
@@ -79,12 +159,15 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
         )}
       </View>
 
-      {/* Domain + step info */}
+      {/* Domain + step + progress */}
       <View style={rowStyles.textCol}>
-        <Text style={[rowStyles.hostname, { color: colors.text }]} numberOfLines={1}>{hostname}</Text>
+        <View style={rowStyles.topRow}>
+          <Text style={[rowStyles.hostname, { color: colors.text }]} numberOfLines={1}>{hostname}</Text>
+          <Text style={[rowStyles.pct, { color: statusColor }]}>{itemPct}%</Text>
+        </View>
         {entry.status === 'processing' && entry.currentStep && (
           <Text style={[rowStyles.step, { color: colors.textMuted }]}>
-            {STEP_LABELS[entry.currentStep]}… ({totalDone}/{ALL_STEPS.length})
+            {STEP_LABELS[entry.currentStep]}…
           </Text>
         )}
         {entry.status === 'queued' && (
@@ -98,29 +181,28 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
             {entry.error ?? 'Failed'}
           </Text>
         )}
-      </View>
-
-      {/* Step dots */}
-      <View style={rowStyles.dotsRow}>
-        {ALL_STEPS.map((step) => {
-          const done = entry.completedSteps.includes(step);
-          const active = entry.currentStep === step;
-          return (
-            <View
-              key={step}
-              style={[
-                rowStyles.dot,
-                {
-                  backgroundColor: done
-                    ? statusColor
-                    : active
-                    ? statusColor + '66'
-                    : colors.border,
-                },
-              ]}
-            />
-          );
-        })}
+        {/* Step dots */}
+        <View style={rowStyles.dotsRow}>
+          {ALL_STEPS.map((step) => {
+            const done = entry.completedSteps.includes(step);
+            const active = entry.currentStep === step;
+            return (
+              <View
+                key={step}
+                style={[
+                  rowStyles.dot,
+                  {
+                    backgroundColor: done
+                      ? statusColor
+                      : active
+                      ? statusColor + '66'
+                      : colors.border,
+                  },
+                ]}
+              />
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -129,18 +211,82 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
 const rowStyles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: 10,
   },
-  iconCol: { width: 20, alignItems: 'center' },
-  textCol: { flex: 1, gap: 2 },
-  hostname: { fontSize: 13, fontWeight: '600' },
+  iconCol: { width: 20, alignItems: 'center', paddingTop: 2 },
+  textCol: { flex: 1, gap: 3 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  hostname: { fontSize: 13, fontWeight: '600', flex: 1 },
+  pct: { fontSize: 12, fontWeight: '700', marginLeft: 8 },
   step: { fontSize: 11 },
-  dotsRow: { flexDirection: 'row', gap: 3 },
+  dotsRow: { flexDirection: 'row', gap: 3, marginTop: 2 },
   dot: { width: 5, height: 5, borderRadius: 3 },
+});
+
+// ─── Completion toast ─────────────────────────────────────────────────────────
+
+function CompletionToast({ onDone }: { onDone: () => void }) {
+  const paper = useAppTheme();
+  const { colors } = useTheme();
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(8)).current;
+
+  useEffect(() => {
+    // Fade in
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(translateY, { toValue: 0, tension: 100, friction: 10, useNativeDriver: true }),
+    ]).start();
+
+    // Auto-dismiss after 3 s
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+        Animated.timing(translateY, { toValue: -8, duration: 300, useNativeDriver: true }),
+      ]).start(onDone);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Animated.View
+      style={[
+        toastStyles.toast,
+        {
+          backgroundColor: colors.success + 'EE',
+          transform: [{ translateY }],
+          opacity,
+        },
+      ]}
+      pointerEvents="none"
+    >
+      <Ionicons name="checkmark-circle" size={16} color="#fff" />
+      <Text style={toastStyles.text}>Saved and analyzed</Text>
+    </Animated.View>
+  );
+}
+
+const toastStyles = StyleSheet.create({
+  toast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 24,
+    marginBottom: 6,
+  },
+  text: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
 });
 
 // ─── Main banner ──────────────────────────────────────────────────────────────
@@ -151,10 +297,26 @@ export function ProcessingBanner() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+
+  // Track previous activeCount to detect the transition to 0 (all done)
+  const prevActiveCountRef = useRef(activeCount);
+  const prevQueueLenRef = useRef(queue.length);
+
+  useEffect(() => {
+    // Show toast when the last active item finishes and we had items in flight
+    const justFinished =
+      prevActiveCountRef.current > 0 &&
+      activeCount === 0 &&
+      completedCount > 0 &&
+      queue.length > 0;
+    if (justFinished) setShowToast(true);
+    prevActiveCountRef.current = activeCount;
+    prevQueueLenRef.current = queue.length;
+  }, [activeCount, completedCount, queue.length]);
 
   // Animated height for expand/collapse
   const expandAnim = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.spring(expandAnim, {
       toValue: expanded ? 1 : 0,
@@ -164,15 +326,19 @@ export function ProcessingBanner() {
     }).start();
   }, [expanded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-collapse when queue goes empty
+  // Auto-collapse when queue empties
   useEffect(() => {
     if (queue.length === 0) setExpanded(false);
   }, [queue.length]);
 
-  // Don't render when queue is empty and nothing to show
-  if (queue.length === 0) return null;
+  if (queue.length === 0 && !showToast) return null;
 
-  const maxExpandedHeight = Math.min(queue.length * 56 + 16, 280);
+  const overallPct = calcOverallProgress(queue);
+  const stepLabel = currentStepLabel(queue);
+  const queuedCount = queue.filter((e) => e.status === 'queued').length;
+  const processingCount = queue.filter((e) => e.status === 'processing').length;
+
+  const maxExpandedHeight = Math.min(queue.length * 68 + 52, 320);
   const expandedHeight = expandAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, maxExpandedHeight],
@@ -207,56 +373,93 @@ export function ProcessingBanner() {
       ]}
       pointerEvents="box-none"
     >
+      {/* Completion toast — floats above the pill */}
+      {showToast && <CompletionToast onDone={() => setShowToast(false)} />}
+
       {/* Expanded entry list */}
-      <Animated.View style={{ height: expandedHeight, overflow: 'hidden' }}>
-        <ScrollView
-          style={{ flex: 1 }}
-          scrollEnabled={expanded}
-          showsVerticalScrollIndicator={false}
-        >
-          {queue.map((entry) => (
-            <QueueRow key={entry.itemId} entry={entry} />
-          ))}
-        </ScrollView>
-      </Animated.View>
+      {queue.length > 0 && (
+        <Animated.View style={{ height: expandedHeight, overflow: 'hidden' }}>
+          {/* Summary stats row */}
+          <View style={[bannerStyles.statsRow, { borderBottomColor: colors.border }]}>
+            <Text style={[bannerStyles.statItem, { color: colors.textMuted }]}>
+              <Text style={{ fontWeight: '700', color: paper.colors.primary }}>{queuedCount}</Text> Queued
+            </Text>
+            <Text style={[bannerStyles.statItem, { color: colors.textMuted }]}>
+              <Text style={{ fontWeight: '700', color: paper.colors.secondary }}>{processingCount}</Text> Processing
+            </Text>
+            <Text style={[bannerStyles.statItem, { color: colors.textMuted }]}>
+              <Text style={{ fontWeight: '700', color: colors.success }}>{completedCount}</Text> Done
+            </Text>
+          </View>
+          {/* Per-item rows */}
+          <ScrollView
+            style={{ flex: 1 }}
+            scrollEnabled={expanded}
+            showsVerticalScrollIndicator={false}
+          >
+            {queue.map((entry) => (
+              <QueueRow key={entry.itemId} entry={entry} />
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
 
       {/* Collapsed pill bar */}
-      <View style={bannerStyles.pillBar}>
-        <TouchableOpacity
-          onPress={() => setExpanded((v) => !v)}
-          style={[bannerStyles.pill, { backgroundColor: pillColor + '18', borderColor: pillColor + '44' }]}
-          accessibilityRole="button"
-          accessibilityLabel={pillLabel}
-        >
-          {activeCount > 0 ? (
-            <PaperActivityIndicator size={12} color={pillColor} />
-          ) : (
+      {queue.length > 0 && (
+        <View style={bannerStyles.pillBar}>
+          <TouchableOpacity
+            onPress={() => setExpanded((v) => !v)}
+            style={[bannerStyles.pill, { backgroundColor: pillColor + '18', borderColor: pillColor + '44' }]}
+            accessibilityRole="button"
+            accessibilityLabel={pillLabel}
+          >
+            {/* Left: spinner or icon */}
+            {activeCount > 0 ? (
+              <PaperActivityIndicator size={12} color={pillColor} />
+            ) : (
+              <Ionicons
+                name={failedCount > 0 ? 'alert-circle' : 'checkmark-circle'}
+                size={14}
+                color={pillColor}
+              />
+            )}
+
+            {/* Label + step */}
+            <View style={bannerStyles.pillTextBlock}>
+              <Text style={[bannerStyles.pillLabel, { color: pillColor }]} numberOfLines={1}>
+                {pillLabel}
+                {stepLabel && activeCount > 0 ? ` · ${stepLabel}…` : ''}
+              </Text>
+            </View>
+
+            {/* Progress bar + pct (only while active) */}
+            {activeCount > 0 && (
+              <View style={bannerStyles.progressBlock}>
+                <ProgressBar pct={overallPct} color={pillColor} />
+                <Text style={[bannerStyles.pctText, { color: pillColor }]}>{overallPct}%</Text>
+              </View>
+            )}
+
             <Ionicons
-              name={failedCount > 0 ? 'alert-circle' : 'checkmark-circle'}
-              size={14}
+              name={expanded ? 'chevron-down' : 'chevron-up'}
+              size={12}
               color={pillColor}
             />
-          )}
-          <Text style={[bannerStyles.pillLabel, { color: pillColor }]}>{pillLabel}</Text>
-          <Ionicons
-            name={expanded ? 'chevron-down' : 'chevron-up'}
-            size={12}
-            color={pillColor}
-          />
-        </TouchableOpacity>
-
-        {/* Dismiss button — only shown when all done */}
-        {allDone && (
-          <TouchableOpacity
-            onPress={clearFinished}
-            style={bannerStyles.dismissBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss queue"
-          >
-            <Ionicons name="close" size={16} color={colors.textMuted} />
           </TouchableOpacity>
-        )}
-      </View>
+
+          {/* Dismiss — only when all done */}
+          {allDone && (
+            <TouchableOpacity
+              onPress={clearFinished}
+              style={bannerStyles.dismissBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss queue"
+            >
+              <Ionicons name="close" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -264,6 +467,16 @@ export function ProcessingBanner() {
 const bannerStyles = StyleSheet.create({
   container: {
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  statItem: {
+    fontSize: 12,
   },
   pillBar: {
     flexDirection: 'row',
@@ -282,10 +495,25 @@ const bannerStyles = StyleSheet.create({
     borderWidth: 1,
     flex: 1,
   },
+  pillTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   pillLabel: {
     fontSize: 13,
     fontWeight: '600',
-    flex: 1,
+  },
+  progressBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    width: 80,
+  },
+  pctText: {
+    fontSize: 11,
+    fontWeight: '700',
+    minWidth: 30,
+    textAlign: 'right',
   },
   dismissBtn: {
     padding: 6,
