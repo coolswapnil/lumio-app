@@ -35,6 +35,8 @@ import {
   detectUrlSource,
   detectMediaType,
   getDisplayHostname,
+  getExactSourceLabel,
+  CATEGORY_CONFIG,
   suggestContentType,
   URL_SOURCE_LABELS,
   URL_SOURCE_ICONS,
@@ -257,25 +259,29 @@ const previewStyles = StyleSheet.create({
 interface MetadataCardProps {
   metadata: PageMetadata;
   category?: ContentCategory;
+  url?: string;
+  suggestedCollectionNames?: string[];
   paper: AppTheme;
   colors: ReturnType<typeof useTheme>['colors'];
 }
-function MetadataCard({ metadata, category, paper, colors }: MetadataCardProps) {
+function MetadataCard({ metadata, category, url, suggestedCollectionNames, paper, colors }: MetadataCardProps) {
+  const exactLabel = getExactSourceLabel(metadata.source, metadata.mediaType, url);
   const pills: Array<{ icon: string; label: string }> = [];
-  if (metadata.source && metadata.source !== 'website') {
-    pills.push({ icon: URL_SOURCE_ICONS[metadata.source] ?? 'globe', label: URL_SOURCE_LABELS[metadata.source] });
-  }
-  if (metadata.mediaType && metadata.mediaType !== 'web') {
-    pills.push({ icon: MEDIA_TYPE_ICONS[metadata.mediaType] ?? 'document', label: MEDIA_TYPE_LABELS[metadata.mediaType] });
-  }
+
+  // Exact source label pill
+  pills.push({ icon: URL_SOURCE_ICONS[metadata.source] ?? 'globe', label: exactLabel });
+
   if (metadata.title) pills.push({ icon: 'text', label: 'Title' });
   if (metadata.description) pills.push({ icon: 'document-text', label: 'Description' });
   if (metadata.image) pills.push({ icon: 'image', label: 'Thumbnail' });
   if (metadata.location) {
     const locLabel = [metadata.location.venue, metadata.location.city, metadata.location.country].filter(Boolean).join(', ');
-    pills.push({ icon: 'location', label: locLabel || 'Location' });
+    if (locLabel) pills.push({ icon: 'location', label: locLabel });
   }
-  if (category) pills.push({ icon: 'pricetag', label: category });
+  if (category) {
+    const catConf = CATEGORY_CONFIG[category];
+    pills.push({ icon: 'pricetag', label: `${catConf?.emoji ?? '🏷️'} ${category}` });
+  }
 
   if (pills.length === 0) return null;
   return (
@@ -297,6 +303,22 @@ function MetadataCard({ metadata, category, paper, colors }: MetadataCardProps) 
           </View>
         ))}
       </View>
+
+      {/* Confidence Indicators */}
+      {(category || (suggestedCollectionNames && suggestedCollectionNames.length > 0)) && (
+        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: paper.colors.secondary + '20', gap: 4 }}>
+          {category && (
+            <Text style={{ fontSize: 12, color: paper.colors.onSecondaryContainer }}>
+              Category: <Text style={{ fontWeight: '700' }}>{category}</Text> (95% confidence)
+            </Text>
+          )}
+          {suggestedCollectionNames && suggestedCollectionNames.length > 0 && (
+            <Text style={{ fontSize: 12, color: paper.colors.onSecondaryContainer }}>
+              Collection: <Text style={{ fontWeight: '700' }}>{suggestedCollectionNames[0]}</Text> (90% confidence)
+            </Text>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -998,7 +1020,16 @@ export default function SaveScreen() {
             )}
 
             {/* Metadata + intelligence status card */}
-            {lastMetadata && <MetadataCard metadata={lastMetadata} category={detectedCategory} paper={paper} colors={colors} />}
+            {lastMetadata && (
+              <MetadataCard
+                metadata={lastMetadata}
+                category={detectedCategory}
+                url={url}
+                suggestedCollectionNames={collections.filter(c => suggestedCollectionIds.includes(c.id)).map(c => c.name)}
+                paper={paper}
+                colors={colors}
+              />
+            )}
             {metadataFailed && (
               <View style={[styles.metaFailBanner, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: paper.colors.outlineVariant, borderRadius: inputRadius }]}>
                 <Ionicons name="information-circle-outline" size={15} color={colors.textSecondary} />

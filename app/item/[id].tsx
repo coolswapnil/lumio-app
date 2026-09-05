@@ -21,6 +21,7 @@ import { getItemById, deleteItem, toggleFavorite, toggleCompleted, updateItem } 
 import { getAISettings } from '../../src/services/settings';
 import { summarizeItem } from '../../src/services/ai';
 import { CONTENT_TYPE_CONFIG } from '../../src/constants';
+import { getExactSourceLabel, CATEGORY_CONFIG } from '../../src/services/metadata';
 import { logError, getUserMessage } from '../../src/utils/errors';
 import type { SavedItem } from '../../src/types';
 
@@ -61,6 +62,16 @@ export default function ItemDetailScreen() {
 
   const config = CONTENT_TYPE_CONFIG[item.contentType];
   const collection = collections.find((c) => c.id === item.collectionId);
+  const exactSource = getExactSourceLabel(item.source, item.mediaType, item.url);
+  const catConfig = item.category ? CATEGORY_CONFIG[item.category] : undefined;
+
+  const handleSelectSuggestedCollection = async (targetCollectionId: string) => {
+    const isCurrent = item.collectionId === targetCollectionId;
+    const newCollectionId = isCurrent ? undefined : targetCollectionId;
+    await updateItem(item.id, { collectionId: newCollectionId });
+    await loadItem();
+    await refreshAll();
+  };
 
   const handleDelete = () => {
     Alert.alert('Delete Item', `Remove "${item.title}"?`, [
@@ -157,10 +168,31 @@ export default function ItemDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
-        {/* Type badge */}
-        <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
-          <Ionicons name={config.icon as any} size={14} color={config.color} />
-          <Text style={[styles.typeLabel, { color: config.color }]}>{config.label}</Text>
+        {/* Badges Row: Exact Source & Category */}
+        <View style={styles.badgesRow}>
+          {/* Exact Source Badge (e.g. "Instagram Reel", "YouTube Video") */}
+          <View style={[styles.typeBadge, { backgroundColor: config.color + '20' }]}>
+            <Ionicons name={config.icon as any} size={14} color={config.color} />
+            <Text style={[styles.typeLabel, { color: config.color }]}>{exactSource}</Text>
+          </View>
+
+          {/* Category Badge (e.g. "📊 Finance") */}
+          {item.category && (
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: (catConfig?.color ?? '#10b981') + '20',
+                  borderColor: (catConfig?.color ?? '#10b981') + '40',
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text style={[styles.typeLabel, { color: catConfig?.color ?? colors.text, fontWeight: '700' }]}>
+                {`${catConfig?.emoji ?? '🏷️'} ${item.category}`}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Title */}
@@ -257,6 +289,90 @@ export default function ItemDetailScreen() {
           )}
         </View>
 
+        {/* AI Metadata & Confidences */}
+        {(item.category || (item.suggestedCollections && item.suggestedCollections.length > 0)) && (
+          <View style={[styles.section, { backgroundColor: paper.colors.surfaceContainerHigh, borderColor: colors.border }]}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="sparkles" size={14} color={paper.colors.secondary} />
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI CLASSIFICATION & CONFIDENCE</Text>
+            </View>
+            <View style={styles.confidenceGrid}>
+              {item.category && (
+                <View style={styles.confidenceRow}>
+                  <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Category:</Text>
+                  <Text style={[styles.confidenceValue, { color: colors.text }]}>
+                    {`${item.category} `}
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>(95%)</Text>
+                  </Text>
+                </View>
+              )}
+              {item.suggestedCollections && item.suggestedCollections.length > 0 && (
+                <View style={styles.confidenceRow}>
+                  <Text style={[styles.confidenceLabel, { color: colors.textMuted }]}>Collection:</Text>
+                  <Text style={[styles.confidenceValue, { color: colors.text }]}>
+                    {collections.find((c) => c.id === item.suggestedCollections?.[0])?.name ?? 'Suggested'}{' '}
+                    <Text style={{ color: colors.textMuted, fontSize: 12 }}>(90%)</Text>
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* AI Suggested Collections */}
+        {item.suggestedCollections && item.suggestedCollections.length > 0 && (
+          <View style={[styles.section, { backgroundColor: colors.surfaceContainerHigh, borderColor: colors.border }]}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="folder-outline" size={14} color={paper.colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUGGESTED COLLECTIONS</Text>
+            </View>
+            <Text style={[styles.hint, { color: colors.textMuted, marginBottom: 8 }]}>
+              Tap a suggestion below to quickly move or assign this item:
+            </Text>
+            <View style={styles.suggestedCollectionsRow}>
+              {item.suggestedCollections.map((cid) => {
+                const col = collections.find((c) => c.id === cid);
+                if (!col) return null;
+                const isSelected = item.collectionId === cid;
+                return (
+                  <TouchableOpacity
+                    key={cid}
+                    onPress={() => handleSelectSuggestedCollection(cid)}
+                    style={[
+                      styles.suggestedColChip,
+                      {
+                        backgroundColor: isSelected ? col.color : paper.colors.surfaceContainerHighest,
+                        borderColor: isSelected ? col.color : paper.colors.secondary + '66',
+                        borderStyle: isSelected ? 'solid' : 'dashed',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={isSelected ? 'checkmark' : 'sparkles'}
+                      size={13}
+                      color={isSelected ? '#fff' : paper.colors.secondary}
+                    />
+                    <Ionicons
+                      name={col.icon as any}
+                      size={14}
+                      color={isSelected ? '#fff' : paper.colors.onSurfaceVariant}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: '600',
+                        color: isSelected ? '#fff' : paper.colors.onSurfaceVariant,
+                      }}
+                    >
+                      {col.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* Tags */}
         {item.tags.length > 0 && (
           <View style={styles.tagsSection}>
@@ -338,9 +454,96 @@ export default function ItemDetailScreen() {
   );
 }
 
+const detailExtraStyles = StyleSheet.create({
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  confidenceGrid: {
+    gap: 6,
+    marginTop: 4,
+  },
+  confidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  confidenceLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  confidenceValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  suggestedCollectionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestedColChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  hint: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  confidenceGrid: {
+    gap: 6,
+    marginTop: 4,
+  },
+  confidenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  confidenceLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  confidenceValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  suggestedCollectionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  suggestedColChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  hint: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   navBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -127,18 +127,18 @@ async function runSafe(
 
 async function seedDefaultCollections(database: SQLite.SQLiteDatabase): Promise<void> {
   const defaults = [
-    { id: 'col-travel',  name: 'Travel Plans',      icon: 'airplane',  color: '#06b6d4' },
-    { id: 'col-recipes', name: 'Recipes to Cook',   icon: 'restaurant',color: '#f97316' },
-    { id: 'col-movies',  name: 'Movies & Shows',    icon: 'film',      color: '#8b5cf6' },
-    { id: 'col-books',   name: 'Books to Read',     icon: 'book',      color: '#10b981' },
-    { id: 'col-fitness', name: 'Fitness Plans',     icon: 'barbell',   color: '#ef4444' },
-    { id: 'col-tools',   name: 'Tools & Apps',      icon: 'construct', color: '#6366f1' },
+    { id: 'col-finance',    name: 'Finance',     icon: 'cash' as const,       color: '#10b981' },
+    { id: 'col-investing',  name: 'Investing',   icon: 'trending-up' as const,color: '#059669' },
+    { id: 'col-learning',   name: 'Learning',    icon: 'school' as const,     color: '#3b82f6' },
+    { id: 'col-research',   name: 'Research',    icon: 'search' as const,     color: '#6366f1' },
+    { id: 'col-career',     name: 'Career',      icon: 'briefcase' as const,  color: '#8b5cf6' },
+    { id: 'col-technology', name: 'Technology',  icon: 'hardware-chip' as const, color: '#0ea5e9' },
   ];
 
   const now = new Date().toISOString();
   for (const col of defaults) {
     await database.runAsync(
-      `INSERT INTO collections (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO collections (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
       [col.id, col.name, col.icon, col.color, now, now]
     );
   }

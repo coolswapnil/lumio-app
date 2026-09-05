@@ -1,4 +1,4 @@
-import { detectUrlSource, fetchPageMetadata, formatMetadataForAI } from '../../src/services/metadata';
+import { detectUrlSource, fetchPageMetadata, formatMetadataForAI, getExactSourceLabel } from '../../src/services/metadata';
 
 global.fetch = jest.fn();
 
@@ -41,11 +41,21 @@ describe('metadata service', () => {
 
     expect(metadata).toEqual({
       source: 'website',
+      mediaType: 'web',
+      location: undefined,
       title: 'OpenGraph title',
       description: 'OpenGraph description',
       image: 'https://example.com/image.jpg',
     });
     expect(formatMetadataForAI(metadata!)).toContain('OpenGraph description');
+  });
+
+  it('resolves exact source labels properly', () => {
+    expect(getExactSourceLabel('instagram', 'video', 'https://instagram.com/reel/123')).toBe('Instagram Reel');
+    expect(getExactSourceLabel('instagram', 'social_post', 'https://instagram.com/p/123')).toBe('Instagram Post');
+    expect(getExactSourceLabel('youtube', 'video', 'https://youtube.com/watch?v=123')).toBe('YouTube Video');
+    expect(getExactSourceLabel('youtube', 'video', 'https://youtube.com/shorts/123')).toBe('YouTube Short');
+    expect(getExactSourceLabel('medium', 'article', 'https://medium.com/@user/story')).toBe('Medium Article');
   });
 
   it('returns null when page metadata cannot be extracted', async () => {

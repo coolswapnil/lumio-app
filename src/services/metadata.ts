@@ -63,6 +63,99 @@ export const MEDIA_TYPE_ICONS: Record<MediaType, string> = {
   web: 'globe',
 };
 
+/** Category to icon/emoji and color mapping */
+export const CATEGORY_CONFIG: Record<
+  string,
+  { emoji: string; icon: string; color: string }
+> = {
+  Finance:       { emoji: '📊', icon: 'cash-outline', color: '#10b981' },
+  Technology:    { emoji: '💻', icon: 'hardware-chip-outline', color: '#0ea5e9' },
+  Health:        { emoji: '🌿', icon: 'fitness-outline', color: '#14b8a6' },
+  Travel:        { emoji: '✈️', icon: 'airplane-outline', color: '#06b6d4' },
+  Food:          { emoji: '🍳', icon: 'restaurant-outline', color: '#f97316' },
+  Career:        { emoji: '💼', icon: 'briefcase-outline', color: '#8b5cf6' },
+  Learning:      { emoji: '📚', icon: 'school-outline', color: '#3b82f6' },
+  Entertainment: { emoji: '🎬', icon: 'film-outline', color: '#ec4899' },
+  Science:       { emoji: '🔬', icon: 'flask-outline', color: '#6366f1' },
+  Sports:        { emoji: '⚽', icon: 'football-outline', color: '#ef4444' },
+  Politics:      { emoji: '🏛️', icon: 'globe-outline', color: '#f59e0b' },
+  Design:        { emoji: '🎨', icon: 'color-palette-outline', color: '#a855f7' },
+  Business:      { emoji: '📈', icon: 'trending-up-outline', color: '#059669' },
+  Lifestyle:     { emoji: '☕', icon: 'cafe-outline', color: '#f59e0b' },
+  Other:         { emoji: '📌', icon: 'bookmark-outline', color: '#64748b' },
+};
+
+/**
+ * Derives an exact, descriptive source label (e.g., "Instagram Reel", "YouTube Video", "Medium Article").
+ */
+export function getExactSourceLabel(source?: UrlSource, mediaType?: MediaType, url?: string): string {
+  if (!source && url) {
+    source = detectUrlSource(url);
+  }
+  if (!source || source === 'website') {
+    if (url) {
+      const host = getDisplayHostname(url);
+      if (host) return host;
+    }
+    return 'Web Page';
+  }
+
+  const pathname = (() => {
+    if (!url) return '';
+    try { return new URL(url).pathname.toLowerCase(); } catch { return ''; }
+  })();
+
+  if (source === 'instagram') {
+    if (pathname.includes('/reel/') || pathname.includes('/reels/') || mediaType === 'video') {
+      return 'Instagram Reel';
+    }
+    return 'Instagram Post';
+  }
+
+  if (source === 'youtube') {
+    if (pathname.includes('/shorts/') || pathname.includes('/short/')) {
+      return 'YouTube Short';
+    }
+    return 'YouTube Video';
+  }
+
+  if (source === 'medium') {
+    return 'Medium Article';
+  }
+
+  if (source === 'twitter') {
+    return 'X / Twitter Post';
+  }
+
+  if (source === 'linkedin') {
+    if (pathname.includes('/pulse/') || pathname.includes('/article/')) {
+      return 'LinkedIn Article';
+    }
+    return 'LinkedIn Post';
+  }
+
+  if (source === 'spotify') {
+    if (pathname.includes('/episode/') || pathname.includes('/show/')) {
+      return 'Spotify Podcast';
+    }
+    return 'Spotify Track';
+  }
+
+  if (source === 'amazon') {
+    return 'Amazon Product';
+  }
+
+  if (source === 'news') {
+    return 'News Article';
+  }
+
+  if (source === 'blog') {
+    return 'Blog Post';
+  }
+
+  return URL_SOURCE_LABELS[source] || 'Web Page';
+}
+
 /**
  * Returns the display hostname for a URL (e.g. "instagram.com").
  * Falls back to the full URL if parsing fails.

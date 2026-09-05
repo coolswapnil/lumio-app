@@ -15,6 +15,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import type { SavedItem } from '../types';
 import { CONTENT_TYPE_CONFIG } from '../constants';
 import { toggleFavorite, toggleCompleted, deleteItem } from '../database/items';
+import { getExactSourceLabel, CATEGORY_CONFIG } from '../services/metadata';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAppTheme } from '../constants/colors';
@@ -131,18 +132,43 @@ function ItemCardBase({ item, compact = false }: ItemCardProps) {
           accessibilityLabel={item.title}
           accessibilityRole="button"
         >
-          {/* Type badge + actions row */}
+          {/* Badges + actions row */}
           <View style={styles.topRow}>
-            <Chip
-              compact
-              icon={() => (
-                <Ionicons name={config.icon} size={12} color={config.color} />
-              )}
-              style={[styles.typeBadge, { backgroundColor: config.color + '22' }]}
-              textStyle={{ color: config.color, fontSize: 11, fontWeight: '600' }}
-            >
-              {config.label}
-            </Chip>
+            <View style={styles.badgesContainer}>
+              {/* Exact Source Badge (e.g. "Instagram Reel", "YouTube Video") */}
+              <Chip
+                compact
+                icon={() => (
+                  <Ionicons name={config.icon} size={12} color={config.color} />
+                )}
+                style={[styles.typeBadge, { backgroundColor: config.color + '22' }]}
+                textStyle={{ color: config.color, fontSize: 11, fontWeight: '600' }}
+              >
+                {getExactSourceLabel(item.source, item.mediaType, item.url)}
+              </Chip>
+
+              {/* Category Badge (e.g. "📊 Finance") */}
+              {item.category ? (
+                <Chip
+                  compact
+                  style={[
+                    styles.typeBadge,
+                    {
+                      backgroundColor: (CATEGORY_CONFIG[item.category]?.color ?? '#6366f1') + '1A',
+                      borderColor: (CATEGORY_CONFIG[item.category]?.color ?? '#6366f1') + '40',
+                      borderWidth: 1,
+                    },
+                  ]}
+                  textStyle={{
+                    color: CATEGORY_CONFIG[item.category]?.color ?? paper.colors.primary,
+                    fontSize: 11,
+                    fontWeight: '600',
+                  }}
+                >
+                  {`${CATEGORY_CONFIG[item.category]?.emoji ?? '🏷️'} ${item.category}`}
+                </Chip>
+              ) : null}
+            </View>
 
             <View style={styles.actions}>
               <IconButton
@@ -288,6 +314,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  badgesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+  },
   typeBadge: {
     borderRadius: 6,
     height: 26,
@@ -330,6 +363,9 @@ const ItemCard = React.memo(ItemCardBase, (prev, next) =>
   prev.compact === next.compact &&
   prev.item.id === next.item.id &&
   prev.item.title === next.item.title &&
+  prev.item.category === next.item.category &&
+  prev.item.source === next.item.source &&
+  prev.item.mediaType === next.item.mediaType &&
   prev.item.isCompleted === next.item.isCompleted &&
   prev.item.isFavorite === next.item.isFavorite &&
   prev.item.aiSummary === next.item.aiSummary &&
