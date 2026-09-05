@@ -25,6 +25,7 @@ import { logError, getUserMessage } from '../src/utils/errors';
 import { useTheme } from '../src/context/ThemeContext';
 import { useAppTheme, type AppTheme } from '../src/constants/colors';
 import { useData } from '../src/context/DataContext';
+import { useCaptureQueue } from '../src/context/CaptureQueueContext';
 import { saveItem } from '../src/database/items';
 import { getAISettings } from '../src/services/settings';
 import { diagLog } from '../src/services/diagnostics';
@@ -420,53 +421,42 @@ interface SaveFABProps {
 function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
   // ── Entrance animations ───────────────────────────────────────────────────
   //
-  // Compact:    simple scale spring (standard M3 FAB appear)
-  // Expressive: scale spring + label opacity fade-in + pill width expansion
-  //             reproduces the M3 Expressive "container morphs open" motion
+  // M3 Extended FAB: scale spring + label opacity fade-in + pill width expansion
+  // ("container morphs open" motion — always applied).
   const scale = useRef(new Animated.Value(0)).current;
-
-  // Expressive-only: label fades in after the pill has mostly expanded
-  const labelOpacity = useRef(new Animated.Value(isExpressive ? 0 : 1)).current;
-  // Expressive-only: pill padding animates from icon-only width → full label width
-  const padAnim = useRef(new Animated.Value(isExpressive ? 0 : 1)).current;
+  // Label fades in after the pill has mostly expanded
+  const labelOpacity = useRef(new Animated.Value(0)).current;
+  // Pill padding animates from icon-only width → full label width
+  const padAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (isExpressive) {
-      // Phase 1: scale in the pill (quick pop)
-      Animated.spring(scale, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: true,
-      }).start();
-      // Phase 2 (staggered): expand padding then fade label
-      Animated.sequence([
-        Animated.delay(80),
-        Animated.parallel([
-          Animated.spring(padAnim, {
+    // Phase 1: scale in the pill (quick pop)
+    Animated.spring(scale, {
+      toValue: 1,
+      tension: 100,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+    // Phase 2 (staggered): expand padding then fade label
+    Animated.sequence([
+      Animated.delay(80),
+      Animated.parallel([
+        Animated.spring(padAnim, {
+          toValue: 1,
+          tension: 70,
+          friction: 10,
+          useNativeDriver: false, // padding is not a transform — must be false
+        }),
+        Animated.sequence([
+          Animated.delay(60),
+          Animated.timing(labelOpacity, {
             toValue: 1,
-            tension: 70,
-            friction: 10,
-            useNativeDriver: false, // padding is not a transform — must be false
+            duration: 160,
+            useNativeDriver: true,
           }),
-          Animated.sequence([
-            Animated.delay(60),
-            Animated.timing(labelOpacity, {
-              toValue: 1,
-              duration: 160,
-              useNativeDriver: true,
-            }),
-          ]),
         ]),
-      ]).start();
-    } else {
-      Animated.spring(scale, {
-        toValue: 1,
-        tension: 80,
-        friction: 7,
-        useNativeDriver: true,
-      }).start();
-    }
+      ]),
+    ]).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Press spring: squeeze down then bounce back
@@ -489,7 +479,6 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
     <Animated.View
       style={[
         fabStyles.wrap,
-        isExpressive ? fabStyles.wrapCentered : fabStyles.wrapRight,
         { transform: [{ scale }] },
       ]}
     >
@@ -503,12 +492,10 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
         <Animated.View
           style={[
             fabStyles.fab,
-            isExpressive ? fabStyles.fabExpressive : fabStyles.fabCompact,
             {
               backgroundColor: fabBg,
               shadowColor: paper.colors.shadow,
-              // For expressive: animate paddingHorizontal as the pill morphs open
-              paddingHorizontal: isExpressive ? animatedPadH : 24,
+              paddingHorizontal: animatedPadH,
               transform: [{ scale: pressScale }],
             },
           ]}
@@ -516,7 +503,7 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
           {loading ? (
             <View style={[fabStyles.loadingDot, { backgroundColor: fabFg + 'B3' }]} />
           ) : (
-            <Ionicons name="checkmark" size={isExpressive ? 24 : 22} color={fabFg} />
+            <Ionicons name="checkmark" size={24} color={fabFg} />
           )}
           <Animated.Text
             style={[
@@ -534,27 +521,20 @@ function SaveFAB({ onPress, loading, isExpressive, paper }: SaveFABProps) {
 
 const fabStyles = StyleSheet.create({
   // ── Wrapper ───────────────────────────────────
-  // The parent container handles absolute positioning and inset offset;
-  // the wrapper only controls horizontal alignment of the pill itself.
+  // Always centred — M3 extended FAB sits in the middle of the screen width.
   wrap: {
     paddingHorizontal: 16,
     paddingBottom: 16,
-  },
-  // Expressive: center the pill across the full container width
-  wrapCentered: {
     alignItems: 'center',
-  },
-  // Compact: pin the pill to the right edge
-  wrapRight: {
-    alignItems: 'flex-end',
   },
 
   // ── Pill ──────────────────────────────────────
-  // paddingHorizontal is intentionally omitted here — set inline (animated for
-  // expressive, static 24 for compact) so the pill morphs open on entrance.
+  // paddingHorizontal is set inline via animation so the pill morphs open on
+  // entrance. minWidth ensures the pill is never icon-only at rest.
   fab: {
     height: 56,
     borderRadius: 28,
+    minWidth: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -565,13 +545,6 @@ const fabStyles = StyleSheet.create({
     elevation: 6,
     overflow: 'hidden',
   },
-  // Expressive: enforce minimum width so the pill never collapses to icon-only
-  // at rest; the animated paddingHorizontal handles the morph.
-  fabExpressive: {
-    minWidth: 56,
-  },
-  // Compact: no extra constraints — width driven by content + padding.
-  fabCompact: {},
 
   // ── Label ─────────────────────────────────────
   fabLabel: {
@@ -619,6 +592,7 @@ export default function SaveScreen() {
   const { colors, layout } = useTheme();
   const paper = useAppTheme();
   const { collections, refreshAll } = useData();
+  const { enqueue } = useCaptureQueue();
   const router = useRouter();
 
   const [title, setTitle] = useState('');
@@ -645,13 +619,21 @@ export default function SaveScreen() {
   const [suggestedCollectionIds, setSuggestedCollectionIds] = useState<string[]>([]);
   const [thumbnail, setThumbnail] = useState<string | undefined>();
 
-  // Suggest content type + detect source/media when URL changes
+  // Debounce timer ref for auto-enrichment
+  const autoEnrichTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track URL that was last enriched to avoid duplicate calls on re-render
+  const lastEnrichedUrl = useRef<string>('');
+
+  // Suggest content type + detect source/media when URL changes, then
+  // schedule auto-enrichment after a short debounce.
   useEffect(() => {
     if (!url.trim()) {
       setLastMetadata(null);
       setMetadataFailed(false);
       setDetectedSource(undefined);
       setDetectedMediaType(undefined);
+      lastEnrichedUrl.current = '';
+      if (autoEnrichTimer.current) clearTimeout(autoEnrichTimer.current);
       return;
     }
     try {
@@ -664,7 +646,21 @@ export default function SaveScreen() {
     } catch {
       // invalid URL yet — no-op
     }
-  }, [url]);
+
+    // Schedule auto-enrichment 800 ms after the user stops typing
+    if (autoEnrichTimer.current) clearTimeout(autoEnrichTimer.current);
+    autoEnrichTimer.current = setTimeout(() => {
+      const trimmed = url.trim();
+      if (trimmed && trimmed !== lastEnrichedUrl.current && !aiLoading) {
+        lastEnrichedUrl.current = trimmed;
+        handleAISummarize();
+      }
+    }, 800);
+
+    return () => {
+      if (autoEnrichTimer.current) clearTimeout(autoEnrichTimer.current);
+    };
+  }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Silently read clipboard and surface banner if a URL is found.
   // No blocking dialog — user stays in control via the inline card.
@@ -676,7 +672,12 @@ export default function SaveScreen() {
   }, []);
 
   const handleClipboardPaste = () => {
-    if (clipboardUrl) setUrl(clipboardUrl);
+    if (clipboardUrl) {
+      setUrl(clipboardUrl);
+      // The URL change will trigger the auto-enrich debounce; clear the
+      // lastEnrichedUrl guard so the new URL is always picked up.
+      lastEnrichedUrl.current = '';
+    }
     setClipboardUrl(null);
   };
 
@@ -852,45 +853,53 @@ export default function SaveScreen() {
 
   const handleSave = async () => {
     const cleanTitle = sanitizeText(title, LIMITS.TITLE);
-    if (!cleanTitle) {
-      Alert.alert('Title required', 'Please enter a title for this item.');
-      return;
-    }
     const cleanUrl = url.trim() ? sanitizeUrl(url) : undefined;
     if (url.trim() && !cleanUrl) {
       Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
       return;
     }
-    diagLog.addEntry('SAVE_STARTED', `save screen: title="${cleanTitle.slice(0, 80)}" url="${(cleanUrl ?? '').slice(0, 120)}" type=${contentType}`);
+
     setSaving(true);
     try {
-      const now = new Date().toISOString();
-      const item: SavedItem = {
-        id: generateId(),
-        title: cleanTitle,
-        description: sanitizeText(description, LIMITS.DESCRIPTION) || undefined,
-        url: cleanUrl,
-        imageUrl: thumbnail,
-        contentType,
-        collectionId,
-        tags: parseTags(tags),
-        notes: sanitizeText(notes, LIMITS.NOTES) || undefined,
-        address: sanitizeText(address, LIMITS.ADDRESS) || undefined,
-        latitude: coords?.lat,
-        longitude: coords?.lng,
-        isCompleted: false,
-        isFavorite: false,
-        source: detectedSource,
-        mediaType: detectedMediaType,
-        category: detectedCategory,
-        suggestedCollections: suggestedCollectionIds,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await saveItem(item);
-      await refreshAll();
-      diagLog.addEntry('SAVE_COMPLETED', `save screen: id=${item.id} title="${cleanTitle.slice(0, 80)}"`);
-      router.back();
+      if (cleanUrl) {
+        // ── URL path: enqueue for instant save + background enrichment ───
+        // The capture queue persists the item immediately and runs the full
+        // enrichment pipeline (metadata, AI summary, tags, category,
+        // collections, location) in the background.
+        diagLog.addEntry('SAVE_STARTED', `save screen: enqueueing url="${cleanUrl.slice(0, 120)}"`);
+        await enqueue(cleanUrl, { titleHint: cleanTitle ?? '' });
+        diagLog.addEntry('SAVE_COMPLETED', `save screen: enqueued url="${cleanUrl.slice(0, 120)}"`);
+        router.back();
+      } else {
+        // ── No-URL path: direct save (idea/note without a link) ──────────
+        const effectiveTitle = cleanTitle;
+        if (!effectiveTitle) {
+          Alert.alert('Title required', 'Please enter a title for this item.');
+          setSaving(false);
+          return;
+        }
+        const now = new Date().toISOString();
+        const item: SavedItem = {
+          id: generateId(),
+          title: effectiveTitle,
+          description: sanitizeText(description, LIMITS.DESCRIPTION) || undefined,
+          contentType,
+          collectionId,
+          tags: parseTags(tags),
+          notes: sanitizeText(notes, LIMITS.NOTES) || undefined,
+          address: sanitizeText(address, LIMITS.ADDRESS) || undefined,
+          latitude: coords?.lat,
+          longitude: coords?.lng,
+          isCompleted: false,
+          isFavorite: false,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await saveItem(item);
+        await refreshAll();
+        diagLog.addEntry('SAVE_COMPLETED', `save screen: direct-save id=${item.id} title="${effectiveTitle.slice(0, 80)}"`);
+        router.back();
+      }
     } catch (err) {
       logError(err, { screen: 'save', action: 'saveItem' });
       diagLog.addEntry('SAVE_FAILED', `save screen: ${err instanceof Error ? err.message : String(err)}`);
@@ -978,30 +987,26 @@ export default function SaveScreen() {
             {/* URL platform preview */}
             <UrlPreview url={url} colors={colors} paper={paper} />
 
-            {/* ── Analyze Content button ── */}
-            <TouchableOpacity
-              onPress={handleAISummarize}
-              disabled={aiLoading}
-              activeOpacity={0.8}
-              style={[
-                styles.aiBtn,
-                {
-                  borderColor: paper.colors.tertiary,
-                  backgroundColor: paper.colors.tertiaryContainer + '33',
-                  borderRadius: inputRadius,
-                  marginTop: layout.isExpressive ? 16 : 10,
-                },
-              ]}
-            >
-              {aiLoading ? (
+            {/* ── Auto-enrichment status indicator ── */}
+            {aiLoading && (
+              <View
+                style={[
+                  styles.aiBtn,
+                  {
+                    borderColor: paper.colors.tertiary,
+                    backgroundColor: paper.colors.tertiaryContainer + '33',
+                    borderRadius: inputRadius,
+                    marginTop: layout.isExpressive ? 16 : 10,
+                  },
+                ]}
+                pointerEvents="none"
+              >
                 <PaperActivityIndicator size="small" color={paper.colors.tertiary} />
-              ) : (
-                <Text style={{ fontSize: 16 }}>✨</Text>
-              )}
-              <Text style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600', fontSize: 14 }}>
-                {aiLoading ? 'Analyzing…' : 'Analyze Content'}
-              </Text>
-            </TouchableOpacity>
+                <Text style={{ color: paper.colors.onTertiaryContainer, fontWeight: '600', fontSize: 14 }}>
+                  Analyzing…
+                </Text>
+              </View>
+            )}
 
             {/* ── Inline AI error — replaces modal Alert ── */}
             {aiError != null && (

@@ -1,20 +1,27 @@
 /**
  * share.tsx — Android Share-sheet receiver screen
  *
- * When the user shares a URL, text, or file from another app into Lumio
- * (via Android's share sheet), this screen opens as a modal pre-filled
- * with the shared content, ready to save.
+ * When the user shares a URL from another app (Instagram, YouTube, X,
+ * LinkedIn, Safari/Chrome) Lumio receives it here via ACTION_SEND or
+ * a deep-link intent filter.
  *
- * How it works:
- *  • app.json registers an intent-filter for ACTION_SEND (text/plain, text/html)
- *    via the expo-router deep-link plugin.
- *  • The shared URL/text is passed as a query param: lumio://share?url=...&text=...
- *  • This screen reads those params, pre-populates the save form, and lets the
- *    user confirm + save in one tap.
+ * Behaviour (zero-tap capture):
+ *   1. Parse / resolve the shared URL immediately.
+ *   2. Enqueue the URL — this persists a skeleton item to SQLite at once.
+ *   3. Navigate back to the library tab immediately.
+ *   4. Background enrichment runs via the CaptureQueue service:
+ *        Source → Thumbnail → Metadata → AI Summary → Tags →
+ *        Category → Collections → Location
+ *   5. The ProcessingBanner in the root layout shows progress.
+ *
+ * A minimal "Saving…" splash is shown for the ~300 ms it takes to
+ * persist the skeleton, then the screen dismisses itself.
+ *
+ * The manual form (fallback) is still rendered when there is no URL —
+ * e.g. the user navigates to /share directly.
  */
-import React, { useState, useEffect } from 'react';
-import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,11 +33,14 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../src/context/ThemeContext';
 import { useAppTheme } from '../src/constants/colors';
 import { useData } from '../src/context/DataContext';
+import { useCaptureQueue } from '../src/context/CaptureQueueContext';
 import { saveItem } from '../src/database/items';
 import { getAISettings } from '../src/services/settings';
 import { summarizeItem } from '../src/services/ai';
@@ -61,7 +71,6 @@ function guessContentType(url: string, text: string): ContentType {
 function extractUrlFromText(text: string): string {
   const match = text.match(/https?:\/\/[^\s]+/);
   if (!match) return '';
-  // Trim trailing punctuation that was captured as part of the URL
   return match[0].replace(/[.)>]+$/, '');
 }
 
@@ -69,16 +78,23 @@ export default function ShareScreen() {
   const { colors } = useTheme();
   const paper = useAppTheme();
   const { collections, refreshAll } = useData();
+  const { enqueue } = useCaptureQueue();
   const router = useRouter();
   const params = useLocalSearchParams();
 
   // Sanitize all deep-link params before use.
-  // Note: after the native bridge in MainActivity, ACTION_SEND intents arrive
-  // here as lumio://share?url=<extracted-url>&text=<remaining-text>&title=<subject>
   const sharedUrl = sanitizeUrl(asString(params.url as string | string[] | undefined));
   const sharedText = sanitizeText(asString(params.text as string | string[] | undefined), LIMITS.DESCRIPTION);
   const sharedTitle = sanitizeText(asString(params.title as string | string[] | undefined), LIMITS.TITLE);
 
+  // ── Auto-capture state ────────────────────────────────────────────────────
+  // 'idle'     — no URL in params, show manual form
+  // 'capturing'— enqueue() in flight (skeleton DB write, ~100–300 ms)
+  // 'done'     — item saved, navigating away
+  const [autoState, setAutoState] = useState<'idle' | 'capturing' | 'done'>('idle');
+  const didAutoCapture = useRef(false);
+
+  // ── Manual form state (fallback when no URL in params) ───────────────────
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
@@ -88,97 +104,89 @@ export default function ShareScreen() {
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Pre-fill from share params.
-  // Covers three entry paths:
-  //   1. Deep-link: lumio://share?url=https://...  (browser share, manifest VIEW filter)
-  //   2. ACTION_SEND bridge: lumio://share?url=https://instagram.com/reels/...
-  //   3. Fallback: url param absent but text param contains a raw URL (e.g. Instagram posts)
+  // ── Auto-capture on mount ─────────────────────────────────────────────────
   useEffect(() => {
+    if (didAutoCapture.current) return;
+
     const rawText = sharedText ?? '';
 
     diagLog.addEntry('SHARE_INTENT_RECEIVED', `url="${(sharedUrl ?? '').slice(0, 120)}" text="${rawText.slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
-    diagLog.addEntry('SHARE_ACTION', 'ACTION_SEND or deep-link — received by share screen');
-    diagLog.addEntry('SHARE_MIME_TYPE', sharedUrl ? 'url-param (deep-link)' : rawText ? 'text/plain (ACTION_SEND bridge)' : 'unknown');
-    diagLog.addEntry('SHARE_TEXT', `rawText="${rawText.slice(0, 120)}"`);
 
-    // If the bridge didn't extract a URL (edge case), attempt JS-side extraction from text
+    // Resolve the URL
     let resolvedUrl = sharedUrl ?? '';
     if (!resolvedUrl && rawText) {
       if (rawText.startsWith('http')) {
         resolvedUrl = sanitizeUrl(rawText.trim()) ?? '';
       } else {
-        const extracted = extractUrlFromText(rawText);
-        resolvedUrl = sanitizeUrl(extracted) ?? '';
+        resolvedUrl = sanitizeUrl(extractUrlFromText(rawText)) ?? '';
       }
     }
 
     diagLog.addEntry('SHARE_URL_EXTRACTED', `resolvedUrl="${resolvedUrl.slice(0, 120)}"`);
 
-    const resolvedTitle = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
+    if (!resolvedUrl) {
+      // No URL — fall through to manual form
+      const resolvedTitle = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
+      setTitle(resolvedTitle);
+      setContentType(guessContentType('', rawText));
+      return;
+    }
 
-    diagLog.addEntry('SHARE_SCREEN_OPENED', `resolvedUrl="${resolvedUrl.slice(0, 120)}" resolvedTitle="${resolvedTitle.slice(0, 80)}"`);
+    // URL present — auto-capture immediately
+    didAutoCapture.current = true;
+    setAutoState('capturing');
+    const titleHint = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
 
-    setUrl(resolvedUrl);
-    setTitle(resolvedTitle);
-    const guessed = guessContentType(resolvedUrl, rawText);
-    setContentType(guessed);
+    enqueue(resolvedUrl, { titleHint })
+      .then(() => {
+        diagLog.addEntry('SAVE_COMPLETED', `share auto-capture: enqueued url="${resolvedUrl.slice(0, 80)}"`);
+        setAutoState('done');
+        // Navigate back to library — enrichment continues in background
+        router.replace('/(tabs)');
+      })
+      .catch((err) => {
+        logError(err, { screen: 'share', action: 'autoCapture' });
+        diagLog.addEntry('SAVE_FAILED', `share auto-capture: ${err instanceof Error ? err.message : String(err)}`);
+        // Fall back to manual form on error
+        setAutoState('idle');
+        setUrl(resolvedUrl);
+        setTitle(titleHint);
+        setContentType(guessContentType(resolvedUrl, rawText));
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    diagLog.addEntry('SHARE_FORM_POPULATED', `url="${resolvedUrl.slice(0, 120)}" title="${resolvedTitle.slice(0, 80)}" contentType=${guessed}`);
-    diagLog.addEntry('SHARE_INTENT_PARSED', `resolvedUrl="${resolvedUrl.slice(0, 120)}" resolvedTitle="${resolvedTitle.slice(0, 80)}" contentType=${guessed}`);
-  }, [sharedUrl, sharedText, sharedTitle]);
-
+  // ── Manual AI auto-fill (fallback form) ──────────────────────────────────
   const handleAISummarize = async () => {
     if (!title.trim() && !url.trim()) {
       Alert.alert('Add content first', 'Enter a title or URL before running AI auto-fill.');
       return;
     }
-    diagLog.addEntry('AI_REQUEST_STARTED', 'share screen: checking AI settings');
     const aiSettings = await getAISettings();
     if (!aiSettings) {
-      diagLog.addEntry('AI_REQUEST_STARTED', 'share screen: no AI provider configured');
       Alert.alert('No AI provider', 'Go to Settings to configure your AI provider and API key.');
       return;
     }
-    diagLog.addEntry('AI_REQUEST_STARTED', `share screen: provider=${aiSettings.provider} model=${aiSettings.model ?? '(default)'}`);
     setAiLoading(true);
     try {
-      diagLog.addEntry('METADATA_FOUND', `share screen: fetching metadata for url="${url.slice(0, 120)}"`);
       const metadata = url.trim() ? await fetchPageMetadata(url) : null;
-      if (url.trim() && !metadata) {
-        diagLog.addEntry('METADATA_FOUND', 'share screen: extraction failed or returned null');
-        Alert.alert('Could not extract metadata', 'AI auto-fill will use the title you provided instead.');
-      } else if (metadata) {
-        diagLog.addEntry('METADATA_FOUND', `share screen: source=${metadata.source} title="${(metadata.title ?? '').slice(0, 80)}"`);
-      }
       const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
-        .filter(Boolean)
-        .join('\n');
+        .filter(Boolean).join('\n');
       const aiInputTitle = metadata?.title || title.trim() || url;
-      diagLog.addEntry('AI_REQUEST_STARTED', `share screen: calling summarizeItem title="${aiInputTitle.slice(0, 80)}" metadataLen=${metadataText.length}`);
-      const result = await summarizeItem(
-        aiSettings,
-        aiInputTitle,
-        undefined,
-        metadataText || undefined,
-        contentType,
-      );
-      diagLog.addEntry('AI_RESPONSE_RECEIVED', `share screen: summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} error=${result.error ?? 'none'}`);
+      const result = await summarizeItem(aiSettings, aiInputTitle, undefined, metadataText || undefined, contentType);
       if (result.error) {
-        diagLog.addEntry('PROVIDER_ERROR', `share screen: ${result.error}`);
         Alert.alert('AI Error', result.error);
       } else {
         if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);
         if (result.suggestedTags.length > 0 && !tags.trim()) setTags(result.suggestedTags.join(', '));
         if (result.summary && !description.trim()) setDescription(result.summary);
-        diagLog.addEntry('FORM_UPDATE_COMPLETED', `share screen: title=${Boolean(result.suggestedTitle)} tags=${result.suggestedTags.length} desc=${Boolean(result.summary)}`);
       }
     } catch (err) {
-      diagLog.addEntry('PROVIDER_ERROR', `share screen: unexpected error — ${err instanceof Error ? err.message : String(err)}`);
       Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
     }
     setAiLoading(false);
   };
 
+  // ── Manual save (fallback form) ───────────────────────────────────────────
   const handleSave = async () => {
     const cleanTitle = sanitizeText(title, LIMITS.TITLE) || sanitizeUrl(url);
     if (!cleanTitle) {
@@ -190,7 +198,6 @@ export default function ShareScreen() {
       Alert.alert('Invalid URL', 'Please enter a valid http(s) URL or leave the field empty.');
       return;
     }
-    diagLog.addEntry('SAVE_STARTED', `share screen: title="${cleanTitle.slice(0, 80)}" url="${(cleanUrl ?? '').slice(0, 120)}" type=${contentType}`);
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -209,20 +216,44 @@ export default function ShareScreen() {
       };
       await saveItem(item);
       await refreshAll();
-      diagLog.addEntry('SAVE_COMPLETED', `share screen: id=${item.id} title="${cleanTitle.slice(0, 80)}"`);
       router.replace('/(tabs)');
     } catch (err) {
       logError(err, { screen: 'share', action: 'saveItem' });
-      diagLog.addEntry('SAVE_FAILED', `share screen: ${err instanceof Error ? err.message : String(err)}`);
       Alert.alert('Save failed', getUserMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
+  // ── Auto-capture splash ───────────────────────────────────────────────────
+  if (autoState === 'capturing' || autoState === 'done') {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+        <View style={styles.container}>
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => router.back()}>
+              <Text style={{ color: paper.colors.primary, fontSize: 16 }}>Cancel</Text>
+            </TouchableOpacity>
+            <View style={styles.headerCenter}>
+              <Ionicons name="share-social" size={18} color={colors.textSecondary} />
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Capturing…</Text>
+            </View>
+            <View style={{ width: 54 }} />
+          </View>
+          <View style={styles.captureOverlay}>
+            <PaperActivityIndicator size="large" color={paper.colors.primary} />
+            <Text style={[styles.captureLabel, { color: colors.text }]}>Saved!</Text>
+            <Text style={[styles.captureSub, { color: colors.textMuted }]}>
+              Enrichment is running in the background.{'\n'}Check the banner at the bottom of the screen.
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Manual fallback form ──────────────────────────────────────────────────
   return (
-    // SafeAreaView outermost: consumes status-bar inset before KeyboardAvoidingView
-    // sees it — prevents the header from overlapping the status bar on Android.
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -380,6 +411,15 @@ const styles = StyleSheet.create({
   headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerTitle: { fontSize: 17, fontWeight: '700' },
   content: { padding: 16, paddingBottom: 60, gap: 8 },
+  captureOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    paddingHorizontal: 32,
+  },
+  captureLabel: { fontSize: 22, fontWeight: '800' },
+  captureSub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
   sharedPreview: {
     flexDirection: 'row',
     alignItems: 'flex-start',

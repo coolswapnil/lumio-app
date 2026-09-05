@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/context/ThemeContext';
 import { useAppTheme } from '../../src/constants/colors';
@@ -23,17 +23,26 @@ export default function CollectionDetailScreen() {
   const { colors } = useTheme();
   const paper = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { collections, refreshAll } = useData();
+  const { collections, items: contextItems, refreshAll } = useData();
   const router = useRouter();
   const navigation = useNavigation(); // FIX C-5: needed to guard back navigation
   const [items, setItems] = useState<SavedItem[]>([]);
 
   const collection = collections.find((c) => c.id === id);
 
-  useEffect(() => {
+  const loadItems = useCallback(() => {
     if (!id) return;
     getItemsByCollection(id).then(setItems);
   }, [id]);
+
+  // Reload on mount
+  useEffect(() => { loadItems(); }, [loadItems]);
+
+  // Reload whenever focus returns (e.g. after assigning a collection from item detail)
+  useFocusEffect(useCallback(() => { loadItems(); }, [loadItems]));
+
+  // Reload whenever the global items list changes (assignment from another screen)
+  useEffect(() => { loadItems(); }, [contextItems, loadItems]);
 
   const handleDelete = () => {
     Alert.alert(
