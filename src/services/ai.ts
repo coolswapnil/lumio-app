@@ -1,4 +1,5 @@
 import type { AISettings, ContentCategory, ContentLocation } from '../types';
+import { decodeHtmlEntities } from '../utils/validation';
 import { logError } from '../utils/errors';
 import { safeErrorMessage } from './aiHealth';
 import { diagLog } from './diagnostics';
@@ -497,35 +498,44 @@ export async function summarizeItem(
       location?: unknown;
     } | null;
     if (parsed) {
-      const summary = (typeof parsed.summary === 'string' ? parsed.summary : '').trim();
+      const rawSummary = typeof parsed.summary === 'string' ? parsed.summary : '';
+      const summary = decodeHtmlEntities(rawSummary).trim();
       const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
 
       // Validate category against the known list
       const validCategories: ContentCategory[] = ['Finance','Technology','Health','Travel','Food','Career','Learning','Entertainment','Science','Sports','Politics','Design','Business','Lifestyle','Other'];
-      const rawCategory = typeof parsed.category === 'string' ? parsed.category.trim() as ContentCategory : undefined;
+      const rawCategory = typeof parsed.category === 'string' ? decodeHtmlEntities(parsed.category).trim() as ContentCategory : undefined;
       const category = rawCategory && validCategories.includes(rawCategory) ? rawCategory : undefined;
 
       // Suggested collection names — up to 3 strings
       const suggestedCollectionNames = Array.isArray(parsed.suggestedCollectionNames)
-        ? (parsed.suggestedCollectionNames as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 3)
+        ? (parsed.suggestedCollectionNames as unknown[])
+            .filter((s): s is string => typeof s === 'string')
+            .map((s) => decodeHtmlEntities(s).trim())
+            .slice(0, 3)
         : undefined;
 
       // Location — only accept well-formed objects with at least one string field
       let location: ContentLocation | undefined;
       if (parsed.location && typeof parsed.location === 'object' && !Array.isArray(parsed.location)) {
         const loc = parsed.location as Record<string, unknown>;
-        const venue = typeof loc.venue === 'string' ? loc.venue.trim() || undefined : undefined;
-        const city = typeof loc.city === 'string' ? loc.city.trim() || undefined : undefined;
-        const country = typeof loc.country === 'string' ? loc.country.trim() || undefined : undefined;
+        const venue = typeof loc.venue === 'string' ? decodeHtmlEntities(loc.venue).trim() || undefined : undefined;
+        const city = typeof loc.city === 'string' ? decodeHtmlEntities(loc.city).trim() || undefined : undefined;
+        const country = typeof loc.country === 'string' ? decodeHtmlEntities(loc.country).trim() || undefined : undefined;
         if (venue || city || country) {
           location = { venue, city, country };
         }
       }
 
+      const rawTitle = typeof parsed.suggestedTitle === 'string' ? decodeHtmlEntities(parsed.suggestedTitle).trim() : undefined;
+      const suggestedTags = Array.isArray(parsed.suggestedTags)
+        ? (parsed.suggestedTags as string[]).map((t) => typeof t === 'string' ? decodeHtmlEntities(t).trim() : '').filter(Boolean)
+        : [];
+
       const result: AISummarizeResult = {
         summary: isRefusal ? '' : summary,
-        suggestedTags: Array.isArray(parsed.suggestedTags) ? (parsed.suggestedTags as string[]) : [],
-        suggestedTitle: typeof parsed.suggestedTitle === 'string' ? parsed.suggestedTitle.trim() || undefined : undefined,
+        suggestedTags,
+        suggestedTitle: rawTitle || undefined,
         category,
         suggestedCollectionNames,
         location,

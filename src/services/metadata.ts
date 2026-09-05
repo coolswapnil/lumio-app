@@ -1,4 +1,4 @@
-import { sanitizeUrl } from '../utils/validation';
+import { sanitizeUrl, decodeHtmlEntities } from '../utils/validation';
 import type { ContentType, UrlSource, MediaType, ContentLocation } from '../types';
 
 export type { UrlSource };
@@ -277,19 +277,9 @@ export function deriveYouTubeThumbnail(url: string): string | null {
   return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
 }
 
-function decodeHtml(value: string): string {
-  return value
-    .replace(/&amp;/gi, '&')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&#x27;/gi, "'");
-}
-
 function cleanValue(value?: string): string | undefined {
   const cleaned = value?.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-  return cleaned ? decodeHtml(cleaned) : undefined;
+  return cleaned ? decodeHtmlEntities(cleaned) : undefined;
 }
 
 function getMeta(html: string, key: string): string | undefined {

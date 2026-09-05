@@ -50,6 +50,8 @@ export interface CaptureEntry {
   /** The persisted item's ID — always set immediately on enqueue. */
   itemId: string;
   url: string;
+  /** Display title generated or derived for this entry. */
+  displayTitle?: string;
   /** Original title hint (from share text / clipboard). May be empty. */
   titleHint: string;
   status: CaptureStatus;
@@ -280,8 +282,12 @@ async function _runEnrichment(
               }
             }
           }
-          if (result.suggestedTitle && !(entry.titleHint.trim())) {
-            dbUpdates.title = sanitizeText(result.suggestedTitle, LIMITS.TITLE) ?? undefined;
+          if (result.suggestedTitle) {
+            const cleanTitle = sanitizeText(result.suggestedTitle, LIMITS.TITLE);
+            if (cleanTitle) {
+              dbUpdates.title = cleanTitle;
+              updateEntry(itemId, { displayTitle: cleanTitle });
+            }
           }
 
           // Collection suggestion + auto-assign at ≥90% confidence

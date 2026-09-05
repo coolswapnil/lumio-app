@@ -71,11 +71,51 @@ export function isValidId(id: string): boolean {
   return /^[a-zA-Z0-9_-]{1,64}$/.test(id);
 }
 
-// ─── Text field sanitization ──────────────────────────────────────────────────
+// ─── Text field sanitization & decoding ───────────────────────────────────────
 
-/** Trims and enforces max length on a text field. */
+/**
+ * Decodes all common named and numeric (decimal + hexadecimal) HTML entities.
+ * Handles characters like &#x1f4c8; (📈), &#x20b9; (₹), &#x2019; (’), &#x1f4b0; (💰), &amp;, &quot;, &lt;, &gt;.
+ */
+export function decodeHtmlEntities(value: string): string {
+  if (!value || typeof value !== 'string') return '';
+  return value
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+      try {
+        const code = parseInt(hex, 16);
+        return String.fromCodePoint(code);
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&#([0-9]+);/g, (_, dec) => {
+      try {
+        const code = parseInt(dec, 10);
+        return String.fromCodePoint(code);
+      } catch {
+        return _;
+      }
+    })
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;|&#x27;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&copy;/gi, '©')
+    .replace(/&reg;/gi, '®')
+    .replace(/&trade;/gi, '™')
+    .replace(/&euro;/gi, '€')
+    .replace(/&pound;/gi, '£')
+    .replace(/&yen;/gi, '¥')
+    .replace(/&cent;/gi, '¢');
+}
+
+/** Decodes HTML entities, trims, and enforces max length on a text field. */
 export function sanitizeText(value: string, maxLength: number): string {
-  return value.trim().slice(0, maxLength);
+  if (!value || typeof value !== 'string') return '';
+  const decoded = decodeHtmlEntities(value);
+  return decoded.trim().slice(0, maxLength);
 }
 
 /**

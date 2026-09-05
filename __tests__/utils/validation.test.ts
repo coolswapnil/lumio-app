@@ -7,6 +7,7 @@ import {
   asString,
   isValidId,
   sanitizeText,
+  decodeHtmlEntities,
   parseTags,
   extractSafeUrl,
   LIMITS,
@@ -107,9 +108,24 @@ describe('isValidId', () => {
   });
 });
 
+describe('decodeHtmlEntities', () => {
+  it('decodes hex and decimal numeric entities', () => {
+    expect(decodeHtmlEntities('&#x1f4c8; &#x20b9; &#x2019; &#x1f4b0;')).toBe('📈 ₹ ’ 💰');
+    expect(decodeHtmlEntities('&#8377; 500')).toBe('₹ 500');
+  });
+
+  it('decodes named entities', () => {
+    expect(decodeHtmlEntities('&amp; &quot; &#39; &lt; &gt; &nbsp;')).toBe('& " \' < >  ');
+  });
+
+  it('handles empty or non-string inputs safely', () => {
+    expect(decodeHtmlEntities('')).toBe('');
+  });
+});
+
 describe('sanitizeText', () => {
-  it('trims whitespace', () => {
-    expect(sanitizeText('  hello  ', 100)).toBe('hello');
+  it('trims whitespace and decodes html entities', () => {
+    expect(sanitizeText('  &#x20b9;1.2L Dividend Income Plan  ', 100)).toBe('₹1.2L Dividend Income Plan');
   });
 
   it('enforces max length', () => {

@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator as PaperActivityIndicator } from 'react-native-paper';
 import { useCaptureQueue } from '../context/CaptureQueueContext';
+import { getExactSourceLabel } from '../services/metadata';
 import { useAppTheme } from '../constants/colors';
 import { useTheme } from '../context/ThemeContext';
 import type { CaptureEntry, EnrichmentStep } from '../services/captureQueue';
@@ -131,8 +132,8 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
   const paper = useAppTheme();
   const { colors } = useTheme();
 
-  let hostname = entry.url;
-  try { hostname = new URL(entry.url).hostname.replace(/^www\./, ''); } catch { /* keep raw */ }
+  // Priority for row label: AI-generated title -> exact source label (e.g. "Instagram Reel") -> hostname
+  const displayLabel = entry.displayTitle || (entry.titleHint && !entry.titleHint.startsWith('http') ? entry.titleHint : null) || getExactSourceLabel(undefined, undefined, entry.url);
 
   const statusColor =
     entry.status === 'completed' ? colors.success :
@@ -162,7 +163,7 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
       {/* Domain + step + progress */}
       <View style={rowStyles.textCol}>
         <View style={rowStyles.topRow}>
-          <Text style={[rowStyles.hostname, { color: colors.text }]} numberOfLines={1}>{hostname}</Text>
+          <Text style={[rowStyles.hostname, { color: colors.text }]} numberOfLines={1}>{displayLabel}</Text>
           <Text style={[rowStyles.pct, { color: statusColor }]}>{itemPct}%</Text>
         </View>
         {entry.status === 'processing' && entry.currentStep && (
@@ -310,10 +311,24 @@ export function ProcessingBanner() {
       activeCount === 0 &&
       completedCount > 0 &&
       queue.length > 0;
-    if (justFinished) setShowToast(true);
+    if (justFinished) {
+      setShowToast(true);
+      // Auto-collapse immediately when all tasks complete
+      setExpanded(false);
+    }
     prevActiveCountRef.current = activeCount;
     prevQueueLenRef.current = queue.length;
   }, [activeCount, completedCount, queue.length]);
+
+  // Auto-hide completed queue after delay
+  useEffect(() => {
+    if (activeCount === 0 && completedCount > 0 && queue.length > 0) {
+      const timer = setTimeout(() => {
+        clearFinished();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeCount, completedCount, queue.length, clearFinished]);
 
   // Animated height for expand/collapse
   const expandAnim = useRef(new Animated.Value(0)).current;
