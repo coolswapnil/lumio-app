@@ -67,25 +67,36 @@ type SectionKey = 'appearance' | 'ai' | 'storage' | 'advanced' | 'about';
 type DiagBadgeRole = 'primary' | 'secondary' | 'tertiary' | 'error' | 'surface';
 
 const DIAG_EVENT_ROLES: Record<import('../../src/services/diagnostics').DiagEventType, DiagBadgeRole> = {
-  SHARE_INTENT_RECEIVED: 'primary',
-  SHARE_ACTION:          'primary',
-  SHARE_MIME_TYPE:       'primary',
-  SHARE_TEXT:            'primary',
-  SHARE_URL_EXTRACTED:   'primary',
-  SHARE_SCREEN_OPENED:   'primary',
-  SHARE_FORM_POPULATED:  'secondary',
-  SHARE_INTENT_PARSED:   'secondary',
-  METADATA_FOUND:        'tertiary',
-  AI_REQUEST_STARTED:    'tertiary',
-  AI_RESPONSE_RAW:       'primary',
-  AI_RESPONSE_RECEIVED:  'secondary',
-  AI_RESPONSE_PARSED:    'secondary',
-  PROVIDER_ERROR:        'error',
-  SAVE_STARTED:          'surface',
-  SAVE_COMPLETED:        'tertiary',
-  SAVE_FAILED:           'error',
-  FORM_UPDATE_STARTED:   'surface',
-  FORM_UPDATE_COMPLETED: 'surface',
+  // ── Always-on share pipeline ────────────────────────────────────────────
+  APP_COLD_START:         'primary',
+  APP_ALREADY_RUNNING:    'primary',
+  SHARE_INTENT_RECEIVED:  'primary',
+  SHARE_ACTION:           'primary',
+  SHARE_MIME_TYPE:        'primary',
+  SHARE_PAYLOAD:          'primary',
+  SHARE_TEXT:             'primary',
+  URL_EXTRACTED:          'primary',
+  ROUTE_TO_SHARE_SCREEN:  'primary',
+  QUEUE_ITEM_CREATED:     'tertiary',
+  LIBRARY_ITEM_CREATED:   'tertiary',
+  ENRICHMENT_STARTED:     'tertiary',
+  ENRICHMENT_COMPLETED:   'tertiary',
+  // ── Opt-in events ───────────────────────────────────────────────────────
+  SHARE_URL_EXTRACTED:    'primary',
+  SHARE_SCREEN_OPENED:    'primary',
+  SHARE_FORM_POPULATED:   'secondary',
+  SHARE_INTENT_PARSED:    'secondary',
+  METADATA_FOUND:         'tertiary',
+  AI_REQUEST_STARTED:     'tertiary',
+  AI_RESPONSE_RAW:        'primary',
+  AI_RESPONSE_RECEIVED:   'secondary',
+  AI_RESPONSE_PARSED:     'secondary',
+  PROVIDER_ERROR:         'error',
+  SAVE_STARTED:           'surface',
+  SAVE_COMPLETED:         'tertiary',
+  SAVE_FAILED:            'error',
+  FORM_UPDATE_STARTED:    'surface',
+  FORM_UPDATE_COMPLETED:  'surface',
 };
 
 function getDiagBadgeColors(
@@ -323,6 +334,9 @@ export default function SettingsScreen() {
   const [diagModalVisible, setDiagModalVisible]     = useState(false);
   const [diagEntries, setDiagEntries]               = useState<DiagEntry[]>([]);
   const [diagCopied, setDiagCopied]                 = useState(false);
+  const [autoTranslate, setAutoTranslate]           = useState(false);
+  const [neverTranslateInput, setNeverTranslateInput] = useState('');
+  const [neverTranslateLangs, setNeverTranslateLangs] = useState<string[]>([]);
 
   // Load persisted collapse state
   useEffect(() => {
@@ -354,11 +368,13 @@ export default function SettingsScreen() {
     loadHealth().then((h) => {
       if (h) setHealth(h);
     });
-    // Sync diagnostics enabled flag from persisted settings
+    // Sync diagnostics + translation settings from persisted settings
     getAppSettings().then((s) => {
       const enabled = s.diagnosticsEnabled ?? false;
       setDiagnosticsEnabled(enabled);
       diagLog.setEnabled(enabled);
+      setAutoTranslate(s.autoTranslateForeignContent ?? false);
+      setNeverTranslateLangs(s.neverTranslateLanguages ?? []);
     });
   }, []);
 
@@ -524,6 +540,29 @@ export default function SettingsScreen() {
     const current = await getAppSettings();
     await saveAppSettings({ ...current, diagnosticsEnabled: value });
   }, []);
+
+  const handleToggleAutoTranslate = useCallback(async (value: boolean) => {
+    setAutoTranslate(value);
+    const current = await getAppSettings();
+    await saveAppSettings({ ...current, autoTranslateForeignContent: value });
+  }, []);
+
+  const handleAddNeverTranslate = useCallback(async (lang: string) => {
+    const trimmed = lang.trim();
+    if (!trimmed || neverTranslateLangs.includes(trimmed)) return;
+    const updated = [...neverTranslateLangs, trimmed];
+    setNeverTranslateLangs(updated);
+    setNeverTranslateInput('');
+    const current = await getAppSettings();
+    await saveAppSettings({ ...current, neverTranslateLanguages: updated });
+  }, [neverTranslateLangs]);
+
+  const handleRemoveNeverTranslate = useCallback(async (lang: string) => {
+    const updated = neverTranslateLangs.filter((l) => l !== lang);
+    setNeverTranslateLangs(updated);
+    const current = await getAppSettings();
+    await saveAppSettings({ ...current, neverTranslateLanguages: updated });
+  }, [neverTranslateLangs]);
 
   const handleOpenDiagnostics = useCallback(() => {
     setDiagEntries(diagLog.getEntries());
@@ -1449,6 +1488,85 @@ export default function SettingsScreen() {
         >
           <View style={styles.subSection}>
 
+            {/* ── Content Intelligence ──────────────────────── */}
+            <Text variant="labelSmall" style={[styles.groupLabel, { color: paper.colors.onSurfaceVariant }]}>
+              CONTENT INTELLIGENCE
+            </Text>
+
+            {/* Auto Translate Foreign Content */}
+            <View style={[styles.row, { minHeight: layout.touchTarget }]}>
+              <View style={styles.rowLeft}>
+                <Ionicons name="language" size={20} color={paper.colors.onSurfaceVariant} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>Auto Translate Foreign Content</Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>
+                    Translate non-English summaries and tags into English
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={autoTranslate}
+                onValueChange={handleToggleAutoTranslate}
+                trackColor={{ false: colors.surfaceContainerHigh, true: paper.colors.primary }}
+                thumbColor={autoTranslate ? paper.colors.onPrimary : paper.colors.outline}
+                accessibilityLabel="Auto Translate Foreign Content"
+              />
+            </View>
+
+            {/* Never Translate list — only shown when auto translate is on */}
+            {autoTranslate && (
+              <>
+                <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />
+                <View style={{ paddingVertical: 10, gap: 8 }}>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
+                    Never translate these languages:
+                  </Text>
+                  {neverTranslateLangs.length > 0 && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {neverTranslateLangs.map((lang) => (
+                        <TouchableOpacity
+                          key={lang}
+                          onPress={() => handleRemoveNeverTranslate(lang)}
+                          style={[styles.langChip, { backgroundColor: paper.colors.errorContainer }]}
+                          accessibilityLabel={`Remove ${lang} from never translate list`}
+                        >
+                          <Text variant="labelSmall" style={{ color: paper.colors.onErrorContainer }}>{lang}</Text>
+                          <Ionicons name="close" size={12} color={paper.colors.onErrorContainer} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TextInput
+                      value={neverTranslateInput}
+                      onChangeText={setNeverTranslateInput}
+                      placeholder="e.g. Japanese"
+                      placeholderTextColor={paper.colors.onSurfaceVariant}
+                      style={[
+                        styles.langInput,
+                        {
+                          flex: 1,
+                          color: paper.colors.onSurface,
+                          backgroundColor: paper.colors.surfaceContainerHigh,
+                          borderColor: paper.colors.outlineVariant,
+                        },
+                      ]}
+                      onSubmitEditing={() => handleAddNeverTranslate(neverTranslateInput)}
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity
+                      onPress={() => handleAddNeverTranslate(neverTranslateInput)}
+                      style={[styles.langAddBtn, { backgroundColor: paper.colors.primaryContainer }]}
+                    >
+                      <Ionicons name="add" size={18} color={paper.colors.onPrimaryContainer} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </>
+            )}
+
+            <View style={[styles.fullDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+
             {/* ── Original rows ─────────────────────────────── */}
 
             {/* System Diagnostics */}
@@ -2196,5 +2314,29 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 11,
     borderRadius: 10,
+  },
+
+  // Language / translation settings
+  langChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  langInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  langAddBtn: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
   },
 });

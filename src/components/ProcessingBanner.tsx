@@ -92,7 +92,7 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [pct]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pct]); // eslint-disable-line -- widthAnim is a stable Animated.Value ref
 
   return (
     <View style={pbStyles.track}>
@@ -132,8 +132,16 @@ function QueueRow({ entry }: { entry: CaptureEntry }) {
   const paper = useAppTheme();
   const { colors } = useTheme();
 
-  // Priority for row label: AI-generated title -> exact source label (e.g. "Instagram Reel") -> hostname
-  const displayLabel = entry.displayTitle || (entry.titleHint && !entry.titleHint.startsWith('http') ? entry.titleHint : null) || getExactSourceLabel(undefined, undefined, entry.url);
+  // Priority for row label:
+  //   1. AI-generated title (set after enrichment)
+  //   2. User-provided title hint (e.g. from share text)
+  //   3. Exact source label set synchronously on enqueue ("Instagram Reel", "YouTube Video")
+  //   4. Hostname fallback
+  const displayLabel =
+    entry.displayTitle ||
+    (entry.titleHint && !entry.titleHint.startsWith('http') ? entry.titleHint : null) ||
+    entry.sourceLabel ||
+    getExactSourceLabel(undefined, undefined, entry.url);
 
   const statusColor =
     entry.status === 'completed' ? colors.success :
@@ -252,7 +260,7 @@ function CompletionToast({ onDone }: { onDone: () => void }) {
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line -- animation runs once on mount; refs are stable
 
   return (
     <Animated.View
@@ -300,9 +308,14 @@ export function ProcessingBanner() {
   const [expanded, setExpanded] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
+  // Stable ref so timer callbacks always call the current clearFinished without
+  // being listed as a timer effect dependency (which would reset the timer on
+  // every re-render during enrichment).
+  const clearFinishedRef = useRef(clearFinished);
+  useEffect(() => { clearFinishedRef.current = clearFinished; });
+
   // Track previous activeCount to detect the transition to 0 (all done)
   const prevActiveCountRef = useRef(activeCount);
-  const prevQueueLenRef = useRef(queue.length);
 
   useEffect(() => {
     // Show toast when the last active item finishes and we had items in flight
@@ -317,18 +330,21 @@ export function ProcessingBanner() {
       setExpanded(false);
     }
     prevActiveCountRef.current = activeCount;
-    prevQueueLenRef.current = queue.length;
   }, [activeCount, completedCount, queue.length]);
 
-  // Auto-hide completed queue after delay
+  // Auto-hide completed queue entries after a delay.
+  // Only starts the timer when ALL items are done (activeCount === 0) so it
+  // cannot fire while new items are still processing.
+  // clearFinished is accessed via ref so this effect does NOT reset when the
+  // function reference changes — only when the queue state changes.
   useEffect(() => {
     if (activeCount === 0 && completedCount > 0 && queue.length > 0) {
       const timer = setTimeout(() => {
-        clearFinished();
+        clearFinishedRef.current();
       }, 4000);
       return () => clearTimeout(timer);
     }
-  }, [activeCount, completedCount, queue.length, clearFinished]);
+  }, [activeCount, completedCount, queue.length]); // intentionally omits clearFinished
 
   // Animated height for expand/collapse
   const expandAnim = useRef(new Animated.Value(0)).current;
@@ -339,7 +355,7 @@ export function ProcessingBanner() {
       friction: 12,
       useNativeDriver: false,
     }).start();
-  }, [expanded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expanded]); // eslint-disable-line -- expandAnim is a stable Animated.Value ref
 
   // Auto-collapse when queue empties
   useEffect(() => {

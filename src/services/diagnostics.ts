@@ -1,27 +1,46 @@
 /**
  * Diagnostics log — in-memory ring buffer for developer event tracing.
  *
- * Disabled by default. Enable via Settings → Advanced → Enable Developer Diagnostics.
- * Captures pipeline events across all key workflows:
+ * Two tiers:
+ *   ALWAYS-ON  — Share-pipeline events are written unconditionally so a share
+ *                failure always produces a trace even in production builds.
+ *   OPT-IN     — All other events require the user to enable diagnostics via
+ *                Settings → Advanced → Enable Developer Diagnostics.
  *
- *   Share intent:    SHARE_INTENT_RECEIVED | SHARE_INTENT_PARSED
- *   Metadata:        METADATA_FOUND
- *   AI pipeline:     AI_REQUEST_STARTED | AI_RESPONSE_RAW |
- *                    AI_RESPONSE_RECEIVED | AI_RESPONSE_PARSED | PROVIDER_ERROR
- *   Save workflow:   SAVE_STARTED | SAVE_COMPLETED | SAVE_FAILED
- *   Form:            FORM_UPDATE_STARTED | FORM_UPDATE_COMPLETED
+ * Always-on events (written regardless of _enabled):
+ *   APP_COLD_START | APP_ALREADY_RUNNING |
+ *   SHARE_INTENT_RECEIVED | SHARE_ACTION | SHARE_MIME_TYPE | SHARE_PAYLOAD |
+ *   URL_EXTRACTED | ROUTE_TO_SHARE_SCREEN | QUEUE_ITEM_CREATED |
+ *   ENRICHMENT_STARTED | ENRICHMENT_COMPLETED
  *
- * Keeps the latest MAX_ENTRIES entries. Safe to call when disabled — calls
- * are silently ignored so instrumented code paths carry zero overhead.
+ * Opt-in events:
+ *   SHARE_INTENT_PARSED | SHARE_URL_EXTRACTED | SHARE_SCREEN_OPENED |
+ *   SHARE_FORM_POPULATED | METADATA_FOUND | AI_REQUEST_STARTED |
+ *   AI_RESPONSE_RAW | AI_RESPONSE_RECEIVED | AI_RESPONSE_PARSED |
+ *   PROVIDER_ERROR | SAVE_STARTED | SAVE_COMPLETED | SAVE_FAILED |
+ *   FORM_UPDATE_STARTED | FORM_UPDATE_COMPLETED
+ *
+ * Keeps the latest MAX_ENTRIES entries.
  */
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 export type DiagEventType =
+  // ── Always-on share pipeline ──────────────────────────────────────────────
+  | 'APP_COLD_START'
+  | 'APP_ALREADY_RUNNING'
   | 'SHARE_INTENT_RECEIVED'
   | 'SHARE_ACTION'
   | 'SHARE_MIME_TYPE'
+  | 'SHARE_PAYLOAD'
   | 'SHARE_TEXT'
+  | 'URL_EXTRACTED'
+  | 'ROUTE_TO_SHARE_SCREEN'
+  | 'QUEUE_ITEM_CREATED'
+  | 'LIBRARY_ITEM_CREATED'
+  | 'ENRICHMENT_STARTED'
+  | 'ENRICHMENT_COMPLETED'
+  // ── Opt-in events ─────────────────────────────────────────────────────────
   | 'SHARE_URL_EXTRACTED'
   | 'SHARE_SCREEN_OPENED'
   | 'SHARE_FORM_POPULATED'
@@ -38,6 +57,27 @@ export type DiagEventType =
   | 'FORM_UPDATE_STARTED'
   | 'FORM_UPDATE_COMPLETED';
 
+/**
+ * Events that are always written to the ring buffer, even when the user has
+ * not enabled the full diagnostics log.  These are the minimal signals needed
+ * to reconstruct a share pipeline failure in any build.
+ */
+const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
+  'APP_COLD_START',
+  'APP_ALREADY_RUNNING',
+  'SHARE_INTENT_RECEIVED',
+  'SHARE_ACTION',
+  'SHARE_MIME_TYPE',
+  'SHARE_PAYLOAD',
+  'SHARE_TEXT',
+  'URL_EXTRACTED',
+  'ROUTE_TO_SHARE_SCREEN',
+  'QUEUE_ITEM_CREATED',
+  'LIBRARY_ITEM_CREATED',
+  'ENRICHMENT_STARTED',
+  'ENRICHMENT_COMPLETED',
+]);
+
 export interface DiagEntry {
   /** Monotonically-increasing counter */
   seq: number;
@@ -48,7 +88,7 @@ export interface DiagEntry {
   detail: string;
 }
 
-const MAX_ENTRIES = 100;
+const MAX_ENTRIES = 200;
 
 class DiagnosticsLog {
   private entries: DiagEntry[] = [];
@@ -72,11 +112,13 @@ class DiagnosticsLog {
   }
 
   /**
-   * Append an entry. No-op when diagnostics is disabled.
+   * Append an entry.
+   * Always-on events (share pipeline) are written even when diagnostics is
+   * disabled.  All other events are silently ignored when disabled.
    * `detail` must never contain API keys, tokens, or personal data.
    */
   addEntry(event: DiagEventType, detail: string): void {
-    if (!this._enabled) return;
+    if (!this._enabled && !ALWAYS_ON_EVENTS.has(event)) return;
     const entry: DiagEntry = {
       seq: ++this.seq,
       timestamp: new Date().toISOString(),
@@ -112,7 +154,7 @@ class DiagnosticsLog {
     return (
       header +
       this.entries
-        .map((e) => `[${e.timestamp}] #${e.seq} ${e.event.padEnd(24)}  ${e.detail}`)
+        .map((e) => `[${e.timestamp}] #${e.seq} ${e.event.padEnd(26)}  ${e.detail}`)
         .join('\n')
     );
   }

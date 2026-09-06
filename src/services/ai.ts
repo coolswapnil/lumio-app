@@ -15,8 +15,12 @@ export interface AISummarizeResult {
   suggestedTitle?: string;
   /** AI-generated primary category */
   category?: ContentCategory;
+  /** One-sentence reason the AI chose this category */
+  categoryReason?: string;
   /** Up to 3 collection name suggestions (not IDs — matched by name in the UI) */
   suggestedCollectionNames?: string[];
+  /** One-sentence reason the AI suggested these collections */
+  collectionReason?: string;
   /** Location data extracted from the content */
   location?: ContentLocation;
   /** Set when the AI call itself failed (network, auth, parse). Distinct from an empty-but-valid response. */
@@ -446,7 +450,7 @@ export async function summarizeItem(
     ? `\nAvailable collections the user has: ${collectionNames.join(', ')}. Suggest up to 3 that fit best (by exact name). If none fit, return an empty array.`
     : '';
 
-  const categoryList = 'Finance, Technology, Health, Travel, Food, Career, Learning, Entertainment, Science, Sports, Politics, Design, Business, Lifestyle, Other';
+  const categoryList = 'Finance, Technology, Health, Travel, Food, Career, Learning, Entertainment, Science, Sports, Politics, Design, Business, Lifestyle, Real Estate, Other';
 
   const messages: AIMessage[] = [
     {
@@ -462,10 +466,16 @@ export async function summarizeItem(
         '  "suggestedTitle": "Concise title, max 8 words, key topic only, no filler or social media phrasing",\n' +
         '  "suggestedTags": ["tag1", "tag2", "tag3"],\n' +
         `  "category": "One of: ${categoryList}",\n` +
+        '  "categoryReason": "One sentence explaining why this category was chosen",\n' +
         '  "suggestedCollectionNames": ["Name1", "Name2"],\n' +
+        '  "collectionReason": "One sentence explaining why these collections were suggested",\n' +
         '  "location": { "venue": "...", "city": "...", "country": "..." }\n' +
         '}\n' +
-        'For location, only include fields that are clearly stated in the content. If no location is evident, use null for the location field.',
+        'For location, only include fields that are clearly stated in the content. If no location is evident, use null for the location field.\n' +
+        'For categoryReason and collectionReason, be concise — one sentence only. If no collection is suggested, set collectionReason to null.\n' +
+        'Real estate signals: if the content mentions property, land, plot, apartment, flat, villa, PMRDA, RERA, builder, township, sq.ft, BHK, or similar real-estate terms, set category to "Real Estate" and include relevant location tags.\n' +
+        'Instagram Reel signals: if source is Instagram, extract key topics from the caption and hashtags to generate accurate tags and category.\n' +
+        'For tags, use the hashtags directly if they are informative, and supplement with inferred semantic tags.',
     },
     {
       role: 'user',
@@ -494,7 +504,9 @@ export async function summarizeItem(
       suggestedTags?: unknown;
       suggestedTitle?: string;
       category?: string;
+      categoryReason?: string;
       suggestedCollectionNames?: unknown;
+      collectionReason?: string;
       location?: unknown;
     } | null;
     if (parsed) {
@@ -503,17 +515,22 @@ export async function summarizeItem(
       const isRefusal = /\b(i (?:cannot|can't|am unable)|unable to access|do not have access|can't access)\b/i.test(summary);
 
       // Validate category against the known list
-      const validCategories: ContentCategory[] = ['Finance','Technology','Health','Travel','Food','Career','Learning','Entertainment','Science','Sports','Politics','Design','Business','Lifestyle','Other'];
+      const validCategories: ContentCategory[] = ['Finance','Technology','Health','Travel','Food','Career','Learning','Entertainment','Science','Sports','Politics','Design','Business','Lifestyle','Real Estate','Other'];
       const rawCategory = typeof parsed.category === 'string' ? decodeHtmlEntities(parsed.category).trim() as ContentCategory : undefined;
       const category = rawCategory && validCategories.includes(rawCategory) ? rawCategory : undefined;
+      const categoryReason = typeof parsed.categoryReason === 'string' ? decodeHtmlEntities(parsed.categoryReason).trim() || undefined : undefined;
 
-      // Suggested collection names — up to 3 strings
+      // Suggested collection names — up to 3 strings.
+      // Strip trailing punctuation (AI sometimes returns "Real Estate." or "Learning,")
+      // to ensure the lowercased name matches the collectionIds map correctly.
       const suggestedCollectionNames = Array.isArray(parsed.suggestedCollectionNames)
         ? (parsed.suggestedCollectionNames as unknown[])
             .filter((s): s is string => typeof s === 'string')
-            .map((s) => decodeHtmlEntities(s).trim())
+            .map((s) => decodeHtmlEntities(s).trim().replace(/[.,;:!?]+$/, ''))
+            .filter(Boolean)
             .slice(0, 3)
         : undefined;
+      const collectionReason = typeof parsed.collectionReason === 'string' ? decodeHtmlEntities(parsed.collectionReason).trim() || undefined : undefined;
 
       // Location — only accept well-formed objects with at least one string field
       let location: ContentLocation | undefined;
@@ -537,7 +554,9 @@ export async function summarizeItem(
         suggestedTags,
         suggestedTitle: rawTitle || undefined,
         category,
+        categoryReason,
         suggestedCollectionNames,
+        collectionReason,
         location,
       };
       diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}" category="${result.category ?? ''}" collections=${result.suggestedCollectionNames?.length ?? 0}`);
@@ -551,6 +570,19 @@ export async function summarizeItem(
     diagLog.addEntry('AI_RESPONSE_PARSED', `extraction threw: ${String(parseErr)}`);
     return { summary: '', suggestedTags: [], error: 'AI response could not be parsed.' };
   }
+}
+
+/**
+ * Low-level AI call — exposes the internal `callAI` for use by other services
+ * (e.g. translation) without needing to duplicate provider-routing logic.
+ * The caller is responsible for all message construction and error handling.
+ */
+export async function callAIRaw(
+  settings: AISettings,
+  messages: AIMessage[],
+  jsonMode = false
+): Promise<string> {
+  return callAI(settings, messages, jsonMode);
 }
 
 export async function chatWithAI(

@@ -22,6 +22,11 @@ function rowToItem(row: Record<string, unknown>): SavedItem {
     mediaType: row.media_type as MediaType | undefined,
     category: row.category as ContentCategory | undefined,
     suggestedCollections: JSON.parse((row.suggested_collections as string) || '[]'),
+    detectedLanguage: row.detected_language as string | undefined,
+    translatedSummary: row.translated_summary as string | undefined,
+    translatedTags: JSON.parse((row.translated_tags as string) || '[]'),
+    categoryReason: row.category_reason as string | undefined,
+    collectionReason: row.collection_reason as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -93,8 +98,10 @@ export async function saveItem(item: SavedItem): Promise<void> {
      (id, title, description, url, image_url, content_type, collection_id, tags, notes,
       address, latitude, longitude, is_completed, is_favorite, ai_summary,
       source, media_type, category, suggested_collections,
+      detected_language, translated_summary, translated_tags,
+      category_reason, collection_reason,
       created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
    [
      item.id,
      item.title,
@@ -115,6 +122,11 @@ export async function saveItem(item: SavedItem): Promise<void> {
      item.mediaType ?? null,
      item.category ?? null,
      JSON.stringify(item.suggestedCollections ?? []),
+     item.detectedLanguage ?? null,
+     item.translatedSummary ?? null,
+     JSON.stringify(item.translatedTags ?? []),
+     item.categoryReason ?? null,
+     item.collectionReason ?? null,
      item.createdAt,
      item.updatedAt,
    ]
@@ -144,6 +156,11 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.mediaType !== undefined) { fields.push('media_type = ?'); values.push(updates.mediaType ?? null); }
   if (updates.category !== undefined) { fields.push('category = ?'); values.push(updates.category ?? null); }
   if (updates.suggestedCollections !== undefined) { fields.push('suggested_collections = ?'); values.push(JSON.stringify(updates.suggestedCollections ?? [])); }
+  if (updates.detectedLanguage !== undefined) { fields.push('detected_language = ?'); values.push(updates.detectedLanguage ?? null); }
+  if (updates.translatedSummary !== undefined) { fields.push('translated_summary = ?'); values.push(updates.translatedSummary ?? null); }
+  if (updates.translatedTags !== undefined) { fields.push('translated_tags = ?'); values.push(JSON.stringify(updates.translatedTags ?? [])); }
+  if (updates.categoryReason !== undefined) { fields.push('category_reason = ?'); values.push(updates.categoryReason ?? null); }
+  if (updates.collectionReason !== undefined) { fields.push('collection_reason = ?'); values.push(updates.collectionReason ?? null); }
 
   if (fields.length === 0) return;
 

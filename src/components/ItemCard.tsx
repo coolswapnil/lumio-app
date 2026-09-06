@@ -358,19 +358,15 @@ const styles = StyleSheet.create({
 });
 
 // ── Memoize to prevent re-renders when other list items change ────────────────
-// Custom equality: only re-render if the item data or compact flag changed.
+// Custom equality: re-render only when the item data or compact flag changed.
+// updatedAt is the single source of truth — if it changed, something in the
+// item changed (title, summary, category, tags, etc.) and we must re-render.
 const ItemCard = React.memo(ItemCardBase, (prev, next) =>
   prev.compact === next.compact &&
   prev.item.id === next.item.id &&
-  prev.item.title === next.item.title &&
-  prev.item.category === next.item.category &&
-  prev.item.source === next.item.source &&
-  prev.item.mediaType === next.item.mediaType &&
+  prev.item.updatedAt === next.item.updatedAt &&
   prev.item.isCompleted === next.item.isCompleted &&
-  prev.item.isFavorite === next.item.isFavorite &&
-  prev.item.aiSummary === next.item.aiSummary &&
-  prev.item.imageUrl === next.item.imageUrl &&
-  prev.item.tags.length === next.item.tags.length
+  prev.item.isFavorite === next.item.isFavorite
 );
 
 export { ItemCard };

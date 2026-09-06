@@ -419,7 +419,7 @@ export default function SaveScreen() {
     return () => {
       if (urlEnqueueTimer.current) clearTimeout(urlEnqueueTimer.current);
     };
-  }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [url]); // eslint-disable-line -- intentional: only re-run when url changes
 
   const triggerAutoEnqueue = useCallback(async (validUrl: string) => {
     if (lastEnqueuedUrl.current === validUrl) return;

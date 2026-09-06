@@ -58,6 +58,7 @@ export type ContentCategory =
   | 'Design'
   | 'Business'
   | 'Lifestyle'
+  | 'Real Estate'
   | 'Other';
 
 /** Extracted location data from page content. */
@@ -122,6 +123,16 @@ export interface SavedItem {
   category?: ContentCategory;
   /** Up to 3 collection IDs suggested by AI (not auto-assigned) */
   suggestedCollections?: string[];
+  /** Primary language detected in the content (title + description + summary) */
+  detectedLanguage?: string;
+  /** AI-translated summary (when autoTranslate is on and content is foreign) */
+  translatedSummary?: string;
+  /** AI-translated tags (when autoTranslate is on and content is foreign) */
+  translatedTags?: string[];
+  /** One-sentence reason the AI chose the category */
+  categoryReason?: string;
+  /** One-sentence reason the AI suggested the collections */
+  collectionReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -228,6 +239,16 @@ export interface AppSettings {
    * automatically assigned to the mapped collection without prompting.
    */
   autoAssignRules?: Record<string, string>;
+  /**
+   * When true, non-English content is automatically translated before
+   * summary, tags, and category are generated.
+   */
+  autoTranslateForeignContent?: boolean;
+  /**
+   * Languages that should never be auto-translated (user-configured list).
+   * Values match DetectedLanguage strings (e.g. "Japanese", "French").
+   */
+  neverTranslateLanguages?: string[];
 }
 
 export type SortOption = 'newest' | 'oldest' | 'alphabetical' | 'type';

@@ -82,6 +82,7 @@ export const CATEGORY_CONFIG: Record<
   Design:        { emoji: '🎨', icon: 'color-palette-outline', color: '#a855f7' },
   Business:      { emoji: '📈', icon: 'trending-up-outline', color: '#059669' },
   Lifestyle:     { emoji: '☕', icon: 'cafe-outline', color: '#f59e0b' },
+  'Real Estate': { emoji: '🏠', icon: 'home-outline', color: '#f59e0b' },
   Other:         { emoji: '📌', icon: 'bookmark-outline', color: '#64748b' },
 };
 
@@ -338,17 +339,64 @@ function extractLocationFromHtml(html: string): ContentLocation | undefined {
   return hasData ? location : undefined;
 }
 
-export function formatMetadataForAI(metadata: PageMetadata): string {
+/**
+ * Extract Instagram-specific signals from a page's HTML:
+ *  - caption text embedded in og:description (often "username: caption…")
+ *  - hashtags parsed out of the caption
+ *  - alt text on the main image (Instagram populates this with accessibility descriptions)
+ */
+function extractInstagramSignals(html: string): {
+  caption?: string;
+  hashtags?: string[];
+  altText?: string;
+} {
+  // Caption: Instagram puts the post caption into og:description
+  const ogDesc = getMeta(html, 'og:description') ?? getMeta(html, 'twitter:description');
+  const caption = ogDesc ? cleanValue(ogDesc) : undefined;
+
+  // Hashtags: extract #word patterns from caption
+  let hashtags: string[] | undefined;
+  if (caption) {
+    const found = caption.match(/#[\w\u3040-\u9fff\uac00-\ud7a3]+/g);
+    if (found && found.length > 0) {
+      hashtags = found.map((h) => h.slice(1).toLowerCase());
+    }
+  }
+
+  // Alt text: look for <img … alt="…"> near the main content area
+  const altMatch = html.match(/<img[^>]+alt=["']([^"']{10,})["'][^>]*>/i);
+  const altText = altMatch ? cleanValue(altMatch[1]) : undefined;
+
+  return { caption, hashtags, altText };
+}
+
+export interface PageMetadataEnhanced extends PageMetadata {
+  /** Instagram caption text (if source === 'instagram') */
+  caption?: string;
+  /** Hashtags parsed from caption (if source === 'instagram') */
+  hashtags?: string[];
+  /** Image alt text from the page */
+  altText?: string;
+}
+
+export function formatMetadataForAI(metadata: PageMetadataEnhanced): string {
   const locationParts: string[] = [];
   if (metadata.location?.venue) locationParts.push(metadata.location.venue);
   if (metadata.location?.city) locationParts.push(metadata.location.city);
   if (metadata.location?.country) locationParts.push(metadata.location.country);
 
+  // Format hashtags as a readable string so the AI can use them as tag hints
+  const hashtagStr = metadata.hashtags && metadata.hashtags.length > 0
+    ? metadata.hashtags.map((h) => `#${h}`).join(' ')
+    : undefined;
+
   return [
     `Source: ${metadata.source}`,
     `Media type: ${metadata.mediaType}`,
     metadata.title ? `Title: ${metadata.title}` : '',
-    metadata.description ? `Description: ${metadata.description}` : '',
+    metadata.caption ? `Caption: ${metadata.caption}` : (metadata.description ? `Description: ${metadata.description}` : ''),
+    hashtagStr ? `Hashtags: ${hashtagStr}` : '',
+    metadata.altText ? `Alt text: ${metadata.altText}` : '',
     metadata.image ? `Thumbnail: ${metadata.image}` : '',
     locationParts.length > 0 ? `Location: ${locationParts.join(', ')}` : '',
   ]
@@ -356,7 +404,7 @@ export function formatMetadataForAI(metadata: PageMetadata): string {
     .join('\n');
 }
 
-export async function fetchPageMetadata(url: string): Promise<PageMetadata | null> {
+export async function fetchPageMetadata(url: string): Promise<PageMetadataEnhanced | null> {
   const safeUrl = sanitizeUrl(url);
   if (!safeUrl) return null;
 
@@ -390,7 +438,10 @@ export async function fetchPageMetadata(url: string): Promise<PageMetadata | nul
 
     const location = extractLocationFromHtml(html);
 
-    const metadata: PageMetadata = {
+    // For Instagram, extract enhanced signals (caption, hashtags, alt text)
+    const instagramSignals = source === 'instagram' ? extractInstagramSignals(html) : {};
+
+    const metadata: PageMetadataEnhanced = {
       source,
       mediaType,
       title: getMeta(html, 'og:title') ?? getMeta(html, 'twitter:title') ?? getTitle(html),
@@ -400,6 +451,7 @@ export async function fetchPageMetadata(url: string): Promise<PageMetadata | nul
         getMeta(html, 'description'),
       image,
       location,
+      ...instagramSignals,
     };
 
     return metadata.title || metadata.description || metadata.image ? metadata : null;

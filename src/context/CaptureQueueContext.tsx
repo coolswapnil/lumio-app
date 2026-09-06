@@ -14,7 +14,7 @@ import {
   clearFinishedEntries,
   type CaptureEntry,
 } from '../services/captureQueue';
-import { setAutoAssignRule } from '../services/settings';
+import { setAutoAssignRule, getAppSettings, saveAppSettings } from '../services/settings';
 import { useData } from './DataContext';
 
 interface CaptureQueueContextValue {
@@ -62,15 +62,18 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
 
   // Track which itemIds we've already shown a prompt for, to avoid duplicates
   const promptedRef = useRef<Set<string>>(new Set());
+  // Whether we've already shown the auto-translate first-run prompt this session
+  const autoTranslatePromptedRef = useRef(false);
 
-  // Watch for completed entries with a pending auto-assign prompt
+  // Watch for completed entries — two separate prompt flows:
+  //   1. Auto-assign rule prompt (existing)
+  //   2. First-run Auto Translate prompt when a foreign-language item completes
   useEffect(() => {
     for (const entry of queue) {
-      if (
-        entry.status === 'completed' &&
-        entry.pendingAutoAssignPrompt &&
-        !promptedRef.current.has(entry.itemId)
-      ) {
+      if (entry.status !== 'completed') continue;
+
+      // ── Auto-assign rule prompt ──────────────────────────────────────────
+      if (entry.pendingAutoAssignPrompt && !promptedRef.current.has(entry.itemId)) {
         promptedRef.current.add(entry.itemId);
         const { category, collectionId, collectionName } = entry.pendingAutoAssignPrompt;
         Alert.alert(
@@ -88,6 +91,59 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
         );
       }
     }
+  }, [queue]);
+
+  // ── First-run Auto Translate prompt ──────────────────────────────────────
+  // When the first foreign-language item is saved and the user has not yet
+  // configured the auto-translate preference, show a one-time prompt.
+  useEffect(() => {
+    if (autoTranslatePromptedRef.current) return;
+    const foreignEntry = queue.find(
+      (e) =>
+        e.status === 'completed' &&
+        !promptedRef.current.has('autoTranslate:' + e.itemId)
+    );
+    if (!foreignEntry) return;
+
+    // Only show prompt when the item actually has a foreign language detected.
+    // We check this asynchronously after the entry completes.
+    (async () => {
+      const settings = await getAppSettings().catch(() => null);
+      // If the user already set the preference (either way), skip.
+      if (settings?.autoTranslateForeignContent !== undefined) return;
+
+      // Check the database for detectedLanguage on this item
+      const { getItemById } = await import('../database/items');
+      const item = await getItemById(foreignEntry.itemId).catch(() => null);
+      if (!item?.detectedLanguage || item.detectedLanguage === 'English' || item.detectedLanguage === 'Unknown') return;
+
+      // Guard against double-showing
+      if (autoTranslatePromptedRef.current) return;
+      autoTranslatePromptedRef.current = true;
+      promptedRef.current.add('autoTranslate:' + foreignEntry.itemId);
+
+      Alert.alert(
+        'Auto Translate Foreign Content',
+        `This item appears to be in ${item.detectedLanguage}. Enable automatic translation so summaries and tags are shown in English?`,
+        [
+          {
+            text: 'No',
+            style: 'cancel',
+            onPress: async () => {
+              const s = await getAppSettings();
+              await saveAppSettings({ ...s, autoTranslateForeignContent: false });
+            },
+          },
+          {
+            text: 'Enable',
+            onPress: async () => {
+              const s = await getAppSettings();
+              await saveAppSettings({ ...s, autoTranslateForeignContent: true });
+            },
+          },
+        ]
+      );
+    })();
   }, [queue]);
 
   const enqueue = useCallback(

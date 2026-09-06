@@ -68,6 +68,15 @@ export async function initDatabase(): Promise<void> {
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN category TEXT`);
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN suggested_collections TEXT NOT NULL DEFAULT '[]'`);
 
+  // Phase 1 quality: language detection + translation
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN detected_language TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN translated_summary TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN translated_tags TEXT NOT NULL DEFAULT '[]'`);
+
+  // Phase 1 Round 2: AI reasoning fields
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN category_reason TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN collection_reason TEXT`);
+
   // -------------------------------------------------------------------------
   // Sync infrastructure tables — offline-first queue, tombstones, metadata.
   // -------------------------------------------------------------------------

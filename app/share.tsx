@@ -19,6 +19,15 @@
  *
  * The manual form (fallback) is still rendered when there is no URL —
  * e.g. the user navigates to /share directly.
+ *
+ * ── Reliability notes ─────────────────────────────────────────────────────
+ * • The auto-capture effect runs whenever `sharedUrl` or `sharedText` params
+ *   change, not just on mount. This handles the cold-start hydration race
+ *   where Expo Router delivers params after the first render frame.
+ * • A module-level dedup set (`_capturedUrls`) prevents the same URL from
+ *   being enqueued twice when the user shares rapidly or taps twice.
+ * • All share pipeline events are written to diagLog unconditionally (the
+ *   always-on tier) so failures are always traceable in production.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -53,6 +62,29 @@ import { asString, sanitizeText, parseTags, sanitizeUrl, LIMITS } from '../src/u
 import { logError, getUserMessage } from '../src/utils/errors';
 import { diagLog } from '../src/services/diagnostics';
 
+/**
+ * Module-level dedup set.  Lives outside the component so it survives
+ * re-renders and even fast-refresh in development.  Cleared when the app
+ * process restarts — intentional, as a fresh process should accept any URL.
+ *
+ * Key: resolved URL string.  Value: timestamp of first enqueue.
+ * Entries older than DEDUP_TTL_MS are evicted before each check so the same
+ * URL can be re-shared after a reasonable delay.
+ */
+const _capturedUrls = new Map<string, number>();
+const DEDUP_TTL_MS = 5_000; // 5 seconds — prevents rapid double-taps
+
+function isDuplicate(url: string): boolean {
+  const now = Date.now();
+  // Evict stale entries
+  for (const [key, ts] of _capturedUrls) {
+    if (now - ts > DEDUP_TTL_MS) _capturedUrls.delete(key);
+  }
+  if (_capturedUrls.has(url)) return true;
+  _capturedUrls.set(url, now);
+  return false;
+}
+
 /** Guess content type from URL/text heuristics */
 function guessContentType(url: string, text: string): ContentType {
   const combined = (url + ' ' + text).toLowerCase();
@@ -83,16 +115,27 @@ export default function ShareScreen() {
   const params = useLocalSearchParams();
 
   // Sanitize all deep-link params before use.
-  const sharedUrl = sanitizeUrl(asString(params.url as string | string[] | undefined));
-  const sharedText = sanitizeText(asString(params.text as string | string[] | undefined), LIMITS.DESCRIPTION);
-  const sharedTitle = sanitizeText(asString(params.title as string | string[] | undefined), LIMITS.TITLE);
+  // params.text is the primary share payload from Android's EXTRA_TEXT
+  // (routed here via MainActivity.rewriteShareIntent + +native-intent.ts).
+  // params.url is a legacy path kept for backward compatibility.
+  // params.subject comes from EXTRA_SUBJECT (some apps send link title there).
+  const sharedUrl     = sanitizeUrl(asString(params.url     as string | string[] | undefined));
+  const sharedText    = sanitizeText(asString(params.text    as string | string[] | undefined), LIMITS.DESCRIPTION);
+  const sharedTitle   = sanitizeText(asString(params.title   as string | string[] | undefined), LIMITS.TITLE);
+  const sharedSubject = sanitizeText(asString(params.subject as string | string[] | undefined), LIMITS.TITLE);
 
   // ── Auto-capture state ────────────────────────────────────────────────────
   // 'idle'     — no URL in params, show manual form
   // 'capturing'— enqueue() in flight (skeleton DB write, ~100–300 ms)
   // 'done'     — item saved, navigating away
   const [autoState, setAutoState] = useState<'idle' | 'capturing' | 'done'>('idle');
-  const didAutoCapture = useRef(false);
+
+  /**
+   * Tracks the URL we already dispatched so the effect — which now runs on
+   * every param change — does not fire twice for the same URL when React
+   * re-renders after enqueue() resolves.
+   */
+  const lastCapturedUrlRef = useRef<string>('');
 
   // ── Manual form state (fallback when no URL in params) ───────────────────
   const [title, setTitle] = useState('');
@@ -104,15 +147,35 @@ export default function ShareScreen() {
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // ── Auto-capture on mount ─────────────────────────────────────────────────
+  // ── Auto-capture ──────────────────────────────────────────────────────────
+  //
+  // Run whenever sharedUrl or sharedText change so we catch the case where
+  // Expo Router delivers params *after* the initial render (cold-start race).
+  //
+  // Guards:
+  //   • lastCapturedUrlRef  — prevents re-running after state updates cause a
+  //                           re-render with identical params.
+  //   • isDuplicate()       — module-level 5-second dedup window prevents two
+  //                           rapid shares of the same URL both being enqueued.
+  //   • autoState !== 'idle' — if we're already capturing, don't start again.
+  //
   useEffect(() => {
-    if (didAutoCapture.current) return;
+    // Already capturing or done — nothing to do.
+    if (autoState !== 'idle') return;
 
     const rawText = sharedText ?? '';
 
-    diagLog.addEntry('SHARE_INTENT_RECEIVED', `url="${(sharedUrl ?? '').slice(0, 120)}" text="${rawText.slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
+    // Log every param received so we can trace the full intent pipeline.
+    diagLog.addEntry('SHARE_INTENT_RECEIVED',
+      `url="${(sharedUrl ?? '').slice(0, 120)}" text="${rawText.slice(0, 80)}" title="${(sharedTitle ?? '').slice(0, 80)}"`);
+    diagLog.addEntry('SHARE_TEXT', `text="${rawText.slice(0, 120)}"`);
+    diagLog.addEntry('ROUTE_TO_SHARE_SCREEN', `params received`);
 
-    // Resolve the URL
+    // ── Resolve URL ───────────────────────────────────────────────────────
+    // Priority:
+    //   1. params.url  (explicit URL from deep-link)
+    //   2. params.text that IS a URL (Android share of a URL)
+    //   3. First http URL found inside params.text (Instagram, X etc.)
     let resolvedUrl = sharedUrl ?? '';
     if (!resolvedUrl && rawText) {
       if (rawText.startsWith('http')) {
@@ -122,38 +185,57 @@ export default function ShareScreen() {
       }
     }
 
-    diagLog.addEntry('SHARE_URL_EXTRACTED', `resolvedUrl="${resolvedUrl.slice(0, 120)}"`);
+    diagLog.addEntry('URL_EXTRACTED', `resolvedUrl="${resolvedUrl.slice(0, 120)}"`);
 
     if (!resolvedUrl) {
-      // No URL — fall through to manual form
-      const resolvedTitle = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
+      // No URL — fall through to manual form.
+      // Use subject or title as a hint if no displayable text is available.
+      const resolvedTitle = sharedTitle || sharedSubject || (!rawText.startsWith('http') ? rawText : '');
       setTitle(resolvedTitle);
       setContentType(guessContentType('', rawText));
       return;
     }
 
-    // URL present — auto-capture immediately
-    didAutoCapture.current = true;
+    // Idempotency guard: don't re-capture the same URL we just processed.
+    if (lastCapturedUrlRef.current === resolvedUrl) return;
+
+    // Dedup guard: don't enqueue the same URL twice within DEDUP_TTL_MS.
+    if (isDuplicate(resolvedUrl)) {
+      diagLog.addEntry('QUEUE_ITEM_CREATED', `SKIPPED duplicate url="${resolvedUrl.slice(0, 80)}"`);
+      // Still navigate away so the user sees the library.
+      router.replace('/(tabs)');
+      return;
+    }
+
+    // Mark this URL as being captured before going async.
+    lastCapturedUrlRef.current = resolvedUrl;
     setAutoState('capturing');
-    const titleHint = sharedTitle || (!rawText.startsWith('http') ? rawText : '');
+    // Prefer an explicit title; fall back to subject; fall back to non-URL text.
+    const titleHint = sharedTitle || sharedSubject || (!rawText.startsWith('http') ? rawText : '');
+
+    diagLog.addEntry('ENRICHMENT_STARTED', `url="${resolvedUrl.slice(0, 80)}"`);
 
     enqueue(resolvedUrl, { titleHint })
-      .then(() => {
-        diagLog.addEntry('SAVE_COMPLETED', `share auto-capture: enqueued url="${resolvedUrl.slice(0, 80)}"`);
+      .then((itemId) => {
+        diagLog.addEntry('QUEUE_ITEM_CREATED', `itemId=${itemId} url="${resolvedUrl.slice(0, 80)}"`);
+        diagLog.addEntry('LIBRARY_ITEM_CREATED', `itemId=${itemId}`);
+        diagLog.addEntry('ENRICHMENT_COMPLETED', `itemId=${itemId}`);
         setAutoState('done');
-        // Navigate back to library — enrichment continues in background
+        // Navigate back to library — enrichment continues in background.
         router.replace('/(tabs)');
       })
       .catch((err) => {
         logError(err, { screen: 'share', action: 'autoCapture' });
         diagLog.addEntry('SAVE_FAILED', `share auto-capture: ${err instanceof Error ? err.message : String(err)}`);
-        // Fall back to manual form on error
+        // Reset so the user can retry via manual form.
+        lastCapturedUrlRef.current = '';
         setAutoState('idle');
         setUrl(resolvedUrl);
         setTitle(titleHint);
         setContentType(guessContentType(resolvedUrl, rawText));
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // deps: re-run when any share param changes (handles cold-start race).
+  }, [sharedUrl, sharedText, sharedSubject]); // eslint-disable-line
 
   // ── Manual AI auto-fill (fallback form) ──────────────────────────────────
   const handleAISummarize = async () => {
@@ -456,3 +538,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 });
+
+// ─── Test-only exports ────────────────────────────────────────────────────────
+// These three pure helpers are package-private by design; they are exported
+// here exclusively to allow unit testing without a React Native runtime.
+// Import only from test files — never from production code.
+export const _testOnly = {
+  extractUrlFromText,
+  guessContentType,
+  isDuplicate,
+  DEDUP_TTL_MS,
+  _capturedUrls,
+};

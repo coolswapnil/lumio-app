@@ -18,15 +18,18 @@
  */
 
 import { saveItem, updateItem } from '../database/items';
-import { getAISettings, getAutoAssignRules } from './settings';
-import { summarizeItem } from './ai';
+import { getAISettings, getAutoAssignRules, getAppSettings } from './settings';
+import { summarizeItem, callAIRaw } from './ai';
 import {
   fetchPageMetadata,
   formatMetadataForAI,
   detectUrlSource,
   detectMediaType,
   suggestContentType,
+  getExactSourceLabel,
+  type PageMetadataEnhanced,
 } from './metadata';
+import { detectLanguage, shouldTranslate, translateContent } from './languageDetection';
 import { diagLog } from './diagnostics';
 import { generateId } from '../utils/uuid';
 import { sanitizeText, sanitizeUrl, parseTags, LIMITS } from '../utils/validation';
@@ -54,6 +57,17 @@ export interface CaptureEntry {
   displayTitle?: string;
   /** Original title hint (from share text / clipboard). May be empty. */
   titleHint: string;
+  /**
+   * Exact source label set synchronously on enqueue (e.g. "Instagram Reel",
+   * "YouTube Video").  Used as the queue-row label before the AI title arrives.
+   */
+  sourceLabel?: string;
+  /**
+   * Content type detected synchronously at enqueue time.
+   * Passed to the AI call so the model knows the kind of content it is
+   * summarising (video, social, article, etc.).
+   */
+  contentType: ContentType;
   status: CaptureStatus;
   /** Which enrichment step is currently running. */
   currentStep?: EnrichmentStep;
@@ -174,10 +188,16 @@ export async function enqueueCapture(
   if (opts.onRefresh) await opts.onRefresh();
 
   // ── Step 2: Register queue entry ─────────────────────────────────────────
+  // Derive an exact source label synchronously so the queue row shows
+  // "Instagram Reel" / "YouTube Video" immediately, before AI runs.
+  const sourceLabel = getExactSourceLabel(source, mediaType, cleanUrl);
+
   const entry: CaptureEntry = {
     itemId,
     url: cleanUrl,
     titleHint,
+    sourceLabel,
+    contentType,
     status: 'queued',
     completedSteps: [],
     enqueuedAt: Date.now(),
@@ -211,7 +231,7 @@ async function _runEnrichment(
     collectionDisplayNames?: Record<string, string>;
   }
 ) {
-  const { itemId, url } = entry;
+  const { itemId, url, contentType: entryContentType } = entry;
 
   updateEntry(itemId, { status: 'processing', currentStep: 'source' });
 
@@ -246,8 +266,46 @@ async function _runEnrichment(
     if (aiSettings) {
       updateEntry(itemId, { currentStep: 'ai_summary' });
 
-      const metadataText = metadata ? formatMetadataForAI(metadata) : '';
-      const aiInputTitle = metadata?.title ?? entry.titleHint ?? url;
+      const metadataEnhanced = metadata as PageMetadataEnhanced | null;
+
+      // When the page fetch was blocked (e.g. Instagram login wall) metadata is
+      // null. Build a fallback metadata text from the share-sheet titleHint and
+      // any URL path segments so the AI still has something useful to work with.
+      let metadataText: string;
+      let aiInputTitle: string;
+      if (metadata) {
+        metadataText = formatMetadataForAI(metadata);
+        aiInputTitle = metadata.title ?? entry.titleHint ?? url;
+      } else {
+        // No metadata — synthesise what we can from the share payload.
+        // titleHint is the text selected/shared alongside the URL (often the
+        // post caption or video title from the share sheet).
+        aiInputTitle = entry.titleHint || url;
+        const fallbackParts: string[] = [
+          `Source: ${entry.contentType}`,
+          entry.titleHint ? `Caption: ${entry.titleHint}` : '',
+        ].filter(Boolean);
+        metadataText = fallbackParts.join('\n');
+        diagLog.addEntry('METADATA_FOUND', `captureQueue: no metadata — using titleHint fallback for ${itemId}`);
+      }
+
+      // ── Language detection ──────────────────────────────────────────────
+      // Detect from all available text signals before calling the AI
+      const textForLangDetection = [aiInputTitle, metadata?.description, metadataEnhanced?.caption]
+        .filter(Boolean)
+        .join(' ');
+      const detectedLang = detectLanguage(textForLangDetection);
+      if (detectedLang !== 'Unknown') {
+        dbUpdates.detectedLanguage = detectedLang;
+        diagLog.addEntry('METADATA_FOUND', `captureQueue: detected language=${detectedLang} for ${itemId}`);
+      }
+
+      // Decide whether to translate before sending to the AI
+      const appSettings = await getAppSettings().catch(() => null);
+      const autoTranslate = appSettings?.autoTranslateForeignContent ?? false;
+      const neverTranslate = appSettings?.neverTranslateLanguages ?? [];
+      const needsTranslation = shouldTranslate(detectedLang, autoTranslate, neverTranslate);
+
 
       try {
         const result = await summarizeItem(
@@ -255,18 +313,53 @@ async function _runEnrichment(
           aiInputTitle,
           undefined,
           metadataText || undefined,
-          dbUpdates.contentType ?? entry.status as any,  // pass current contentType
+          // Use the content type stored on the queue entry (detected synchronously
+          // at enqueue time), not entry.status which is a CaptureStatus string.
+          entryContentType,
           opts.collectionNames ?? []
         );
 
         if (!result.error) {
+          // ── Auto-translation ──────────────────────────────────────────────
+          // If translation is needed, translate summary, tags, and title
+          // before storing, so the user sees content in their app language.
+          if (needsTranslation && (result.summary || result.suggestedTags.length > 0 || result.suggestedTitle)) {
+            try {
+              const translation = await translateContent(
+                aiSettings,
+                {
+                  summary: result.summary || undefined,
+                  tags: result.suggestedTags.length > 0 ? result.suggestedTags : undefined,
+                  title: result.suggestedTitle,
+                  sourceLanguage: detectedLang,
+                  targetLanguage: 'English',
+                },
+                callAIRaw
+              );
+              if (!translation.error) {
+                if (translation.translatedSummary) dbUpdates.translatedSummary = sanitizeText(translation.translatedSummary, LIMITS.DESCRIPTION) || translation.translatedSummary;
+                if (translation.translatedTags) dbUpdates.translatedTags = parseTags(translation.translatedTags.join(', '));
+                diagLog.addEntry('AI_RESPONSE_RECEIVED', `captureQueue: translation done for ${itemId} lang=${detectedLang}`);
+              }
+            } catch (translErr) {
+              diagLog.addEntry('PROVIDER_ERROR', `captureQueue: translation failed for ${itemId}: ${translErr instanceof Error ? translErr.message : String(translErr)}`);
+            }
+          }
+
           if (result.summary) {
-            dbUpdates.aiSummary = result.summary;
+            // Sanitize AI output: decode HTML entities, trim, enforce length limit.
+            dbUpdates.aiSummary = sanitizeText(result.summary, LIMITS.DESCRIPTION) || result.summary;
             _markStep(itemId, 'ai_summary');
           }
           if (result.suggestedTags.length > 0) {
             dbUpdates.tags = parseTags(result.suggestedTags.join(', '));
             _markStep(itemId, 'tags');
+          }
+          if (result.categoryReason) {
+            dbUpdates.categoryReason = sanitizeText(result.categoryReason, 300) || result.categoryReason;
+          }
+          if (result.collectionReason) {
+            dbUpdates.collectionReason = sanitizeText(result.collectionReason, 300) || result.collectionReason;
           }
           if (result.category) {
             dbUpdates.category = result.category;
@@ -283,9 +376,11 @@ async function _runEnrichment(
             }
           }
           if (result.suggestedTitle) {
+            // sanitizeText decodes HTML entities (&#x20b9; → ₹, &#x2019; → ', etc.)
             const cleanTitle = sanitizeText(result.suggestedTitle, LIMITS.TITLE);
             if (cleanTitle) {
               dbUpdates.title = cleanTitle;
+              // Update queue entry so the banner row immediately shows the AI title
               updateEntry(itemId, { displayTitle: cleanTitle });
             }
           }
