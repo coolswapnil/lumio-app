@@ -24,9 +24,11 @@ import { useAppTheme } from '../../src/constants/colors';
 import { useData } from '../../src/context/DataContext';
 import { CollectionCard } from '../../src/components/CollectionCard';
 import { saveCollection } from '../../src/database/collections';
+import { getAllItems } from '../../src/database/items';
 import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
 import { Button } from '../../src/components/Button';
 import { FlatList } from 'react-native';
+import type { SavedItem } from '../../src/types';
 
 // MD3 extended FAB dimensions
 const FAB_HEIGHT = 56;
@@ -40,12 +42,14 @@ export default function CollectionsScreen() {
   const paper = useAppTheme();
   const insets = useSafeAreaInsets();
   const { collections, refreshCollections, refreshAll } = useData();
+  const [collectionItems, setCollectionItems] = useState<SavedItem[]>([]);
 
   // Re-fetch collection counts whenever this tab gains focus (e.g. after
   // assigning an item from item detail and navigating back here).
   useFocusEffect(
     useCallback(() => {
       refreshAll();
+      getAllItems().then(setCollectionItems);
     }, [refreshAll])
   );
   const [modalVisible, setModalVisible] = useState(false);
@@ -100,7 +104,7 @@ export default function CollectionsScreen() {
       <FlatList
         data={collections}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <CollectionCard collection={item} />}
+        renderItem={({ item }) => <CollectionCard collection={item} items={collectionItems} />}
         contentContainerStyle={[
           styles.listContent,
           // Clear space for FAB + tab bar + nav inset so last item is not hidden.
