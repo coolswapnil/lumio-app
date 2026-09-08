@@ -41,7 +41,31 @@ describe('collection insights', () => {
   });
 
   it('finds related saved items by category, tags, title and summary', () => {
-    expect(findRelatedItems(items[0], items).map((result) => result.id)).toEqual(['2']);
+    const results = findRelatedItems(items[0], items);
+    expect(results.map((r) => r.item.id)).toEqual(['2']);
+  });
+
+  it('attaches explainability data to each match', () => {
+    const results = findRelatedItems(items[0], items);
+    expect(results).toHaveLength(1);
+    const match = results[0];
+    expect(match.categoryMatch).toBe(true);
+    expect(match.sharedTags).toContain('dividend');
+    expect(match.score).toBeGreaterThanOrEqual(0.35);
+  });
+
+  it('excludes cross-category content regardless of shared words', () => {
+    // Travel item shares the "New York" location with item[0] but different category
+    // → must never appear as related
+    const results = findRelatedItems(items[0], items);
+    expect(results.map((r) => r.item.id)).not.toContain('3');
+  });
+
+  it('excludes items that only share a single tag with no category match', () => {
+    const base = item({ id: 'base', tags: ['finance', 'stocks'], category: 'Finance', aiSummary: 'investing' });
+    const onlyOneTag = item({ id: 'onetag', tags: ['stocks', 'comedy'], category: 'Entertainment', aiSummary: 'stand-up comedy' });
+    const results = findRelatedItems(base, [base, onlyOneTag]);
+    expect(results.map((r) => r.item.id)).not.toContain('onetag');
   });
 
   it('searches titles, tags, summaries, categories and sources', () => {

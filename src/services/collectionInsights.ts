@@ -103,26 +103,109 @@ function overlap(first: Set<string>, second: Set<string>): number {
   return matches;
 }
 
-/** Scores saved items using only locally available collection intelligence. */
-export function findRelatedItems(item: SavedItem, candidates: SavedItem[], limit = 4): SavedItem[] {
-  const titleWords = words(item.title);
-  const summaryWords = words(item.translatedSummary ?? item.aiSummary ?? item.description);
-  const tags = new Set(displayTags(item).map((tag) => tag.toLocaleLowerCase()));
+/**
+ * Normalises an overlap count to a [0, 1] similarity fraction.
+ * Returns 0 when either set is empty (avoids division-by-zero).
+ */
+function normalisedOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  return overlap(a, b) / Math.max(a.size, b.size);
+}
 
-  return candidates
+/**
+ * Explainability data returned alongside each related item.
+ *
+ * Surfaces to the UI as:
+ *   "Why related?"
+ *   Category: Technology
+ *   Shared Tags: Productivity, Tools
+ */
+export interface RelatedItemMatch {
+  item: SavedItem;
+  /** Composite similarity score in [0, 1]. */
+  score: number;
+  /** Whether the items share the same category. */
+  categoryMatch: boolean;
+  /** Tags that appear in both items (display-ready, original casing). */
+  sharedTags: string[];
+}
+
+/**
+ * Score related items using weighted dimensions:
+ *   Category  50 %
+ *   Tags      25 %
+ *   Summary   20 %
+ *   Location   5 %
+ *
+ * Minimum threshold: 0.35 — items below this score are never shown.
+ *
+ * Hard guards (applied before scoring):
+ *   • Category mismatch → excluded outright (location or summary alone
+ *     cannot produce a cross-category match above 0.35).
+ *   • Single shared tag with no category match → excluded.
+ *   • Location match alone (no category, no tags, no summary) → excluded.
+ */
+const RELATED_WEIGHTS = { category: 0.50, tags: 0.25, summary: 0.20, location: 0.05 };
+const RELATED_MIN_SCORE = 0.35;
+
+export function findRelatedItems(item: SavedItem, candidates: SavedItem[], limit = 4): RelatedItemMatch[] {
+  const summaryWords = words(item.translatedSummary ?? item.aiSummary ?? item.description);
+  const itemTags = displayTags(item).map((tag) => tag.toLocaleLowerCase());
+  const tags = new Set(itemTags);
+  const itemLocation = item.address?.toLocaleLowerCase().trim();
+
+  const scored = candidates
     .filter((candidate) => candidate.id !== item.id)
     .map((candidate) => {
-      const candidateTags = new Set(displayTags(candidate).map((tag) => tag.toLocaleLowerCase()));
-      const tagScore = overlap(tags, candidateTags) * 4;
-      const categoryScore = item.category && item.category === candidate.category ? 3 : 0;
-      const titleScore = overlap(titleWords, words(candidate.title)) * 2;
-      const summaryScore = overlap(summaryWords, words(candidate.translatedSummary ?? candidate.aiSummary ?? candidate.description));
-      return { candidate, score: tagScore + categoryScore + titleScore + summaryScore };
+      // Category — exact match produces full weight
+      const categoryMatch = !!(item.category && item.category === candidate.category);
+      const categoryScore = categoryMatch ? 1 : 0;
+
+      // Tags — normalised Jaccard-style overlap
+      const candidateTagsRaw = displayTags(candidate);
+      const candidateTags = new Set(candidateTagsRaw.map((tag) => tag.toLocaleLowerCase()));
+      const tagScore = normalisedOverlap(tags, candidateTags);
+
+      // ── Hard guard: single shared tag with no category match → skip ────
+      const sharedTagCount = [...tags].filter((t) => candidateTags.has(t)).length;
+      if (!categoryMatch && sharedTagCount <= 1) return null;
+
+      // Summary — normalised word overlap across summary / description text
+      const candidateSummaryWords = words(
+        candidate.translatedSummary ?? candidate.aiSummary ?? candidate.description,
+      );
+      const summaryScore = normalisedOverlap(summaryWords, candidateSummaryWords);
+
+      // Location — exact string match on address (city / venue level)
+      const candidateLocation = candidate.address?.toLocaleLowerCase().trim();
+      const locationScore =
+        itemLocation && candidateLocation && itemLocation === candidateLocation ? 1 : 0;
+
+      // ── Hard guard: location alone cannot create a match ───────────────
+      if (locationScore > 0 && categoryScore === 0 && tagScore === 0 && summaryScore === 0) return null;
+
+      const score =
+        categoryScore * RELATED_WEIGHTS.category +
+        tagScore      * RELATED_WEIGHTS.tags +
+        summaryScore  * RELATED_WEIGHTS.summary +
+        locationScore * RELATED_WEIGHTS.location;
+
+      // Collect shared tags in their original display casing
+      const sharedTags = candidateTagsRaw.filter((tag) => tags.has(tag.toLocaleLowerCase()));
+
+      return { candidate, score, categoryMatch, sharedTags };
     })
-    .filter(({ score }) => score > 0)
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.score >= RELATED_MIN_SCORE);
+
+  return scored
     .sort((a, b) => b.score - a.score || b.candidate.createdAt.localeCompare(a.candidate.createdAt))
     .slice(0, limit)
-    .map(({ candidate }) => candidate);
+    .map(({ candidate, score, categoryMatch, sharedTags }) => ({
+      item: candidate,
+      score,
+      categoryMatch,
+      sharedTags,
+    }));
 }
 
 export function searchCollectionItems(items: SavedItem[], query: string): SavedItem[] {

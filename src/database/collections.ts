@@ -8,6 +8,7 @@ function rowToCollection(row: Record<string, unknown>): Collection {
     description: row.description as string | undefined,
     icon: row.icon as IconName,
     color: row.color as string,
+    isSystem: Boolean(row.is_system),
     itemCount: (row.item_count as number) ?? 0,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -42,14 +43,15 @@ export async function getCollectionById(id: string): Promise<Collection | null> 
 export async function saveCollection(collection: Omit<Collection, 'itemCount'>): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    `INSERT OR REPLACE INTO collections (id, name, description, icon, color, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO collections (id, name, description, icon, color, is_system, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       collection.id,
       collection.name,
       collection.description ?? null,
       collection.icon,
       collection.color,
+      collection.isSystem ? 1 : 0,
       collection.createdAt,
       collection.updatedAt,
     ]

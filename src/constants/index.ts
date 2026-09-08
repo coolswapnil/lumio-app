@@ -156,3 +156,4 @@ export const LOCAL_AI_SOURCES: Array<{
     requiresApiKey: false,
   },
 ];
+export * from './systemCollections';

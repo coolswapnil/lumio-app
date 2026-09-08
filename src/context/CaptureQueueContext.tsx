@@ -14,7 +14,8 @@ import {
   clearFinishedEntries,
   type CaptureEntry,
 } from '../services/captureQueue';
-import { setAutoAssignRule, getAppSettings, saveAppSettings } from '../services/settings';
+import { getAppSettings, saveAppSettings } from '../services/settings';
+import { signalCaptureQueueReady } from '../services/serviceReadiness';
 import { useData } from './DataContext';
 
 interface CaptureQueueContextValue {
@@ -52,10 +53,11 @@ const CaptureQueueContext = createContext<CaptureQueueContextValue>({
 
 export function CaptureQueueProvider({ children }: { children: React.ReactNode }) {
   const [queue, setQueue] = useState<CaptureEntry[]>([]);
-  const { collections, refreshAll } = useData();
+  const { refreshAll } = useData();
 
-  // Subscribe to the service's reactive state
+  // Subscribe to the service's reactive state and signal readiness.
   useEffect(() => {
+    signalCaptureQueueReady();
     const unsub = subscribeQueue(setQueue);
     return unsub;
   }, []);
@@ -64,34 +66,6 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
   const promptedRef = useRef<Set<string>>(new Set());
   // Whether we've already shown the auto-translate first-run prompt this session
   const autoTranslatePromptedRef = useRef(false);
-
-  // Watch for completed entries — two separate prompt flows:
-  //   1. Auto-assign rule prompt (existing)
-  //   2. First-run Auto Translate prompt when a foreign-language item completes
-  useEffect(() => {
-    for (const entry of queue) {
-      if (entry.status !== 'completed') continue;
-
-      // ── Auto-assign rule prompt ──────────────────────────────────────────
-      if (entry.pendingAutoAssignPrompt && !promptedRef.current.has(entry.itemId)) {
-        promptedRef.current.add(entry.itemId);
-        const { category, collectionId, collectionName } = entry.pendingAutoAssignPrompt;
-        Alert.alert(
-          'Auto-assign future items?',
-          `Auto-assign future ${category} items to "${collectionName}"?`,
-          [
-            { text: 'No', style: 'cancel' },
-            {
-              text: 'Yes',
-              onPress: () => {
-                setAutoAssignRule(category, collectionId).catch(() => {});
-              },
-            },
-          ]
-        );
-      }
-    }
-  }, [queue]);
 
   // ── First-run Auto Translate prompt ──────────────────────────────────────
   // When the first foreign-language item is saved and the user has not yet
@@ -151,24 +125,12 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
       url: string,
       opts: { titleHint?: string; onItemSaved?: (itemId: string) => void } = {}
     ) => {
-      // Build a name→id map and id→name map for collection matching
-      const collectionNames = collections.map((c) => c.name);
-      const collectionIds: Record<string, string> = {};
-      const collectionDisplayNames: Record<string, string> = {};
-      for (const c of collections) {
-        collectionIds[c.name.toLowerCase()] = c.id;
-        collectionDisplayNames[c.id] = c.name;
-      }
-
       return enqueueCapture(url, {
         ...opts,
-        collectionNames,
-        collectionIds,
-        collectionDisplayNames,
         onRefresh: refreshAll,
       });
     },
-    [collections, refreshAll]
+    [refreshAll]
   );
 
   const clearFinished = useCallback(() => {

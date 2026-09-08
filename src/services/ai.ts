@@ -17,8 +17,15 @@ export interface AISummarizeResult {
   category?: ContentCategory;
   /** One-sentence reason the AI chose this category */
   categoryReason?: string;
+  /** Specific sub-topic label within the assigned collection (Level 2) */
+  topicSuggestion?: string;
   /** Up to 3 collection name suggestions (not IDs — matched by name in the UI) */
   suggestedCollectionNames?: string[];
+  /**
+   * AI confidence (0–100) in the top collection suggestion.
+   * ≥90 → auto-assign silently; 70–89 → show suggestion prompt; <70 → skip.
+   */
+  collectionConfidence?: number;
   /** One-sentence reason the AI suggested these collections */
   collectionReason?: string;
   /** Location data extracted from the content */
@@ -436,7 +443,7 @@ export async function summarizeItem(
   url?: string,
   description?: string,
   contentType?: string,
-  collectionNames?: string[]
+  systemCollectionNames?: string[]
 ): Promise<AISummarizeResult> {
   const context = [
     `Title: ${title}`,
@@ -446,8 +453,8 @@ export async function summarizeItem(
     .filter(Boolean)
     .join('\n');
 
-  const collectionHint = collectionNames && collectionNames.length > 0
-    ? `\nAvailable collections the user has: ${collectionNames.join(', ')}. Suggest up to 3 that fit best (by exact name). If none fit, return an empty array.`
+  const collectionHint = systemCollectionNames && systemCollectionNames.length > 0
+    ? `\nAvailable system collections: ${systemCollectionNames.join(', ')}. Assign the item to exactly one of these. Also set "topicSuggestion" to a specific sub-topic label that best describes this item within its collection (2-5 words, e.g. "Dividend Investing", "Property Investment"). If the item does not clearly fit a sub-topic, return an empty string for "topicSuggestion".`
     : '';
 
   const categoryList = 'Finance, Technology, Health, Travel, Food, Career, Learning, Entertainment, Science, Sports, Politics, Design, Business, Lifestyle, Real Estate, Other';
@@ -467,12 +474,15 @@ export async function summarizeItem(
         '  "suggestedTags": ["tag1", "tag2", "tag3"],\n' +
         `  "category": "One of: ${categoryList}",\n` +
         '  "categoryReason": "One sentence explaining why this category was chosen",\n' +
+        '  "topicSuggestion": "2-5 word sub-topic label, or empty string",\n' +
         '  "suggestedCollectionNames": ["Name1", "Name2"],\n' +
+        '  "collectionConfidence": 95,\n' +
         '  "collectionReason": "One sentence explaining why these collections were suggested",\n' +
         '  "location": { "venue": "...", "city": "...", "country": "..." }\n' +
         '}\n' +
         'For location, only include fields that are clearly stated in the content. If no location is evident, use null for the location field.\n' +
         'For categoryReason and collectionReason, be concise — one sentence only. If no collection is suggested, set collectionReason to null.\n' +
+        '"collectionConfidence" must be an integer 0-100: use 90-100 when the match is obvious, 70-89 when likely, below 70 when unsure, 0 when no collection is suggested.\n' +
         'Real estate signals: if the content mentions property, land, plot, apartment, flat, villa, PMRDA, RERA, builder, township, sq.ft, BHK, or similar real-estate terms, set category to "Real Estate" and include relevant location tags.\n' +
         'Instagram Reel signals: if source is Instagram, extract key topics from the caption and hashtags to generate accurate tags and category.\n' +
         'For tags, use the hashtags directly if they are informative, and supplement with inferred semantic tags.',
@@ -505,7 +515,9 @@ export async function summarizeItem(
       suggestedTitle?: string;
       category?: string;
       categoryReason?: string;
+      topicSuggestion?: unknown;
       suggestedCollectionNames?: unknown;
+      collectionConfidence?: unknown;
       collectionReason?: string;
       location?: unknown;
     } | null;
@@ -520,6 +532,10 @@ export async function summarizeItem(
       const category = rawCategory && validCategories.includes(rawCategory) ? rawCategory : undefined;
       const categoryReason = typeof parsed.categoryReason === 'string' ? decodeHtmlEntities(parsed.categoryReason).trim() || undefined : undefined;
 
+      // Extract topicSuggestion (sub-topic label within Level-1 system collection)
+      const rawTopicSuggestion = typeof parsed.topicSuggestion === 'string' ? decodeHtmlEntities(parsed.topicSuggestion).trim() : undefined;
+      const topicSuggestion = rawTopicSuggestion && rawTopicSuggestion.length > 0 ? rawTopicSuggestion : undefined;
+
       // Suggested collection names — up to 3 strings.
       // Strip trailing punctuation (AI sometimes returns "Real Estate." or "Learning,")
       // to ensure the lowercased name matches the collectionIds map correctly.
@@ -530,6 +546,10 @@ export async function summarizeItem(
             .filter(Boolean)
             .slice(0, 3)
         : undefined;
+      // collectionConfidence — clamp to [0, 100], default 0
+      const rawConfidence = typeof parsed.collectionConfidence === 'number' ? parsed.collectionConfidence : Number(parsed.collectionConfidence ?? 0);
+      const collectionConfidence = Number.isFinite(rawConfidence) ? Math.min(100, Math.max(0, Math.round(rawConfidence))) : 0;
+
       const collectionReason = typeof parsed.collectionReason === 'string' ? decodeHtmlEntities(parsed.collectionReason).trim() || undefined : undefined;
 
       // Location — only accept well-formed objects with at least one string field
@@ -555,11 +575,13 @@ export async function summarizeItem(
         suggestedTitle: rawTitle || undefined,
         category,
         categoryReason,
+        topicSuggestion,
         suggestedCollectionNames,
+        collectionConfidence: collectionConfidence > 0 ? collectionConfidence : undefined,
         collectionReason,
         location,
       };
-      diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}" category="${result.category ?? ''}" collections=${result.suggestedCollectionNames?.length ?? 0}`);
+      diagLog.addEntry('AI_RESPONSE_PARSED', `ok summary="${result.summary.slice(0, 80)}" tags=${result.suggestedTags.length} title="${result.suggestedTitle ?? ''}" category="${result.category ?? ''}" topicSuggestion="${result.topicSuggestion ?? ''}" collections=${result.suggestedCollectionNames?.length ?? 0} confidence=${result.collectionConfidence ?? 0}`);
       return result;
     }
     // Raw response contained no parseable JSON object — treat as parse failure

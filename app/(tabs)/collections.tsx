@@ -25,10 +25,11 @@ import { useData } from '../../src/context/DataContext';
 import { CollectionCard } from '../../src/components/CollectionCard';
 import { saveCollection } from '../../src/database/collections';
 import { getAllItems } from '../../src/database/items';
+import { getAllTopics } from '../../src/database/topics';
 import { COLLECTION_ICONS, COLLECTION_COLORS } from '../../src/constants';
 import { Button } from '../../src/components/Button';
 import { FlatList } from 'react-native';
-import type { SavedItem } from '../../src/types';
+import type { SavedItem, Topic } from '../../src/types';
 
 // MD3 extended FAB dimensions
 const FAB_HEIGHT = 56;
@@ -43,6 +44,7 @@ export default function CollectionsScreen() {
   const insets = useSafeAreaInsets();
   const { collections, refreshCollections, refreshAll } = useData();
   const [collectionItems, setCollectionItems] = useState<SavedItem[]>([]);
+  const [topicsByCollection, setTopicsByCollection] = useState<Record<string, Topic[]>>({});
 
   // Re-fetch collection counts whenever this tab gains focus (e.g. after
   // assigning an item from item detail and navigating back here).
@@ -50,6 +52,14 @@ export default function CollectionsScreen() {
     useCallback(() => {
       refreshAll();
       getAllItems().then(setCollectionItems);
+      getAllTopics().then((topics) => {
+        const map: Record<string, Topic[]> = {};
+        for (const t of topics) {
+          if (!map[t.parentCollectionId]) map[t.parentCollectionId] = [];
+          map[t.parentCollectionId].push(t);
+        }
+        setTopicsByCollection(map);
+      });
     }, [refreshAll])
   );
   const [modalVisible, setModalVisible] = useState(false);
@@ -78,6 +88,7 @@ export default function CollectionsScreen() {
       description: sanitizeText(description, LIMITS.COLLECTION_DESCRIPTION) || undefined,
       icon: selectedIcon,
       color: selectedColor,
+      isSystem: false,
       createdAt: now,
       updatedAt: now,
     });
@@ -104,7 +115,13 @@ export default function CollectionsScreen() {
       <FlatList
         data={collections}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <CollectionCard collection={item} items={collectionItems} />}
+        renderItem={({ item }) => (
+          <CollectionCard
+            collection={item}
+            items={collectionItems}
+            topics={topicsByCollection[item.id] ?? []}
+          />
+        )}
         contentContainerStyle={[
           styles.listContent,
           // Clear space for FAB + tab bar + nav inset so last item is not hidden.

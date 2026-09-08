@@ -1,7 +1,7 @@
 import { getDatabase } from './db';
 import type { SavedItem, ContentType, SortOption, FilterOption, UrlSource, MediaType, ContentCategory } from '../types';
 
-function rowToItem(row: Record<string, unknown>): SavedItem {
+export function rowToItem(row: Record<string, unknown>): SavedItem {
   return {
     id: row.id as string,
     title: row.title as string,
@@ -27,6 +27,9 @@ function rowToItem(row: Record<string, unknown>): SavedItem {
     translatedTags: JSON.parse((row.translated_tags as string) || '[]'),
     categoryReason: row.category_reason as string | undefined,
     collectionReason: row.collection_reason as string | undefined,
+    topicId: row.topic_id as string | undefined,
+    topicSuggestion: row.topic_suggestion as string | undefined,
+    topicSuggestionRaw: row.topic_suggestion_raw as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -100,8 +103,9 @@ export async function saveItem(item: SavedItem): Promise<void> {
       source, media_type, category, suggested_collections,
       detected_language, translated_summary, translated_tags,
       category_reason, collection_reason,
+      topic_id, topic_suggestion, topic_suggestion_raw,
       created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
    [
      item.id,
      item.title,
@@ -127,6 +131,9 @@ export async function saveItem(item: SavedItem): Promise<void> {
      JSON.stringify(item.translatedTags ?? []),
      item.categoryReason ?? null,
      item.collectionReason ?? null,
+     item.topicId ?? null,
+     item.topicSuggestion ?? null,
+     item.topicSuggestionRaw ?? null,
      item.createdAt,
      item.updatedAt,
    ]
@@ -161,6 +168,9 @@ export async function updateItem(id: string, updates: Partial<SavedItem>): Promi
   if (updates.translatedTags !== undefined) { fields.push('translated_tags = ?'); values.push(JSON.stringify(updates.translatedTags ?? [])); }
   if (updates.categoryReason !== undefined) { fields.push('category_reason = ?'); values.push(updates.categoryReason ?? null); }
   if (updates.collectionReason !== undefined) { fields.push('collection_reason = ?'); values.push(updates.collectionReason ?? null); }
+  if ('topicId' in updates) { fields.push('topic_id = ?'); values.push(updates.topicId ?? null); }
+  if (updates.topicSuggestion !== undefined) { fields.push('topic_suggestion = ?'); values.push(updates.topicSuggestion ?? null); }
+  if (updates.topicSuggestionRaw !== undefined) { fields.push('topic_suggestion_raw = ?'); values.push(updates.topicSuggestionRaw ?? null); }
 
   if (fields.length === 0) return;
 

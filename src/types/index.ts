@@ -133,8 +133,23 @@ export interface SavedItem {
   categoryReason?: string;
   /** One-sentence reason the AI suggested the collections */
   collectionReason?: string;
+  /** ID of the Topic this item is filed under (Level 2) */
+  topicId?: string;
+  /** Normalized topic label suggested by AI (e.g. "machine learning") */
+  topicSuggestion?: string;
+  /** Original topic text returned by AI before normalization */
+  topicSuggestionRaw?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Topic {
+  id: string;
+  label: string;
+  normalizedLabel: string;
+  parentCollectionId: string;
+  itemCount: number;
+  createdAt: string;
 }
 
 export interface Collection {
@@ -144,6 +159,7 @@ export interface Collection {
   /** Ionicons icon name */
   icon: IconName;
   color: string;
+  isSystem: boolean;
   /** Cached item count from the database JOIN */
   itemCount: number;
   createdAt: string;

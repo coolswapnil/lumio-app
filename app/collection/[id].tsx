@@ -5,6 +5,7 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,9 +20,10 @@ import { useData } from '../../src/context/DataContext';
 import { ItemCard } from '../../src/components/ItemCard';
 import { getItemsByCollection } from '../../src/database/items';
 import { deleteCollection } from '../../src/database/collections';
+import { getTopicsByCollection } from '../../src/database/topics';
 import { buildCollectionInsights, searchCollectionItems } from '../../src/services/collectionInsights';
 import { URL_SOURCE_LABELS } from '../../src/services/metadata';
-import type { SavedItem } from '../../src/types';
+import type { SavedItem, Topic } from '../../src/types';
 
 dayjs.extend(relativeTime);
 
@@ -39,10 +41,16 @@ export default function CollectionDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const [items, setItems] = useState<SavedItem[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [query, setQuery] = useState('');
 
   const collection = collections.find((candidate) => candidate.id === id);
-  const loadItems = useCallback(() => { if (id) getItemsByCollection(id).then(setItems); }, [id]);
+  const loadItems = useCallback(() => {
+    if (id) {
+      getItemsByCollection(id).then(setItems);
+      getTopicsByCollection(id).then(setTopics);
+    }
+  }, [id]);
   useEffect(() => { loadItems(); }, [loadItems]);
   useFocusEffect(useCallback(() => { loadItems(); }, [loadItems]));
   useEffect(() => { loadItems(); }, [contextItems, loadItems]);
@@ -62,7 +70,9 @@ export default function CollectionDetailScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={[styles.navBar, { borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={() => navigation.canGoBack() ? router.back() : router.replace('/(tabs)')} style={styles.backBtn}><Ionicons name="chevron-back" size={20} color={paper.colors.primary} /><Text style={{ color: paper.colors.primary, fontSize: 16 }}>Back</Text></TouchableOpacity>
-        <TouchableOpacity onPress={handleDelete} accessibilityLabel="Delete collection"><Ionicons name="trash-outline" size={20} color={paper.colors.error} /></TouchableOpacity>
+        {!collection.isSystem && (
+          <TouchableOpacity onPress={handleDelete} accessibilityLabel="Delete collection"><Ionicons name="trash-outline" size={20} color={paper.colors.error} /></TouchableOpacity>
+        )}
       </View>
       <FlatList
         data={filteredItems}
@@ -85,6 +95,27 @@ export default function CollectionDetailScreen() {
             <Metric icon="time-outline" label="Last saved" value={insights.lastAddedAt ? dayjs(insights.lastAddedAt).fromNow() : '—'} color={paper.colors.primary} />
             <Metric icon="calendar-outline" label="Added in 30 days" value={String(insights.itemsAddedLast30Days)} color={paper.colors.primary} />
           </View>
+          {topics.length > 0 && (
+            <View style={[styles.section, { backgroundColor: paper.colors.surfaceContainerLow ?? paper.colors.surface }]}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="layers-outline" size={15} color={paper.colors.secondary} />
+                <Text style={[styles.sectionLabel, { color: paper.colors.secondary }]}>TOPICS</Text>
+              </View>
+              <View style={styles.chips}>
+                {topics.map((topic) => (
+                  <Pressable
+                    key={topic.id}
+                    onPress={() => router.push(`/collection/${id}/topic/${topic.id}`)}
+                    style={[styles.chip, { borderColor: paper.colors.secondary + '50', backgroundColor: paper.colors.secondaryContainer }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${topic.label}, ${topic.itemCount} items`}
+                  >
+                    <Text style={[styles.chipText, { color: paper.colors.onSecondaryContainer }]}>{topic.label} · {topic.itemCount}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
           <Section title="Top topics" icon="pricetags-outline" color={paper.colors.secondary}><InsightChips values={insights.topTags} color={paper.colors.secondary} /></Section>
           <Section title="AI details" icon="sparkles-outline" color={paper.colors.tertiary}>
             <DetailRow label="Categories" value={insights.topCategories.map((value) => value.label).join(', ') || 'No categories yet'} color={colors.textSecondary} />

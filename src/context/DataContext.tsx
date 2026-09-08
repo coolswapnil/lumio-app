@@ -4,6 +4,8 @@ import * as SplashScreen from 'expo-splash-screen';
 // FIX M-18: prevent expo-router from auto-hiding the splash until DB is ready
 SplashScreen.preventAutoHideAsync().catch(() => {});
 import { initDatabase } from '../database/db';
+import { ShareIngestionManager } from '../services/shareIngestion';
+import { signalDataProviderReady } from '../services/serviceReadiness';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
 import { syncWidgetCount } from '../services/widget_bridge';
@@ -75,12 +77,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     initDatabase().then(() => {
       if (!cancelled) {
-        refreshAll().finally(() => {
-          if (!cancelled) {
-            setIsLoading(false);
-            SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
-          }
-        });
+        // Recover any pending shares in background/foreground on startup
+        ShareIngestionManager.recoverPendingShares()
+          .catch(() => {})
+          .finally(() => {
+            if (!cancelled) {
+              refreshAll().finally(() => {
+                if (!cancelled) {
+                  setIsLoading(false);
+                  signalDataProviderReady();
+                  SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
+                }
+              });
+            }
+          });
       }
     });
     return () => { cancelled = true; };

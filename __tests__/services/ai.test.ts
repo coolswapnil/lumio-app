@@ -159,3 +159,54 @@ describe('summarizeItem — unknown provider', () => {
     expect(result.suggestedTags).toEqual([]);
   });
 });
+
+// ─── topicSuggestion extraction ───────────────────────────────────────────────
+describe('summarizeItem — topicSuggestion extraction', () => {
+  it('returns topicSuggestion when the AI response includes a non-empty string', async () => {
+    const responseBody = {
+      summary: 'Strategies for building income through dividend stocks.',
+      suggestedTags: ['dividend', 'investing', 'stocks'],
+      suggestedTitle: 'Dividend Investing Guide',
+      topicSuggestion: 'Dividend Investing',
+    };
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({
+        choices: [{ message: { content: JSON.stringify(responseBody) } }],
+      })
+    );
+
+    const result = await summarizeItem(
+      baseSettings,
+      'Dividend Investing Guide',
+      'https://example.com',
+      undefined,
+      undefined,
+      ['Finance', 'Technology', 'Travel']
+    );
+    expect(result.topicSuggestion).toBe('Dividend Investing');
+  });
+
+  it('returns topicSuggestion === undefined when the AI response has an empty string', async () => {
+    const responseBody = {
+      summary: 'General overview of the stock market.',
+      suggestedTags: ['stocks', 'market'],
+      suggestedTitle: 'Stock Market Overview',
+      topicSuggestion: '',
+    };
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({
+        choices: [{ message: { content: JSON.stringify(responseBody) } }],
+      })
+    );
+
+    const result = await summarizeItem(
+      baseSettings,
+      'Stock Market Overview',
+      'https://example.com',
+      undefined,
+      undefined,
+      ['Finance', 'Technology']
+    );
+    expect(result.topicSuggestion).toBeUndefined();
+  });
+});

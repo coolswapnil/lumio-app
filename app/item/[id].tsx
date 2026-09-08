@@ -21,7 +21,7 @@ import { useCaptureQueue } from '../../src/context/CaptureQueueContext';
 import { getItemById, deleteItem, toggleFavorite, toggleCompleted, updateItem } from '../../src/database/items';
 import { CONTENT_TYPE_CONFIG } from '../../src/constants';
 import { getExactSourceLabel, CATEGORY_CONFIG } from '../../src/services/metadata';
-import { findRelatedItems } from '../../src/services/collectionInsights';
+import { findRelatedItems, type RelatedItemMatch } from '../../src/services/collectionInsights';
 import { logError, getUserMessage } from '../../src/utils/errors';
 import type { SavedItem } from '../../src/types';
 
@@ -533,18 +533,29 @@ export default function ItemDetailScreen() {
               <Ionicons name="git-compare-outline" size={14} color={paper.colors.primary} />
               <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>RELATED CONTENT</Text>
             </View>
-            <Text style={[styles.hint, { color: colors.textMuted, marginTop: 5 }]}>Matched by category, tags, title and summary.</Text>
-            {relatedItems.map((related) => (
+            {relatedItems.map((match: RelatedItemMatch) => (
               <TouchableOpacity
-                key={related.id}
-                onPress={() => router.push(`/item/${related.id}`)}
+                key={match.item.id}
+                onPress={() => router.push(`/item/${match.item.id}`)}
                 style={[styles.relatedRow, { borderTopColor: colors.border }]}
                 accessibilityRole="button"
-                accessibilityLabel={`Open related item: ${related.title}`}
+                accessibilityLabel={`Open related item: ${match.item.title}`}
               >
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={[styles.relatedTitle, { color: colors.text }]}>{related.title}</Text>
-                  <Text numberOfLines={1} style={[styles.relatedMeta, { color: colors.textMuted }]}>{related.category ?? 'Uncategorized'} · {related.tags.slice(0, 2).map((tag) => `#${tag}`).join(' ')}</Text>
+                  <Text numberOfLines={1} style={[styles.relatedTitle, { color: colors.text }]}>{match.item.title}</Text>
+                  {/* Why related? — explainability line */}
+                  <View style={styles.relatedWhyRow}>
+                    {match.categoryMatch && match.item.category ? (
+                      <Text style={[styles.relatedWhyChip, { backgroundColor: colors.border, color: colors.textMuted }]}>
+                        {match.item.category}
+                      </Text>
+                    ) : null}
+                    {match.sharedTags.slice(0, 3).map((tag) => (
+                      <Text key={tag} style={[styles.relatedWhyChip, { backgroundColor: colors.border, color: colors.textMuted }]}>
+                        #{tag}
+                      </Text>
+                    ))}
+                  </View>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
               </TouchableOpacity>
@@ -729,7 +740,8 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   relatedTitle: { fontSize: 14, fontWeight: '600' },
-  relatedMeta: { fontSize: 12, marginTop: 2 },
+  relatedWhyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  relatedWhyChip: { fontSize: 11, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: 'hidden' },
   actionButtons: { gap: 10 },
   actionBtn: {
     flexDirection: 'row',

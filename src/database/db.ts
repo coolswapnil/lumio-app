@@ -1,4 +1,6 @@
 import * as SQLite from 'expo-sqlite';
+import { signalDatabaseInitialized } from '../services/serviceReadiness';
+import { runLegacyCollectionMigration } from './migrations';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -50,6 +52,16 @@ export async function initDatabase(): Promise<void> {
       FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS topics (
+      id                   TEXT PRIMARY KEY NOT NULL,
+      label                TEXT NOT NULL,
+      normalized_label     TEXT NOT NULL,
+      parent_collection_id TEXT NOT NULL,
+      item_count           INTEGER NOT NULL DEFAULT 0,
+      created_at           TEXT NOT NULL,
+      UNIQUE (normalized_label, parent_collection_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_items_collection ON saved_items(collection_id);
     CREATE INDEX IF NOT EXISTS idx_items_type ON saved_items(content_type);
     CREATE INDEX IF NOT EXISTS idx_items_favorite ON saved_items(is_favorite);
@@ -61,6 +73,12 @@ export async function initDatabase(): Promise<void> {
   // -------------------------------------------------------------------------
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
   await runSafe(database, `ALTER TABLE collections ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+
+  // Collection architecture upgrade: system-collection flag + topic linkage
+  await runSafe(database, `ALTER TABLE collections ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN topic_id TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN topic_suggestion TEXT`);
+  await runSafe(database, `ALTER TABLE saved_items ADD COLUMN topic_suggestion_raw TEXT`);
 
   // Smart-categorization fields (content-intelligence update)
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN source TEXT`);
@@ -76,6 +94,10 @@ export async function initDatabase(): Promise<void> {
   // Phase 1 Round 2: AI reasoning fields
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN category_reason TEXT`);
   await runSafe(database, `ALTER TABLE saved_items ADD COLUMN collection_reason TEXT`);
+
+  // Share hardening: raw payload and extraction source for full-chain recovery
+  await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN raw_path TEXT`);
+  await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN extraction_source TEXT`);
 
   // -------------------------------------------------------------------------
   // Sync infrastructure tables — offline-first queue, tombstones, metadata.
@@ -109,17 +131,32 @@ export async function initDatabase(): Promise<void> {
       key   TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS pending_shares (
+      id          TEXT PRIMARY KEY NOT NULL,
+      text        TEXT,
+      url         TEXT,
+      title       TEXT,
+      subject     TEXT,
+      status      TEXT NOT NULL DEFAULT 'pending'
+                  CHECK(status IN ('pending','processed','failed')),
+      created_at  TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pending_shares_status
+      ON pending_shares(status);
   `);
 
   // -------------------------------------------------------------------------
-  // Seed default collections if none exist.
+  // Seed system collections (INSERT OR IGNORE — safe to run on every startup).
   // -------------------------------------------------------------------------
-  const existing = await database.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM collections'
-  );
-  if (existing && existing.count === 0) {
-    await seedDefaultCollections(database);
-  }
+  await seedSystemCollections(database);
+
+  // Migrate any legacy user collections to system collection IDs.
+  await runLegacyCollectionMigration(database);
+
+  // Signal that all DDL is complete and the DB is safe to use.
+  signalDatabaseInitialized();
 }
 
 /** Execute a DDL statement and swallow "duplicate column" errors on upgrades. */
@@ -134,20 +171,25 @@ async function runSafe(
   }
 }
 
-async function seedDefaultCollections(database: SQLite.SQLiteDatabase): Promise<void> {
-  const defaults = [
-    { id: 'col-finance',    name: 'Finance',     icon: 'cash' as const,       color: '#10b981' },
-    { id: 'col-investing',  name: 'Investing',   icon: 'trending-up' as const,color: '#059669' },
-    { id: 'col-learning',   name: 'Learning',    icon: 'school' as const,     color: '#3b82f6' },
-    { id: 'col-research',   name: 'Research',    icon: 'search' as const,     color: '#6366f1' },
-    { id: 'col-career',     name: 'Career',      icon: 'briefcase' as const,  color: '#8b5cf6' },
-    { id: 'col-technology', name: 'Technology',  icon: 'hardware-chip' as const, color: '#0ea5e9' },
+async function seedSystemCollections(database: SQLite.SQLiteDatabase): Promise<void> {
+  const systemCollections = [
+    { id: 'sys-finance',       name: 'Finance',       icon: 'cash',          color: '#10b981' },
+    { id: 'sys-technology',    name: 'Technology',    icon: 'hardware-chip', color: '#0ea5e9' },
+    { id: 'sys-learning',      name: 'Learning',      icon: 'school',        color: '#3b82f6' },
+    { id: 'sys-real-estate',   name: 'Real Estate',   icon: 'home',          color: '#f59e0b' },
+    { id: 'sys-travel',        name: 'Travel',        icon: 'airplane',      color: '#8b5cf6' },
+    { id: 'sys-food',          name: 'Food',          icon: 'restaurant',    color: '#ef4444' },
+    { id: 'sys-entertainment', name: 'Entertainment', icon: 'film',          color: '#ec4899' },
+    { id: 'sys-career',        name: 'Career',        icon: 'briefcase',     color: '#6366f1' },
+    { id: 'sys-research',      name: 'Research',      icon: 'search',        color: '#64748b' },
+    { id: 'sys-health',        name: 'Health',        icon: 'fitness',       color: '#22c55e' },
+    { id: 'sys-lifestyle',     name: 'Lifestyle',     icon: 'sunny',         color: '#f97316' },
   ];
 
   const now = new Date().toISOString();
-  for (const col of defaults) {
+  for (const col of systemCollections) {
     await database.runAsync(
-      `INSERT OR IGNORE INTO collections (id, name, icon, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO collections (id, name, icon, color, is_system, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)`,
       [col.id, col.name, col.icon, col.color, now, now]
     );
   }

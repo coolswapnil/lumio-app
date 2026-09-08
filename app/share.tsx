@@ -196,44 +196,11 @@ export default function ShareScreen() {
       return;
     }
 
-    // Idempotency guard: don't re-capture the same URL we just processed.
-    if (lastCapturedUrlRef.current === resolvedUrl) return;
-
-    // Dedup guard: don't enqueue the same URL twice within DEDUP_TTL_MS.
-    if (isDuplicate(resolvedUrl)) {
-      diagLog.addEntry('QUEUE_ITEM_CREATED', `SKIPPED duplicate url="${resolvedUrl.slice(0, 80)}"`);
-      // Still navigate away so the user sees the library.
-      router.replace('/(tabs)');
-      return;
-    }
-
-    // Mark this URL as being captured before going async.
-    lastCapturedUrlRef.current = resolvedUrl;
-    setAutoState('capturing');
-    // Prefer an explicit title; fall back to subject; fall back to non-URL text.
-    const titleHint = sharedTitle || sharedSubject || (!rawText.startsWith('http') ? rawText : '');
-
-    diagLog.addEntry('ENRICHMENT_STARTED', `url="${resolvedUrl.slice(0, 80)}"`);
-
-    enqueue(resolvedUrl, { titleHint })
-      .then((itemId) => {
-        diagLog.addEntry('QUEUE_ITEM_CREATED', `itemId=${itemId} url="${resolvedUrl.slice(0, 80)}"`);
-        diagLog.addEntry('LIBRARY_ITEM_CREATED', `itemId=${itemId}`);
-        diagLog.addEntry('ENRICHMENT_COMPLETED', `itemId=${itemId}`);
-        setAutoState('done');
-        // Navigate back to library — enrichment continues in background.
-        router.replace('/(tabs)');
-      })
-      .catch((err) => {
-        logError(err, { screen: 'share', action: 'autoCapture' });
-        diagLog.addEntry('SAVE_FAILED', `share auto-capture: ${err instanceof Error ? err.message : String(err)}`);
-        // Reset so the user can retry via manual form.
-        lastCapturedUrlRef.current = '';
-        setAutoState('idle');
-        setUrl(resolvedUrl);
-        setTitle(titleHint);
-        setContentType(guessContentType(resolvedUrl, rawText));
-      });
+    // Since ShareIngestionManager has already persisted and enqueued this URL
+    // before we routed to /share, we can bypass auto-capture entirely.
+    diagLog.addEntry('QUEUE_ITEM_CREATED', `Bypassing ShareScreen auto-capture, already processed url="${resolvedUrl.slice(0, 80)}"`);
+    setAutoState('done');
+    router.replace('/(tabs)');
   // deps: re-run when any share param changes (handles cold-start race).
   }, [sharedUrl, sharedText, sharedSubject]); // eslint-disable-line
 

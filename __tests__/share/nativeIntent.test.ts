@@ -17,7 +17,15 @@
 
 // diagLog is imported inside +native-intent.ts; stub it so no real storage is hit.
 jest.mock('../../src/services/diagnostics', () => ({
-  diagLog: { addEntry: jest.fn() },
+  diagLog: { addEntry: jest.fn(), getEntries: jest.fn().mockReturnValue([]) },
+}));
+
+// Mock ShareIngestionManager so database and native calls don't run in unit tests.
+jest.mock('../../src/services/shareIngestion', () => ({
+  ShareIngestionManager: {
+    ingest: jest.fn().mockResolvedValue({ itemIds: ['test-item-id'], wasProcessed: true }),
+    extractPayload: jest.requireActual('../../src/services/shareIngestion').ShareIngestionManager.extractPayload,
+  },
 }));
 
 import { redirectSystemPath } from '../../app/+native-intent';
@@ -49,8 +57,8 @@ describe('redirectSystemPath — non-share paths pass through unchanged', () => 
     ['lumio://other/path', false],
     ['https://lumio.app/share', false],  // https: prefix — not our scheme
     ['', false],
-  ])('passes through %j (initial=%s)', (path, initial) => {
-    expect(redirectSystemPath({ path, initial })).toBe(path);
+  ])('passes through %j (initial=%s)', async (path, initial) => {
+    expect(await redirectSystemPath({ path, initial })).toBe(path);
   });
 });
 
@@ -59,25 +67,25 @@ describe('redirectSystemPath — non-share paths pass through unchanged', () => 
 describe('redirectSystemPath — Instagram Reel', () => {
   const reelUrl = 'https://www.instagram.com/reel/C_testReelId123/';
 
-  it('routes Instagram Reel share (cold start)', () => {
+  it('routes Instagram Reel share (cold start)', async () => {
     const path = syntheticUri(reelUrl, 'Test Reel Title');
-    const result = redirectSystemPath({ path, initial: true });
+    const result = await redirectSystemPath({ path, initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(reelUrl));
     expect(result).toContain('title=');
   });
 
-  it('routes Instagram Reel share (warm start)', () => {
+  it('routes Instagram Reel share (warm start)', async () => {
     const path = syntheticUri(reelUrl);
-    const result = redirectSystemPath({ path, initial: false });
+    const result = await redirectSystemPath({ path, initial: false });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(reelUrl));
   });
 
-  it('handles Reel URL embedded inside longer share text', () => {
+  it('handles Reel URL embedded inside longer share text', async () => {
     const text = `Check this out ${reelUrl} via @instagram`;
     const path = syntheticUri(text);
-    const result = redirectSystemPath({ path, initial: false });
+    const result = await redirectSystemPath({ path, initial: false });
     // text param must be present so share.tsx can extract the URL
     expect(result).toContain('/share?');
     expect(result).toContain('text=');
@@ -89,14 +97,14 @@ describe('redirectSystemPath — Instagram Reel', () => {
 describe('redirectSystemPath — Instagram Post', () => {
   const postUrl = 'https://www.instagram.com/p/C_testPostId456/';
 
-  it('routes Instagram Post share (cold start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(postUrl), initial: true });
+  it('routes Instagram Post share (cold start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(postUrl), initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(postUrl));
   });
 
-  it('routes Instagram Post share (warm start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(postUrl), initial: false });
+  it('routes Instagram Post share (warm start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(postUrl), initial: false });
     expect(result).toContain('/share?');
   });
 });
@@ -106,19 +114,19 @@ describe('redirectSystemPath — Instagram Post', () => {
 describe('redirectSystemPath — YouTube Video', () => {
   const ytUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
-  it('routes YouTube Video share (cold start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(ytUrl, 'Never Gonna Give You Up'), initial: true });
+  it('routes YouTube Video share (cold start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(ytUrl, 'Never Gonna Give You Up'), initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(ytUrl));
   });
 
-  it('routes YouTube Video share (warm start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(ytUrl), initial: false });
+  it('routes YouTube Video share (warm start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(ytUrl), initial: false });
     expect(result).toContain('/share?');
   });
 
-  it('carries the video title through the title param', () => {
-    const result = redirectSystemPath({ path: syntheticUri(ytUrl, 'My Video Title'), initial: true });
+  it('carries the video title through the title param', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(ytUrl, 'My Video Title'), initial: true });
     expect(result).toContain('title=');
     // URLSearchParams encodes spaces as '+', so check for decoded presence via URL parsing.
     const parsed = new URLSearchParams(result.replace('/share?', ''));
@@ -131,14 +139,14 @@ describe('redirectSystemPath — YouTube Video', () => {
 describe('redirectSystemPath — YouTube Short', () => {
   const shortUrl = 'https://youtube.com/shorts/abc123';
 
-  it('routes YouTube Short share (cold start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(shortUrl), initial: true });
+  it('routes YouTube Short share (cold start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(shortUrl), initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(shortUrl));
   });
 
-  it('routes YouTube Short share (warm start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(shortUrl), initial: false });
+  it('routes YouTube Short share (warm start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(shortUrl), initial: false });
     expect(result).toContain('/share?');
   });
 });
@@ -148,14 +156,14 @@ describe('redirectSystemPath — YouTube Short', () => {
 describe('redirectSystemPath — X/Twitter', () => {
   const tweetUrl = 'https://x.com/user/status/1234567890123456789';
 
-  it('routes X/Twitter share (cold start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(tweetUrl, 'My tweet text'), initial: true });
+  it('routes X/Twitter share (cold start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(tweetUrl, 'My tweet text'), initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(tweetUrl));
   });
 
-  it('routes X/Twitter share (warm start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(tweetUrl), initial: false });
+  it('routes X/Twitter share (warm start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(tweetUrl), initial: false });
     expect(result).toContain('/share?');
   });
 });
@@ -165,14 +173,14 @@ describe('redirectSystemPath — X/Twitter', () => {
 describe('redirectSystemPath — LinkedIn', () => {
   const liUrl = 'https://www.linkedin.com/posts/username_activity-12345678901234567890-abcd';
 
-  it('routes LinkedIn post share (cold start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(liUrl), initial: true });
+  it('routes LinkedIn post share (cold start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(liUrl), initial: true });
     expect(result).toContain('/share?');
     expect(result).toContain(encodeURIComponent(liUrl));
   });
 
-  it('routes LinkedIn post share (warm start)', () => {
-    const result = redirectSystemPath({ path: syntheticUri(liUrl), initial: false });
+  it('routes LinkedIn post share (warm start)', async () => {
+    const result = await redirectSystemPath({ path: syntheticUri(liUrl), initial: false });
     expect(result).toContain('/share?');
   });
 });
@@ -180,35 +188,35 @@ describe('redirectSystemPath — LinkedIn', () => {
 // ─── Edge cases ───────────────────────────────────────────────────────────────
 
 describe('redirectSystemPath — edge cases', () => {
-  it('handles empty share payload gracefully (routes to /share without params)', () => {
+  it('handles empty share payload gracefully (routes to /share without params)', async () => {
     // Empty text — should route to /share for manual entry rather than throwing.
     const path = `lumio://share?text=`;
-    const result = redirectSystemPath({ path, initial: true });
+    const result = await redirectSystemPath({ path, initial: true });
     expect(result).toBe('/share');
   });
 
-  it('handles malformed lumio://share URI without crashing', () => {
+  it('handles malformed lumio://share URI without crashing', async () => {
     // Deliberately malformed — should not throw.
     const path = 'lumio://share';
-    const result = redirectSystemPath({ path, initial: true });
+    const result = await redirectSystemPath({ path, initial: true });
     expect(result).toBe('/share');
   });
 
-  it('preserves subject param when provided', () => {
+  it('preserves subject param when provided', async () => {
     const url = 'https://linkedin.com/posts/abc';
     const path = syntheticUri(url, '', 'Post subject here');
-    const result = redirectSystemPath({ path, initial: true });
+    const result = await redirectSystemPath({ path, initial: true });
     expect(result).toContain('subject=');
     // URLSearchParams encodes spaces as '+'; verify decoded value matches.
     const parsed = new URLSearchParams(result.replace('/share?', ''));
     expect(parsed.get('subject')).toBe('Post subject here');
   });
 
-  it('is stable: same input always produces same output (idempotent)', () => {
+  it('is stable: same input always produces same output (idempotent)', async () => {
     const url = 'https://youtu.be/dQw4w9WgXcQ';
     const path = syntheticUri(url);
-    const first  = redirectSystemPath({ path, initial: false });
-    const second = redirectSystemPath({ path, initial: false });
+    const first  = await redirectSystemPath({ path, initial: false });
+    const second = await redirectSystemPath({ path, initial: false });
     expect(first).toBe(second);
   });
 });

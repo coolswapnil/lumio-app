@@ -18,8 +18,11 @@
  */
 
 import { saveItem, updateItem } from '../database/items';
+import { maybeAutoCreateTopic } from '../database/topics';
 import { getAISettings, getAutoAssignRules, getAppSettings } from './settings';
 import { summarizeItem, callAIRaw } from './ai';
+import { SYSTEM_COLLECTION_MAP, SYSTEM_COLLECTION_NAMES } from '../constants/systemCollections';
+import { normalizeTopicLabel } from './topicNormalization';
 import {
   fetchPageMetadata,
   formatMetadataForAI,
@@ -77,24 +80,12 @@ export interface CaptureEntry {
   error?: string;
   enqueuedAt: number;
   completedAt?: number;
-  /**
-   * Set after enrichment completes when there is exactly one collection
-   * suggestion AND no auto-assign rule for the category yet.
-   * The UI layer (CaptureQueueContext) reads this to show the prompt.
-   */
-  pendingAutoAssignPrompt?: {
-    category: string;
-    collectionId: string;
-    collectionName: string;
-  };
 }
 
 // ─── Internal state ───────────────────────────────────────────────────────────
 
 let _queue: CaptureEntry[] = [];
 const _listeners: Array<(queue: CaptureEntry[]) => void> = [];
-/** Temporary store for pending auto-assign prompts, keyed by itemId. */
-const _pendingPrompts = new Map<string, NonNullable<CaptureEntry['pendingAutoAssignPrompt']>>();
 
 function notify() {
   const snapshot = [..._queue];
@@ -140,11 +131,6 @@ export async function enqueueCapture(
     titleHint?: string;
     onItemSaved?: (itemId: string) => void;
     onRefresh?: () => Promise<void>;
-    /** Collections available for AI matching. */
-    collectionNames?: string[];
-    collectionIds?: Record<string, string>; // name (lowercase) → id
-    /** id → display name, for building auto-assign prompt text. */
-    collectionDisplayNames?: Record<string, string>;
   } = {}
 ): Promise<string> {
   const cleanUrl = sanitizeUrl(url) ?? url;
@@ -205,6 +191,8 @@ export async function enqueueCapture(
   _queue = [..._queue, entry];
   notify();
 
+  diagLog.addEntry('QUEUE_ITEM_CREATED', `captureQueue: id=${itemId} url="${cleanUrl.slice(0, 80)}" contentType=${contentType} source=${source ?? 'unknown'}`);
+
   // ── Step 3: Start background enrichment (fire-and-forget) ────────────────
   _runEnrichment(entry, opts).catch((err) => {
     diagLog.addEntry('PROVIDER_ERROR', `captureQueue: enrichment crashed for ${itemId}: ${err instanceof Error ? err.message : String(err)}`);
@@ -226,9 +214,6 @@ async function _runEnrichment(
   entry: CaptureEntry,
   opts: {
     onRefresh?: () => Promise<void>;
-    collectionNames?: string[];
-    collectionIds?: Record<string, string>;
-    collectionDisplayNames?: Record<string, string>;
   }
 ) {
   const { itemId, url, contentType: entryContentType } = entry;
@@ -306,6 +291,25 @@ async function _runEnrichment(
       const neverTranslate = appSettings?.neverTranslateLanguages ?? [];
       const needsTranslation = shouldTranslate(detectedLang, autoTranslate, neverTranslate);
 
+      // Always log translation decision so failures are diagnosable in any build.
+      if (!needsTranslation) {
+        let fallbackReason: string;
+        if (!autoTranslate) {
+          fallbackReason = 'autoTranslate=false (disabled in settings)';
+        } else if (detectedLang === 'English') {
+          fallbackReason = 'lang=English (no translation needed)';
+        } else if (detectedLang === 'Unknown') {
+          fallbackReason = 'lang=Unknown (could not detect language)';
+        } else if (neverTranslate.includes(detectedLang)) {
+          fallbackReason = `lang=${detectedLang} is in neverTranslateLanguages`;
+        } else {
+          fallbackReason = `lang=${detectedLang} skipped (unknown reason)`;
+        }
+        diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: translation skipped for ${itemId} — ${fallbackReason}`);
+      } else {
+        diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: translation scheduled for ${itemId} lang=${detectedLang} → English`);
+      }
+
 
       try {
         const result = await summarizeItem(
@@ -316,7 +320,7 @@ async function _runEnrichment(
           // Use the content type stored on the queue entry (detected synchronously
           // at enqueue time), not entry.status which is a CaptureStatus string.
           entryContentType,
-          opts.collectionNames ?? []
+          SYSTEM_COLLECTION_NAMES
         );
 
         if (!result.error) {
@@ -365,13 +369,34 @@ async function _runEnrichment(
             dbUpdates.category = result.category;
             _markStep(itemId, 'category');
 
-            // Apply auto-assign rule if one exists for this category
-            if (!dbUpdates.collectionId) {
+            // Deterministic Level 1 system collection assignment
+            const systemCollectionId = SYSTEM_COLLECTION_MAP[result.category];
+            if (systemCollectionId) {
+              dbUpdates.collectionId = systemCollectionId;
+              _markStep(itemId, 'collections');
+              diagLog.addEntry('COLLECTION_ASSIGNED', `captureQueue: deterministic system collection category=${result.category} → collectionId=${systemCollectionId} itemId=${itemId}`);
+            }
+
+            if (result.topicSuggestion) {
+              const normalizedTopic = normalizeTopicLabel(result.topicSuggestion);
+              if (normalizedTopic) {
+                dbUpdates.topicSuggestion = normalizedTopic;
+                dbUpdates.topicSuggestionRaw = result.topicSuggestion;
+                diagLog.addEntry('TOPIC_SUGGESTED', `captureQueue: topicSuggestion="${normalizedTopic}" raw="${result.topicSuggestion}" itemId=${itemId}`);
+              }
+            }
+
+            // Apply custom auto-assign rule override if one exists for this category (when not mapped by system collection)
+            if (!systemCollectionId && !dbUpdates.collectionId) {
               const rules: Record<string, string> = await getAutoAssignRules().catch(() => ({}));
               const ruleCollectionId = rules[result.category];
               if (ruleCollectionId) {
                 dbUpdates.collectionId = ruleCollectionId;
+                _markStep(itemId, 'collections');
+                diagLog.addEntry('COLLECTION_ASSIGNED', `captureQueue: auto-assign rule matched category=${result.category} → collectionId=${ruleCollectionId} itemId=${itemId}`);
                 diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: applied auto-assign rule for ${result.category} → ${ruleCollectionId}`);
+              } else {
+                diagLog.addEntry('COLLECTION_SKIPPED', `captureQueue: no auto-assign rule for category=${result.category} itemId=${itemId}`);
               }
             }
           }
@@ -382,47 +407,6 @@ async function _runEnrichment(
               dbUpdates.title = cleanTitle;
               // Update queue entry so the banner row immediately shows the AI title
               updateEntry(itemId, { displayTitle: cleanTitle });
-            }
-          }
-
-          // Collection suggestion + auto-assign at ≥90% confidence
-          if (result.suggestedCollectionNames && result.suggestedCollectionNames.length > 0 && opts.collectionIds) {
-            const matchedIds = result.suggestedCollectionNames
-              .map((name) => opts.collectionIds![name.toLowerCase()])
-              .filter(Boolean)
-              .slice(0, 3);
-            if (matchedIds.length > 0) {
-              dbUpdates.suggestedCollections = matchedIds;
-              _markStep(itemId, 'collections');
-
-              // Auto-assign first suggestion when AI suggested exactly one collection
-              // (high-specificity = ≥90% confidence heuristic).
-              if (matchedIds.length === 1) {
-                const singleId = matchedIds[0];
-                dbUpdates.collectionId = singleId;
-                diagLog.addEntry('FORM_UPDATE_COMPLETED', `captureQueue: auto-assigned to collection id=${singleId}`);
-
-                // Check whether we should prompt the user to create an auto-assign rule.
-                // Only prompt when:
-                //   • there is a detected category, AND
-                //   • no rule already exists for that category.
-                const category = result.category ?? dbUpdates.category;
-                if (category) {
-                  const existingRules: Record<string, string> = await getAutoAssignRules().catch(() => ({}));
-                  if (!existingRules[category]) {
-                    const collectionName =
-                      opts.collectionDisplayNames?.[singleId] ??
-                      Object.entries(opts.collectionIds ?? {}).find(([, v]) => v === singleId)?.[0] ??
-                      singleId;
-                    // Signal to the UI layer to show the prompt after completion
-                    _pendingPrompts.set(itemId, {
-                      category,
-                      collectionId: singleId,
-                      collectionName,
-                    });
-                  }
-                }
-              }
             }
           }
 
@@ -451,18 +435,45 @@ async function _runEnrichment(
       await updateItem(itemId, dbUpdates);
     }
 
+    // Topic auto-creation — runs after the item is fully persisted
+    if (dbUpdates.topicSuggestion && dbUpdates.collectionId) {
+      try {
+        const createdTopic = await maybeAutoCreateTopic(
+          dbUpdates.topicSuggestion,
+          dbUpdates.topicSuggestionRaw ?? dbUpdates.topicSuggestion,
+          dbUpdates.collectionId
+        );
+        if (createdTopic) {
+          diagLog.addEntry(
+            'QUEUE_ITEM_CREATED',
+            `topic auto-created: label="${createdTopic.label}" id=${createdTopic.id} collectionId=${dbUpdates.collectionId}`
+          );
+          // Trigger UI refresh so the new topic chip appears in the Knowledge Hub
+          if (opts.onRefresh) {
+            await opts.onRefresh();
+          }
+        } else {
+          diagLog.addEntry(
+            'QUEUE_ITEM_CREATED',
+            `topic threshold not met yet: suggestion="${dbUpdates.topicSuggestion}" collectionId=${dbUpdates.collectionId}`
+          );
+        }
+      } catch (topicErr) {
+        // Topic auto-creation is non-critical — log but do not fail the item save
+        diagLog.addEntry(
+          'SAVE_FAILED',
+          `topic auto-creation error: ${topicErr instanceof Error ? topicErr.message : String(topicErr)}`
+        );
+      }
+    }
+
     // Refresh the global data context
     if (opts.onRefresh) await opts.onRefresh();
-
-    // Attach pending auto-assign prompt (if any) to the completed entry
-    const prompt = _pendingPrompts.get(itemId);
-    _pendingPrompts.delete(itemId);
 
     updateEntry(itemId, {
       status: 'completed',
       currentStep: undefined,
       completedAt: Date.now(),
-      ...(prompt ? { pendingAutoAssignPrompt: prompt } : {}),
     });
     diagLog.addEntry('SAVE_COMPLETED', `captureQueue: enrichment done for ${itemId}`);
 
