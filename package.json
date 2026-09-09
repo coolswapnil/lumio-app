@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "build:android": "eas build --platform android",
     "build:apk": "eas build --platform android --profile preview",
+    "verify:share-bridge": "node scripts/verify-share-bridge.js",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "jest",

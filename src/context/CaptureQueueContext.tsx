@@ -82,41 +82,45 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
     // Only show prompt when the item actually has a foreign language detected.
     // We check this asynchronously after the entry completes.
     (async () => {
-      const settings = await getAppSettings().catch(() => null);
-      // If the user already set the preference (either way), skip.
-      if (settings?.autoTranslateForeignContent !== undefined) return;
+      try {
+        const settings = await getAppSettings().catch(() => null);
+        // If the user already set the preference (either way), skip.
+        if (settings?.autoTranslateForeignContent !== undefined) return;
 
-      // Check the database for detectedLanguage on this item
-      const { getItemById } = await import('../database/items');
-      const item = await getItemById(foreignEntry.itemId).catch(() => null);
-      if (!item?.detectedLanguage || item.detectedLanguage === 'English' || item.detectedLanguage === 'Unknown') return;
+        // Check the database for detectedLanguage on this item
+        const { getItemById } = await import('../database/items');
+        const item = await getItemById(foreignEntry.itemId).catch(() => null);
+        if (!item?.detectedLanguage || item.detectedLanguage === 'English' || item.detectedLanguage === 'Unknown') return;
 
-      // Guard against double-showing
-      if (autoTranslatePromptedRef.current) return;
-      autoTranslatePromptedRef.current = true;
-      promptedRef.current.add('autoTranslate:' + foreignEntry.itemId);
+        // Guard against double-showing
+        if (autoTranslatePromptedRef.current) return;
+        autoTranslatePromptedRef.current = true;
+        promptedRef.current.add('autoTranslate:' + foreignEntry.itemId);
 
-      Alert.alert(
-        'Auto Translate Foreign Content',
-        `This item appears to be in ${item.detectedLanguage}. Enable automatic translation so summaries and tags are shown in English?`,
-        [
-          {
-            text: 'No',
-            style: 'cancel',
-            onPress: async () => {
-              const s = await getAppSettings();
-              await saveAppSettings({ ...s, autoTranslateForeignContent: false });
+        Alert.alert(
+          'Auto Translate Foreign Content',
+          `This item appears to be in ${item.detectedLanguage}. Enable automatic translation so summaries and tags are shown in English?`,
+          [
+            {
+              text: 'No',
+              style: 'cancel',
+              onPress: async () => {
+                const s = await getAppSettings().catch(() => null);
+                if (s) await saveAppSettings({ ...s, autoTranslateForeignContent: false }).catch(() => {});
+              },
             },
-          },
-          {
-            text: 'Enable',
-            onPress: async () => {
-              const s = await getAppSettings();
-              await saveAppSettings({ ...s, autoTranslateForeignContent: true });
+            {
+              text: 'Enable',
+              onPress: async () => {
+                const s = await getAppSettings().catch(() => null);
+                if (s) await saveAppSettings({ ...s, autoTranslateForeignContent: true }).catch(() => {});
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      } catch (e) {
+        // Suppress any non-critical prompt error so it never surfaces as an uncaught rejection
+      }
     })();
   }, [queue]);
 

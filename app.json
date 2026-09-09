@@ -80,6 +80,7 @@
     },
     "plugins": [
       "./plugins/withEdgeToEdge",
+      "./plugins/withShareBridge",
       "expo-router",
       [
         "expo-location",

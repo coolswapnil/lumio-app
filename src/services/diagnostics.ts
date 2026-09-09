@@ -90,6 +90,12 @@ export type DiagEventType =
   | 'SHARE_PAYLOAD_PERSISTED'
   | 'PENDING_SHARE_FOUND'
   | 'PENDING_SHARE_PROCESSED'
+  | 'SHARE_SCREEN_SUCCESS'
+  | 'SHARE_SCREEN_ERROR'
+  | 'NAVIGATION_SUCCESS'
+  | 'NAVIGATION_ERROR'
+  | 'ROUTE_REDIRECT_START'
+  | 'ROUTE_REDIRECT_COMPLETE'
   // ── Opt-in events ─────────────────────────────────────────────────────────
   | 'SHARE_URL_EXTRACTED'
   | 'SHARE_SCREEN_OPENED'
@@ -165,6 +171,12 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_PAYLOAD_PERSISTED',
   'PENDING_SHARE_FOUND',
   'PENDING_SHARE_PROCESSED',
+  'SHARE_SCREEN_SUCCESS',
+  'SHARE_SCREEN_ERROR',
+  'NAVIGATION_SUCCESS',
+  'NAVIGATION_ERROR',
+  'ROUTE_REDIRECT_START',
+  'ROUTE_REDIRECT_COMPLETE',
 ]);
 
 export interface DiagEntry {
@@ -223,6 +235,14 @@ class DiagnosticsLog {
   /** Returns a shallow copy of all current entries, oldest first. */
   getEntries(): DiagEntry[] {
     return [...this.entries];
+  }
+
+  /**
+   * Returns true if a QUEUE_ITEM_CREATED event exists in the current session log,
+   * confirming that share ingestion has already persisted and queued the item.
+   */
+  hasQueueItemCreated(): boolean {
+    return this.entries.some((e) => e.event === 'QUEUE_ITEM_CREATED');
   }
 
   clearEntries(): void {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Button, Surface } from 'react-native-paper';
+import { diagLog } from '../services/diagnostics';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -39,6 +40,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     // Log to console in dev; in production wire this to Sentry/Bugsnag:
     // Sentry.captureException(error, { contexts: { react: errorInfo } });
     console.error('[ErrorBoundary] Unhandled error:', error, errorInfo);
+    diagLog.addEntry('SHARE_SCREEN_ERROR', `ErrorBoundary caught unhandled error: ${error.message}`);
   }
 
   handleReset = (): void => {

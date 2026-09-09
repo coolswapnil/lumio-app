@@ -80,6 +80,8 @@ export async function redirectSystemPath({
 }): Promise<string> {
   const startType = classifyStartType(initial);
 
+  diagLog.addEntry('ROUTE_REDIRECT_START', `redirectSystemPath start initial=${initial} path="${path.slice(0, 120)}"`);
+
   // ── Log the raw URI the moment we receive it ────────────────────────────
   diagLog.addEntry('SHARE_URI_RAW', `path="${path.slice(0, 200)}" initial=${initial} startType="${startType}"`);
 
@@ -123,6 +125,7 @@ export async function redirectSystemPath({
         `NOT a share URI — this is "${path}" (widget home tap or missing EXTRA_TEXT). No rewrite performed.`,
       );
     }
+    diagLog.addEntry('ROUTE_REDIRECT_COMPLETE', `non-share passthrough result="${path.slice(0, 120)}"`);
     return path;
   }
 
@@ -155,6 +158,7 @@ export async function redirectSystemPath({
   if (!text && !title && !subject) {
     diagLog.addEntry('URL_EXTRACTED', 'empty share payload — routing to /share for manual entry');
     diagLog.addEntry('SHARE_REWRITE_SUCCESS', `result="/share" reason="empty payload"`);
+    diagLog.addEntry('ROUTE_REDIRECT_COMPLETE', `empty payload result="/share"`);
     return '/share';
   }
 
@@ -170,6 +174,7 @@ export async function redirectSystemPath({
 
   diagLog.addEntry('URL_EXTRACTED', `routed to "${sharePath.slice(0, 160)}"`);
   diagLog.addEntry('SHARE_REWRITE_SUCCESS', `result="${sharePath.slice(0, 160)}"`);
+  diagLog.addEntry('ROUTE_REDIRECT_COMPLETE', `result="${sharePath.slice(0, 160)}"`);
 
   return sharePath;
 }

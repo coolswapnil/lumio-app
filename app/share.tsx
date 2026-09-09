@@ -160,6 +160,19 @@ export default function ShareScreen() {
   //   • autoState !== 'idle' — if we're already capturing, don't start again.
   //
   useEffect(() => {
+    // ── Check if a queue item was already created ───────────────────────────
+    if (diagLog.hasQueueItemCreated()) {
+      diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Queue item already created — suppressing error dialogs and redirecting');
+      setAutoState('done');
+      try {
+        router.replace('/(tabs)');
+        diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) succeeded');
+      } catch (navErr) {
+        diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
+      }
+      return;
+    }
+
     // Already capturing or done — nothing to do.
     if (autoState !== 'idle') return;
 
@@ -198,45 +211,69 @@ export default function ShareScreen() {
 
     // Since ShareIngestionManager has already persisted and enqueued this URL
     // before we routed to /share, we can bypass auto-capture entirely.
-    diagLog.addEntry('QUEUE_ITEM_CREATED', `Bypassing ShareScreen auto-capture, already processed url="${resolvedUrl.slice(0, 80)}"`);
+    diagLog.addEntry('SHARE_SCREEN_SUCCESS', `Bypassing ShareScreen auto-capture, already processed url="${resolvedUrl.slice(0, 80)}"`);
     setAutoState('done');
-    router.replace('/(tabs)');
+    try {
+      router.replace('/(tabs)');
+      diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) succeeded');
+    } catch (navErr) {
+      diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
+    }
   // deps: re-run when any share param changes (handles cold-start race).
   }, [sharedUrl, sharedText, sharedSubject]); // eslint-disable-line
 
   // ── Manual AI auto-fill (fallback form) ──────────────────────────────────
   const handleAISummarize = async () => {
+    if (diagLog.hasQueueItemCreated()) {
+      diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Suppressing AI error alert because queue item already exists');
+      return;
+    }
+
     if (!title.trim() && !url.trim()) {
       Alert.alert('Add content first', 'Enter a title or URL before running AI auto-fill.');
       return;
     }
-    const aiSettings = await getAISettings();
+    const aiSettings = await getAISettings().catch(() => null);
     if (!aiSettings) {
-      Alert.alert('No AI provider', 'Go to Settings to configure your AI provider and API key.');
+      if (!diagLog.hasQueueItemCreated()) {
+        Alert.alert('No AI provider', 'Go to Settings to configure your AI provider and API key.');
+      }
       return;
     }
     setAiLoading(true);
     try {
-      const metadata = url.trim() ? await fetchPageMetadata(url) : null;
+      const metadata = url.trim() ? await fetchPageMetadata(url).catch(() => null) : null;
       const metadataText = [metadata ? formatMetadataForAI(metadata) : '', description.trim()]
         .filter(Boolean).join('\n');
       const aiInputTitle = metadata?.title || title.trim() || url;
       const result = await summarizeItem(aiSettings, aiInputTitle, undefined, metadataText || undefined, contentType);
       if (result.error) {
-        Alert.alert('AI Error', result.error);
+        if (!diagLog.hasQueueItemCreated()) {
+          diagLog.addEntry('SHARE_SCREEN_ERROR', `AI Error: ${result.error}`);
+          Alert.alert('AI Error', result.error);
+        }
       } else {
         if (result.suggestedTitle && !title.trim()) setTitle(result.suggestedTitle);
         if (result.suggestedTags.length > 0 && !tags.trim()) setTags(result.suggestedTags.join(', '));
         if (result.summary && !description.trim()) setDescription(result.summary);
       }
     } catch (err) {
-      Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
+      if (!diagLog.hasQueueItemCreated()) {
+        diagLog.addEntry('SHARE_SCREEN_ERROR', `AI summarize exception: ${err instanceof Error ? err.message : String(err)}`);
+        Alert.alert('AI Error', 'Could not reach the AI provider. Check your API key in Settings.');
+      }
     }
     setAiLoading(false);
   };
 
   // ── Manual save (fallback form) ───────────────────────────────────────────
   const handleSave = async () => {
+    if (diagLog.hasQueueItemCreated()) {
+      diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Suppressing save failure dialog because queue item already exists');
+      router.replace('/(tabs)');
+      return;
+    }
+
     const cleanTitle = sanitizeText(title, LIMITS.TITLE) || sanitizeUrl(url);
     if (!cleanTitle) {
       Alert.alert('Missing info', 'Please add a title or a valid URL.');
@@ -265,10 +302,24 @@ export default function ShareScreen() {
       };
       await saveItem(item);
       await refreshAll();
-      router.replace('/(tabs)');
+      diagLog.addEntry('SHARE_SCREEN_SUCCESS', `Manual save completed for item ${item.id}`);
+      try {
+        router.replace('/(tabs)');
+        diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) after manual save succeeded');
+      } catch (navErr) {
+        diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
+      }
     } catch (err) {
       logError(err, { screen: 'share', action: 'saveItem' });
-      Alert.alert('Save failed', getUserMessage(err));
+      diagLog.addEntry('SHARE_SCREEN_ERROR', `Manual save error: ${err instanceof Error ? err.message : String(err)}`);
+      if (!diagLog.hasQueueItemCreated()) {
+        Alert.alert('Save failed', getUserMessage(err));
+      } else {
+        diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Suppressed Save failed dialog because QUEUE_ITEM_CREATED was present');
+        try {
+          router.replace('/(tabs)');
+        } catch { /* ignore */ }
+      }
     } finally {
       setSaving(false);
     }
