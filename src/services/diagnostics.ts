@@ -39,10 +39,18 @@ export type DiagEventType =
   | 'INTENT_ACTION'
   | 'INTENT_MIME_TYPE'
   | 'INTENT_EXTRAS'
+  | 'ACTION'
+  | 'MIME_TYPE'
   | 'EXTRA_TEXT'
   | 'EXTRA_STREAM'
+  | 'EXTRA_SUBJECT'
+  | 'EXTRA_TITLE'
   | 'CLIP_DATA'
   | 'INTENT_DATA'
+  | 'CLIPDATA_FOUND'
+  | 'DATA_URI_FOUND'
+  | 'STREAM_URI_FOUND'
+  | 'INTENT_URI_FOUND'
   | 'SHARE_EXTRACT_RESULT'
   // ── Service readiness events (always-on) ──────────────────────────────────
   | 'DATABASE_INITIALIZED'
@@ -110,10 +118,18 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'INTENT_ACTION',
   'INTENT_MIME_TYPE',
   'INTENT_EXTRAS',
+  'ACTION',
+  'MIME_TYPE',
   'EXTRA_TEXT',
   'EXTRA_STREAM',
+  'EXTRA_SUBJECT',
+  'EXTRA_TITLE',
   'CLIP_DATA',
   'INTENT_DATA',
+  'CLIPDATA_FOUND',
+  'DATA_URI_FOUND',
+  'STREAM_URI_FOUND',
+  'INTENT_URI_FOUND',
   'SHARE_EXTRACT_RESULT',
   'DATABASE_INITIALIZED',
   'DATAPROVIDER_READY',

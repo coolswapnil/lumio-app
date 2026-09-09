@@ -219,4 +219,12 @@ describe('redirectSystemPath — edge cases', () => {
     const second = await redirectSystemPath({ path, initial: false });
     expect(first).toBe(second);
   });
+
+  it('routes fallback extraction sources correctly (e.g. CLIP_DATA_TEXT, DATA_URI, etc.)', async () => {
+    const url = 'https://example.com/fallback-article';
+    const path = `lumio://share?text=${encodeURIComponent(url)}&src=${encodeURIComponent('CLIP_DATA_TEXT[0]')}`;
+    const result = await redirectSystemPath({ path, initial: true });
+    expect(result).toContain('/share?');
+    expect(result).toContain(encodeURIComponent(url));
+  });
 });
