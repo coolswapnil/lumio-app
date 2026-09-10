@@ -44,27 +44,17 @@
 
 import { diagLog } from '../src/services/diagnostics';
 import { ShareIngestionManager } from '../src/services/shareIngestion';
+import { getDatabase, initDatabase } from '../src/database/db';
+import {
+  classifyAndSetLifecycleState,
+  getLifecycleState,
+  type LifecycleState,
+} from '../src/services/lifecycleState';
 
 const SHARE_PREFIX = 'lumio://share';
 
 /** Paths that are known non-share deep-links — routed without processing. */
 const KNOWN_NON_SHARE_PATHS = new Set(['lumio://save', 'lumio://']);
-
-/**
- * Classify the start type from the `initial` flag and whether any prior
- * entries already exist in the diagnostics log.
- *
- * • Cold Start   — initial=true, no prior log entries (first JS execution)
- * • Warm Start   — initial=false (Linking URL event while app is running)
- * • Background Start — initial=true but log already has entries (JS survived
- *                      in the background and getInitialURL fired again after
- *                      the app was brought to the foreground by a new intent)
- */
-function classifyStartType(initial: boolean): 'Cold Start' | 'Warm Start' | 'Background Start' {
-  if (!initial) return 'Warm Start';
-  // If the log already has entries the JS engine was kept alive in the background.
-  return diagLog.getEntries().length === 0 ? 'Cold Start' : 'Background Start';
-}
 
 /**
  * Intercepts synthetic lumio://share? URIs, persists them to SQLite, enqueues
@@ -78,16 +68,34 @@ export async function redirectSystemPath({
   path: string;
   initial: boolean;
 }): Promise<string> {
-  const startType = classifyStartType(initial);
+  // ── Classify and emit lifecycle state first ──────────────────────────────
+  const lifecycle: LifecycleState = classifyAndSetLifecycleState(
+    initial,
+    diagLog.getEntries().length
+  );
 
-  diagLog.addEntry('ROUTE_REDIRECT_START', `redirectSystemPath start initial=${initial} path="${path.slice(0, 120)}"`);
+  // APP_STATE: always-on banner entry — one per redirectSystemPath call.
+  diagLog.addEntry('APP_STATE', `lifecycle=${lifecycle} initial=${initial}`);
+
+  // Emit the specific lifecycle event so filters can isolate by state.
+  if (lifecycle === 'cold_start') {
+    diagLog.addEntry('APP_COLD_START', `initial=${initial} path="${path.slice(0, 80)}"`);
+  } else if (lifecycle === 'background_resume') {
+    diagLog.addEntry('APP_BACKGROUND', `resuming from background — initial=${initial} path="${path.slice(0, 80)}"`);
+    diagLog.addEntry('APP_FOREGROUND', `brought to foreground by share intent — path="${path.slice(0, 80)}"`);
+  } else {
+    // warm_start: app already running, share arrived via Linking URL event.
+    diagLog.addEntry('APP_FOREGROUND', `warm_start — initial=${initial} path="${path.slice(0, 80)}"`);
+  }
+
+  diagLog.addEntry('ROUTE_REDIRECT_START', `redirectSystemPath start initial=${initial} lifecycle=${lifecycle} path="${path.slice(0, 120)}"`);
 
   // ── Log the raw URI the moment we receive it ────────────────────────────
-  diagLog.addEntry('SHARE_URI_RAW', `path="${path.slice(0, 200)}" initial=${initial} startType="${startType}"`);
+  diagLog.addEntry('SHARE_URI_RAW', `path="${path.slice(0, 200)}" initial=${initial} lifecycle="${lifecycle}"`);
 
   diagLog.addEntry(
     'ROUTE_TO_SHARE_SCREEN',
-    `redirectSystemPath initial=${initial} path="${path.slice(0, 120)}"`,
+    `redirectSystemPath initial=${initial} lifecycle=${lifecycle} path="${path.slice(0, 120)}"`,
   );
 
   // ── Identify and log the route source ───────────────────────────────────
@@ -114,7 +122,7 @@ export async function redirectSystemPath({
 
   diagLog.addEntry(
     'SHARE_ROUTE_SOURCE',
-    `source="${routeSource}" startType="${startType}" path="${path.slice(0, 120)}"`,
+    `source="${routeSource}" lifecycle="${lifecycle}" path="${path.slice(0, 120)}"`,
   );
 
   // ── Pass through all non-share paths unchanged ───────────────────────────
@@ -122,7 +130,7 @@ export async function redirectSystemPath({
     if (path === 'lumio://' || path === 'lumio:///') {
       diagLog.addEntry(
         'SHARE_REWRITE_SKIPPED',
-        `NOT a share URI — this is "${path}" (widget home tap or missing EXTRA_TEXT). No rewrite performed.`,
+        `NOT a share URI — lifecycle=${lifecycle} path="${path}" (widget home tap or missing EXTRA_TEXT). No rewrite performed.`,
       );
     }
     diagLog.addEntry('ROUTE_REDIRECT_COMPLETE', `non-share passthrough result="${path.slice(0, 120)}"`);
@@ -135,7 +143,7 @@ export async function redirectSystemPath({
   diagLog.addEntry('SHARE_URI_REWRITTEN', `ingesting path="${path.slice(0, 200)}"`);
 
   try {
-    const { itemIds, wasProcessed } = await ShareIngestionManager.ingest(path);
+    const { itemIds } = await ShareIngestionManager.ingest(path);
     if (itemIds.length > 1) {
       diagLog.addEntry(
         'SHARE_MULTI_URL_FOUND',
@@ -143,10 +151,37 @@ export async function redirectSystemPath({
       );
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     diagLog.addEntry(
       'SAVE_FAILED',
-      `Ingestion failed in redirectSystemPath: ${err instanceof Error ? err.message : String(err)}`
+      `Ingestion failed in redirectSystemPath: ${errMsg}`
     );
+    // Persist the failure record so it can be reviewed in diagnostics and
+    // the developer can see exactly what went wrong for this share attempt.
+    try {
+      await initDatabase();
+      const db = await getDatabase();
+      const { text, url: payloadUrl, title, subject, src, mime, urls: urlsParam } =
+        ShareIngestionManager.extractPayload(path);
+      await ShareIngestionManager._persistFailedCapture(db, {
+        rawPath: path,
+        extraText: text,
+        extraSubject: subject,
+        extraTitle: title,
+        extraStream: '',
+        clipDataText: '',
+        clipDataUri: '',
+        intentData: payloadUrl,
+        mimeType: mime,
+        bundleKeys: '',
+        urlsParam,
+        extractionSource: src,
+        errorMessage: `redirectSystemPath: ${errMsg}`,
+        lastEvent: 'SHARE_URI_REWRITTEN',
+        lifecycleState: lifecycle,
+        payloadSummary: (text || subject || title).slice(0, 200),
+      });
+    } catch { /* failure recording must never throw */ }
   }
 
   // ── Parse the synthetic URI to determine the routing path ────────────────

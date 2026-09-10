@@ -5,7 +5,8 @@ import * as SplashScreen from 'expo-splash-screen';
 SplashScreen.preventAutoHideAsync().catch(() => {});
 import { initDatabase } from '../database/db';
 import { ShareIngestionManager } from '../services/shareIngestion';
-import { signalDataProviderReady } from '../services/serviceReadiness';
+import { signalDataProviderReady, resetReadinessGate } from '../services/serviceReadiness';
+import { resetLifecycleState } from '../services/lifecycleState';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
 import { syncWidgetCount } from '../services/widget_bridge';
@@ -72,14 +73,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await Promise.all([refreshItems(), refreshCollections()]);
   }, [refreshItems, refreshCollections]);
 
-  // Initial load — runs once after DB is ready
+  // Initial load — runs once per mount (which includes background→foreground remounts).
+  //
+  // resetReadinessGate() MUST be the first call so that ingest() calls arriving
+  // on this remount wait for THIS DataProvider to signal ready, not for the
+  // already-resolved promise from the previous mount cycle.
   useEffect(() => {
     let cancelled = false;
+
+    // Reset BEFORE starting async work so any ingest() blocked on the gate
+    // picks up the fresh promise.  Also reset the lifecycle classification so
+    // the next redirectSystemPath call re-classifies from scratch.
+    resetReadinessGate();
+    resetLifecycleState();
+
     initDatabase().then(() => {
       if (!cancelled) {
-        // Recover any pending shares in background/foreground on startup
-        ShareIngestionManager.recoverPendingShares()
+        // 1. Recover any shares persisted to native SharedPreferences before JS started.
+        //    This is the deepest fail-safe — catches app-killed shares even when
+        //    the SQLite recovery finds nothing.
+        ShareIngestionManager.recoverPendingSharesFromPrefs()
           .catch(() => {})
+          .then(() => {
+            if (!cancelled) {
+              // 2. Recover any pending SQLite shares (survived JS crash or enrichment failure).
+              return ShareIngestionManager.recoverPendingShares().catch(() => {});
+            }
+          })
           .finally(() => {
             if (!cancelled) {
               refreshAll().finally(() => {

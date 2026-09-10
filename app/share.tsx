@@ -147,6 +147,41 @@ export default function ShareScreen() {
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
 
+  // ── Navigation effect — fires when autoState transitions to 'done' ─────────
+  //
+  // IMPORTANT: We separate the "decide to navigate" logic (below) from the
+  // actual router.replace call.  The navigation is deferred by two animation
+  // frames so that:
+  //
+  //   1. The Expo Router stack has time to mount (tabs) as its initial route
+  //      before we try to replace to it.  Calling router.replace() on the
+  //      very first render of a cold-start share — where (tabs) hasn't loaded
+  //      yet — produces a black screen.
+  //
+  //   2. Any in-flight state updates from the useEffect below complete before
+  //      navigation tears down the share screen.
+  //
+  const navigateAway = useRef(false);
+  useEffect(() => {
+    if (autoState !== 'done') return;
+    if (navigateAway.current) return;
+    navigateAway.current = true;
+
+    // Two rAF + setTimeout(0) guarantees the (tabs) screen has mounted in the
+    // stack before we call replace.  A single frame is not always enough on
+    // low-end devices during a cold start.
+    const handle = setTimeout(() => {
+      try {
+        router.replace('/(tabs)');
+        diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) succeeded');
+      } catch (navErr) {
+        diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
+      }
+    }, 80); // 80 ms — enough for one layout pass on any device
+
+    return () => clearTimeout(handle);
+  }, [autoState]); // eslint-disable-line
+
   // ── Auto-capture ──────────────────────────────────────────────────────────
   //
   // Run whenever sharedUrl or sharedText change so we catch the case where
@@ -161,15 +196,12 @@ export default function ShareScreen() {
   //
   useEffect(() => {
     // ── Check if a queue item was already created ───────────────────────────
+    // ingest() in +native-intent.ts already persisted and enqueued this share
+    // before the router even loaded the share screen.  Jump straight to 'done'
+    // which will trigger the navigation effect above.
     if (diagLog.hasQueueItemCreated()) {
       diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Queue item already created — suppressing error dialogs and redirecting');
       setAutoState('done');
-      try {
-        router.replace('/(tabs)');
-        diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) succeeded');
-      } catch (navErr) {
-        diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
-      }
       return;
     }
 
@@ -213,12 +245,6 @@ export default function ShareScreen() {
     // before we routed to /share, we can bypass auto-capture entirely.
     diagLog.addEntry('SHARE_SCREEN_SUCCESS', `Bypassing ShareScreen auto-capture, already processed url="${resolvedUrl.slice(0, 80)}"`);
     setAutoState('done');
-    try {
-      router.replace('/(tabs)');
-      diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) succeeded');
-    } catch (navErr) {
-      diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
-    }
   // deps: re-run when any share param changes (handles cold-start race).
   }, [sharedUrl, sharedText, sharedSubject]); // eslint-disable-line
 
@@ -270,7 +296,7 @@ export default function ShareScreen() {
   const handleSave = async () => {
     if (diagLog.hasQueueItemCreated()) {
       diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Suppressing save failure dialog because queue item already exists');
-      router.replace('/(tabs)');
+      setAutoState('done');
       return;
     }
 
@@ -303,12 +329,7 @@ export default function ShareScreen() {
       await saveItem(item);
       await refreshAll();
       diagLog.addEntry('SHARE_SCREEN_SUCCESS', `Manual save completed for item ${item.id}`);
-      try {
-        router.replace('/(tabs)');
-        diagLog.addEntry('NAVIGATION_SUCCESS', 'router.replace(/(tabs)) after manual save succeeded');
-      } catch (navErr) {
-        diagLog.addEntry('NAVIGATION_ERROR', `router.replace failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`);
-      }
+      setAutoState('done');
     } catch (err) {
       logError(err, { screen: 'share', action: 'saveItem' });
       diagLog.addEntry('SHARE_SCREEN_ERROR', `Manual save error: ${err instanceof Error ? err.message : String(err)}`);
@@ -316,9 +337,7 @@ export default function ShareScreen() {
         Alert.alert('Save failed', getUserMessage(err));
       } else {
         diagLog.addEntry('SHARE_SCREEN_SUCCESS', 'Suppressed Save failed dialog because QUEUE_ITEM_CREATED was present');
-        try {
-          router.replace('/(tabs)');
-        } catch { /* ignore */ }
+        setAutoState('done');
       }
     } finally {
       setSaving(false);

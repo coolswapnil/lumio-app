@@ -9,16 +9,18 @@
  *
  * Always-on events (written regardless of _enabled):
  *   MAIN_ACTIVITY_CREATED | MAIN_ACTIVITY_ON_NEW_INTENT |
- *   INTENT_ACTION | INTENT_MIME_TYPE | INTENT_EXTRAS | EXTRA_TEXT | EXTRA_STREAM |
- *   APP_COLD_START | APP_ALREADY_RUNNING |
+ *   INTENT_ACTION | INTENT_MIME_TYPE | INTENT_EXTRAS | INTENT_DATA |
+ *   EXTRA_TEXT | EXTRA_STREAM | CLIPDATA_FOUND |
+ *   APP_STATE | APP_COLD_START | APP_FOREGROUND | APP_BACKGROUND | APP_ALREADY_RUNNING |
  *   DATABASE_INITIALIZED | DATAPROVIDER_READY | CAPTURE_QUEUE_READY |
  *   SHARE_MANAGER_READY | SHARE_PAYLOAD_RECEIVED |
  *   SHARE_INTENT_RECEIVED | SHARE_ACTION | SHARE_MIME_TYPE | SHARE_PAYLOAD |
  *   URL_EXTRACTED | ROUTE_TO_SHARE_SCREEN | QUEUE_ITEM_CREATED |
- *   SHARE_PAYLOAD_PERSISTED |
+ *   QUEUE_ITEM_PERSISTED | SHARE_PAYLOAD_PERSISTED |
  *   COLLECTION_MATCHED | COLLECTION_ASSIGNED | COLLECTION_COUNT_UPDATED |
  *   COLLECTION_REFRESHED | COLLECTION_SKIPPED |
- *   ENRICHMENT_STARTED | ENRICHMENT_COMPLETED
+ *   ENRICHMENT_STARTED | ENRICHMENT_COMPLETED |
+ *   FAILED_SHARE_CAPTURED
  *
  * Opt-in events:
  *   SHARE_INTENT_PARSED | SHARE_URL_EXTRACTED | SHARE_SCREEN_OPENED |
@@ -58,8 +60,11 @@ export type DiagEventType =
   | 'CAPTURE_QUEUE_READY'
   | 'SHARE_MANAGER_READY'
   | 'SHARE_PAYLOAD_RECEIVED'
-  // ── Always-on share pipeline ──────────────────────────────────────────────
+  // ── App lifecycle (always-on) ─────────────────────────────────────────────
+  | 'APP_STATE'
   | 'APP_COLD_START'
+  | 'APP_FOREGROUND'
+  | 'APP_BACKGROUND'
   | 'APP_ALREADY_RUNNING'
   | 'SHARE_INTENT_RECEIVED'
   | 'SHARE_ACTION'
@@ -78,6 +83,7 @@ export type DiagEventType =
   | 'SHARE_NO_URL_FOUND'
   | 'SHARE_MULTI_URL_FOUND'
   | 'QUEUE_ITEM_CREATED'
+  | 'QUEUE_ITEM_PERSISTED'
   | 'LIBRARY_ITEM_CREATED'
   | 'COLLECTION_MATCHED'
   | 'COLLECTION_ASSIGNED'
@@ -90,6 +96,7 @@ export type DiagEventType =
   | 'SHARE_PAYLOAD_PERSISTED'
   | 'PENDING_SHARE_FOUND'
   | 'PENDING_SHARE_PROCESSED'
+  | 'FAILED_SHARE_CAPTURED'
   | 'SHARE_SCREEN_SUCCESS'
   | 'SHARE_SCREEN_ERROR'
   | 'NAVIGATION_SUCCESS'
@@ -142,7 +149,10 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'CAPTURE_QUEUE_READY',
   'SHARE_MANAGER_READY',
   'SHARE_PAYLOAD_RECEIVED',
+  'APP_STATE',
   'APP_COLD_START',
+  'APP_FOREGROUND',
+  'APP_BACKGROUND',
   'APP_ALREADY_RUNNING',
   'SHARE_INTENT_RECEIVED',
   'SHARE_ACTION',
@@ -160,6 +170,7 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_NO_URL_FOUND',
   'SHARE_MULTI_URL_FOUND',
   'QUEUE_ITEM_CREATED',
+  'QUEUE_ITEM_PERSISTED',
   'LIBRARY_ITEM_CREATED',
   'COLLECTION_MATCHED',
   'COLLECTION_ASSIGNED',
@@ -171,6 +182,7 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_PAYLOAD_PERSISTED',
   'PENDING_SHARE_FOUND',
   'PENDING_SHARE_PROCESSED',
+  'FAILED_SHARE_CAPTURED',
   'SHARE_SCREEN_SUCCESS',
   'SHARE_SCREEN_ERROR',
   'NAVIGATION_SUCCESS',
@@ -245,6 +257,37 @@ class DiagnosticsLog {
     return this.entries.some((e) => e.event === 'QUEUE_ITEM_CREATED');
   }
 
+  /**
+   * Returns the last event written before the given sequence number (exclusive).
+   * Used by failure forensics to determine the last successful pipeline step.
+   */
+  getLastEventBefore(seqExclusive: number): DiagEventType | null {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      if (this.entries[i].seq < seqExclusive) return this.entries[i].event;
+    }
+    return null;
+  }
+
+  /**
+   * Given an ordered list of required pipeline events, returns the first one
+   * that does NOT appear anywhere in the current log at or after `afterSeq`.
+   * Returns null if all are present.
+   */
+  firstMissingEvent(
+    required: DiagEventType[],
+    afterSeq = 0
+  ): DiagEventType | null {
+    const seen = new Set(
+      this.entries.filter((e) => e.seq >= afterSeq).map((e) => e.event)
+    );
+    return required.find((ev) => !seen.has(ev)) ?? null;
+  }
+
+  /** Returns the last N entries (or fewer if the buffer is smaller). */
+  getLastNEntries(n: number): DiagEntry[] {
+    return this.entries.slice(-n);
+  }
+
   clearEntries(): void {
     this.entries = [];
     this.seq = 0;
@@ -260,11 +303,38 @@ class DiagnosticsLog {
       '',
     ].join('\n');
     if (this.entries.length === 0) return header + '(no entries recorded)';
+
+    // Append a failure report block if a FAILED_SHARE_CAPTURED event exists.
+    const failureEntries = this.entries.filter((e) => e.event === 'FAILED_SHARE_CAPTURED');
+    let failureBlock = '';
+    if (failureEntries.length > 0) {
+      const last = failureEntries[failureEntries.length - 1];
+      const lastSuccessful = this.getLastEventBefore(last.seq);
+      const missing = this.firstMissingEvent(
+        ['SHARE_PAYLOAD_PERSISTED', 'QUEUE_ITEM_CREATED', 'QUEUE_ITEM_PERSISTED'],
+        0
+      );
+      const stateEntry = [...this.entries].reverse().find(
+        (e) => e.event === 'APP_STATE' || e.event === 'APP_COLD_START' ||
+               e.event === 'APP_FOREGROUND' || e.event === 'APP_BACKGROUND'
+      );
+      failureBlock = [
+        '',
+        '=== Failure Report ===',
+        `State:             ${stateEntry?.detail ?? 'unknown'}`,
+        `Last Successful Event:  ${lastSuccessful ?? '(none)'}`,
+        `First Missing Event:    ${missing ?? '(none — all present)'}`,
+        `Root Cause Candidate:   ${_rootCauseCandidate(lastSuccessful, missing, stateEntry?.detail ?? '')}`,
+        '=====================',
+      ].join('\n');
+    }
+
     return (
       header +
       this.entries
         .map((e) => `[${e.timestamp}] #${e.seq} ${e.event.padEnd(26)}  ${e.detail}`)
-        .join('\n')
+        .join('\n') +
+      failureBlock
     );
   }
 
@@ -292,6 +362,43 @@ class DiagnosticsLog {
       UTI: 'public.plain-text',
     });
   }
+}
+
+// ── Internal helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Derive a human-readable root cause candidate from the forensic fields.
+ * This is intentionally coarse — it produces a starting hypothesis, not a verdict.
+ */
+function _rootCauseCandidate(
+  lastEvent: DiagEventType | null,
+  firstMissing: DiagEventType | null,
+  lifecycleState: string
+): string {
+  if (!firstMissing) return 'No missing pipeline events — failure occurred post-queue.';
+
+  if (firstMissing === 'SHARE_PAYLOAD_PERSISTED') {
+    if (lifecycleState.includes('cold')) {
+      return 'cold_start: rewriteShareIntent() may have silently failed (EXTRA_TEXT null or URLEncoder threw) — intent arrived as lumio:/// with no payload.';
+    }
+    if (lifecycleState.includes('background')) {
+      return 'background_resume: DataProvider resetReadinessGate() fired but rewrite was skipped — check SHARE_REWRITE_SKIPPED in log.';
+    }
+    return 'warm_start: redirectSystemPath received non-share URI or empty payload — check SHARE_ROUTE_SOURCE in log.';
+  }
+
+  if (firstMissing === 'QUEUE_ITEM_CREATED') {
+    if (lastEvent === 'SHARE_PAYLOAD_PERSISTED') {
+      return 'Payload persisted to pending_shares but waitForServicesReady() timed out or enqueueCapture() threw — check CAPTURE_QUEUE_READY / SAVE_FAILED in log.';
+    }
+    return `Pipeline stalled after ${lastEvent ?? '(unknown)'} — enqueueCapture never called.`;
+  }
+
+  if (firstMissing === 'QUEUE_ITEM_PERSISTED') {
+    return `enqueueCapture was called but QUEUE_ITEM_PERSISTED not emitted — saveItem() or in-memory queue push likely threw. Last event: ${lastEvent ?? '(unknown)'}.`;
+  }
+
+  return `Unknown gap — last event: ${lastEvent ?? '(none)'}, missing: ${firstMissing}.`;
 }
 
 /** Singleton — import this from anywhere in the app. */

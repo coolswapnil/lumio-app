@@ -20,16 +20,30 @@
  *   • DATAPROVIDER_READY    — resolved by DataProvider after initial data load
  *   • CAPTURE_QUEUE_READY   — resolved by CaptureQueueProvider on mount
  *
- * shareIngestion.ingest() calls waitForServicesReady() before touching
- * enqueueCapture().  The call in redirectSystemPath already awaits ingest(),
- * so the entire ingestion — including the queue creation — only starts after
- * all required services are up.
+ * shareIngestion.ingest() calls waitForServicesReady() AFTER the fail-safe
+ * SQLite persist (STEP A) and BEFORE enqueueCapture() (STEP C).
+ * The call in redirectSystemPath already awaits ingest(), so the queue item
+ * creation only starts after all required services are up.
  *
  * The gate has a READINESS_TIMEOUT_MS safety valve: if any service takes
  * longer than the timeout (e.g. corrupt DB, infinite render loop) we proceed
  * anyway rather than block the share forever.  A SHARE_MANAGER_READY event
  * is emitted when the gate opens (either because all services are ready or
  * the timeout fired).
+ *
+ * ── Background→Foreground reset ─────────────────────────────────────────────
+ *
+ * When the app is backgrounded and later brought to the foreground by a new
+ * share intent, React may remount the provider tree (DataProvider,
+ * CaptureQueueProvider).  Each provider calls its signal* function again.
+ * The signal functions are idempotent by default — they skip if the flag is
+ * already true.  This means the _readinessPromise stays resolved from the
+ * previous session and ingest() will take the fast path even if the services
+ * haven't finished re-mounting in the new render cycle.
+ *
+ * resetReadinessGate() is called by DataProvider on each mount to reset all
+ * flags and create a fresh promise.  This guarantees that a warm-start share
+ * waits for the fully re-mounted providers before creating queue items.
  *
  * The ready flags are module-level so they survive across re-renders and are
  * not tied to React component lifecycle.
@@ -101,13 +115,40 @@ export function signalCaptureQueueReady(): void {
   checkAndResolve();
 }
 
+// ─── Reset (called on provider remount after backgrounding) ──────────────────
+
+/**
+ * Reset the readiness gate so that a new session of signals is required.
+ *
+ * Called by DataProvider on every mount.  This covers the case where the app
+ * was backgrounded, the provider tree remounted, and a new share arrived —
+ * we must not take the already-resolved fast path until the re-mounted
+ * providers have all re-signalled.
+ *
+ * Safe to call any number of times; calling it while ingest() is mid-wait
+ * only affects future ingest() calls (the current wait holds the old promise).
+ */
+export function resetReadinessGate(): void {
+  const wasReady = _databaseReady && _dataProviderReady && _captureQueueReady;
+  _databaseReady     = false;
+  _dataProviderReady = false;
+  _captureQueueReady = false;
+  _readinessPromise  = null;
+  _resolveReadiness  = null;
+  diagLog.addEntry(
+    'SHARE_MANAGER_READY',
+    `readiness gate reset (wasReady=${wasReady}) — waiting for re-mount signals`
+  );
+}
+
 // ─── Gate ─────────────────────────────────────────────────────────────────────
 
 /**
  * Resolves when DATABASE_INITIALIZED, DATAPROVIDER_READY, and
  * CAPTURE_QUEUE_READY have all fired, or after READINESS_TIMEOUT_MS.
  *
- * Call this from ShareIngestionManager.ingest() before enqueueCapture().
+ * Call this from ShareIngestionManager.ingest() AFTER the fail-safe SQLite
+ * persist and BEFORE enqueueCapture().
  * It is a no-op (resolves immediately) if all services are already up.
  */
 export async function waitForServicesReady(): Promise<void> {

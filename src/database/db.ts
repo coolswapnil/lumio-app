@@ -145,6 +145,43 @@ export async function initDatabase(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_pending_shares_status
       ON pending_shares(status);
+
+    -- failed_share_capture: durable record of every share extraction that
+    -- failed to produce a queue item.  Used for forensic review and manual
+    -- recovery without blocking the user.
+    CREATE TABLE IF NOT EXISTS failed_share_capture (
+      id                TEXT PRIMARY KEY NOT NULL,
+      -- Raw synthetic URI (lumio://share?...) or "__RAW_INTENT__" if rewrite failed
+      raw_path          TEXT,
+      -- All intent source fields, verbatim
+      extra_text        TEXT,
+      extra_subject     TEXT,
+      extra_title       TEXT,
+      extra_stream      TEXT,
+      clip_data_text    TEXT,
+      clip_data_uri     TEXT,
+      intent_data       TEXT,
+      mime_type         TEXT,
+      bundle_keys       TEXT,
+      -- Pre-extracted pipe-delimited URLs from native layer
+      urls_param        TEXT,
+      -- Comma-separated extraction source labels (e.g. EXTRA_TEXT,CLIP_DATA_TEXT[0])
+      extraction_source TEXT,
+      -- Error message and last successful diagnostic event
+      error_message     TEXT,
+      last_event        TEXT,
+      -- Lifecycle state at time of failure: cold_start | warm_start | background
+      lifecycle_state   TEXT,
+      -- Payload contents snapshot (text + first URL for quick review)
+      payload_summary   TEXT,
+      -- Retry attempts (incremented on each recoverPendingShares pass)
+      retry_count       INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL,
+      updated_at        TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failed_share_created
+      ON failed_share_capture(created_at DESC);
   `);
 
   // -------------------------------------------------------------------------
