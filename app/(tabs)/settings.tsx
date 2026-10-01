@@ -1723,6 +1723,60 @@ export default function SettingsScreen() {
             {diagnosticsEnabled && (
               <>
                 <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 8 }]} />
+
+                {/* Share Pipeline Metrics */}
+                {(() => {
+                  const metrics = diagLog.getShareMetrics();
+                  return (
+                    <View style={{
+                      backgroundColor: paper.colors.surfaceContainerHigh,
+                      borderColor: paper.colors.outlineVariant,
+                      borderWidth: 1,
+                      borderRadius: innerRadius,
+                      padding: 12,
+                      marginBottom: 12,
+                    }}>
+                      <Text variant="labelSmall" style={{ color: paper.colors.onSurfaceVariant, fontWeight: '700', marginBottom: 8 }}>
+                        SHARE & QUEUE PIPELINE METRICS
+                      </Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text variant="titleMedium" style={{ color: paper.colors.primary, fontWeight: '700' }}>
+                            {metrics.shareAttempts}
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, fontSize: 10 }}>
+                            Share Attempts
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text variant="titleMedium" style={{ color: paper.colors.primary, fontWeight: '700' }}>
+                            {metrics.nativeInserts}
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, fontSize: 10 }}>
+                            Native Inserts
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text variant="titleMedium" style={{ color: paper.colors.primary, fontWeight: '700' }}>
+                            {metrics.queueItemsCreated}
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, fontSize: 10 }}>
+                            Queue Created
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text variant="titleMedium" style={{ color: paper.colors.primary, fontWeight: '700' }}>
+                            {metrics.queueItemsCompleted}
+                          </Text>
+                          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, fontSize: 10 }}>
+                            Queue Completed
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+
                 <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginBottom: 10 }}>
                   {diagLog.getEntries().length === 0
                     ? 'No entries yet — trigger an AI analysis, save, or share.'

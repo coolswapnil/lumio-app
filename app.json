@@ -48,26 +48,6 @@
           ],
           "category": ["BROWSABLE", "DEFAULT"]
         },
-        {
-          "action": "SEND",
-          "data": [{ "mimeType": "text/plain" }],
-          "category": ["DEFAULT"]
-        },
-        {
-          "action": "SEND",
-          "data": [{ "mimeType": "text/html" }],
-          "category": ["DEFAULT"]
-        },
-        {
-          "action": "SEND",
-          "data": [{ "mimeType": "text/*" }],
-          "category": ["DEFAULT"]
-        },
-        {
-          "action": "SEND_MULTIPLE",
-          "data": [{ "mimeType": "text/*" }],
-          "category": ["DEFAULT"]
-        }
       ]
     },
     "web": {
@@ -80,6 +60,7 @@
     },
     "plugins": [
       "./plugins/withEdgeToEdge",
+      "./plugins/withNativeShare",
       "./plugins/withShareBridge",
       "expo-router",
       [

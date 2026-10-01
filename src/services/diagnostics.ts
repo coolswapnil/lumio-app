@@ -73,6 +73,12 @@ export type DiagEventType =
   | 'SHARE_TEXT'
   | 'URL_EXTRACTED'
   | 'ROUTE_TO_SHARE_SCREEN'
+  // ── Native Share & WorkManager diagnostics (always-on) ────────────────────
+  | 'NATIVE_SHARE_RECEIVED'
+  | 'NATIVE_SHARE_SAVED'
+  | 'WORKMANAGER_STARTED'
+  | 'WORKMANAGER_COMPLETED'
+  | 'NATIVE_SHARE_FAILED'
   // ── Share URI rewrite diagnostics ─────────────────────────────────────────
   | 'SHARE_ROUTE_SOURCE'
   | 'SHARE_URI_RAW'
@@ -84,6 +90,7 @@ export type DiagEventType =
   | 'SHARE_MULTI_URL_FOUND'
   | 'QUEUE_ITEM_CREATED'
   | 'QUEUE_ITEM_PERSISTED'
+  | 'QUEUE_ITEM_COMPLETED'
   | 'LIBRARY_ITEM_CREATED'
   | 'COLLECTION_MATCHED'
   | 'COLLECTION_ASSIGNED'
@@ -161,6 +168,11 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_TEXT',
   'URL_EXTRACTED',
   'ROUTE_TO_SHARE_SCREEN',
+  'NATIVE_SHARE_RECEIVED',
+  'NATIVE_SHARE_SAVED',
+  'WORKMANAGER_STARTED',
+  'WORKMANAGER_COMPLETED',
+  'NATIVE_SHARE_FAILED',
   'SHARE_ROUTE_SOURCE',
   'SHARE_URI_RAW',
   'SHARE_URI_REWRITTEN',
@@ -171,6 +183,7 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_MULTI_URL_FOUND',
   'QUEUE_ITEM_CREATED',
   'QUEUE_ITEM_PERSISTED',
+  'QUEUE_ITEM_COMPLETED',
   'LIBRARY_ITEM_CREATED',
   'COLLECTION_MATCHED',
   'COLLECTION_ASSIGNED',
@@ -286,6 +299,39 @@ class DiagnosticsLog {
   /** Returns the last N entries (or fewer if the buffer is smaller). */
   getLastNEntries(n: number): DiagEntry[] {
     return this.entries.slice(-n);
+  }
+
+  /**
+   * Calculates real-time Share & Queue Pipeline metrics from recorded diagnostics events.
+   */
+  getShareMetrics(): {
+    shareAttempts: number;
+    nativeInserts: number;
+    queueItemsCreated: number;
+    queueItemsCompleted: number;
+  } {
+    const shareAttempts = this.entries.filter(
+      (e) => e.event === 'NATIVE_SHARE_RECEIVED' || e.event === 'SHARE_INTENT_RECEIVED' || e.event === 'SHARE_ACTION'
+    ).length;
+
+    const nativeInserts = this.entries.filter(
+      (e) => e.event === 'NATIVE_SHARE_SAVED' || e.event === 'PENDING_SHARE_RAW_CAPTURED' || e.event === 'SHARE_PAYLOAD_PERSISTED'
+    ).length;
+
+    const queueItemsCreated = this.entries.filter(
+      (e) => e.event === 'QUEUE_ITEM_CREATED'
+    ).length;
+
+    const queueItemsCompleted = this.entries.filter(
+      (e) => e.event === 'QUEUE_ITEM_COMPLETED' || e.event === 'ENRICHMENT_COMPLETED'
+    ).length;
+
+    return {
+      shareAttempts,
+      nativeInserts,
+      queueItemsCreated,
+      queueItemsCompleted,
+    };
   }
 
   clearEntries(): void {

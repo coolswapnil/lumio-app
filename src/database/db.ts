@@ -98,6 +98,8 @@ export async function initDatabase(): Promise<void> {
   // Share hardening: raw payload and extraction source for full-chain recovery
   await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN raw_path TEXT`);
   await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN extraction_source TEXT`);
+  await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN mime TEXT`);
+  await runSafe(database, `ALTER TABLE pending_shares ADD COLUMN urls TEXT`);
 
   // -------------------------------------------------------------------------
   // Sync infrastructure tables — offline-first queue, tombstones, metadata.

@@ -475,6 +475,7 @@ async function _runEnrichment(
       currentStep: undefined,
       completedAt: Date.now(),
     });
+    diagLog.addEntry('QUEUE_ITEM_COMPLETED', `captureQueue: enrichment completed for ${itemId}`);
     diagLog.addEntry('SAVE_COMPLETED', `captureQueue: enrichment done for ${itemId}`);
 
   } catch (err) {

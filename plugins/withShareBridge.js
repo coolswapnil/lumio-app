@@ -1,32 +1,19 @@
 /**
- * Expo Config Plugin: withShareBridge
+ * Expo Config Plugin: withShareBridge (Legacy compatibility)
  *
- * Automatically injects the native Android share-intent extraction bridge and
- * lifecycle methods into MainActivity.kt during `expo prebuild`.
+ * NOTE: Android ACTION_SEND / ACTION_SEND_MULTIPLE sharing is now handled
+ * directly and decoupled by NativeShareActivity (see plugins/withNativeShare.js).
  *
- * This guarantees that running `expo prebuild --clean` or building in CI will
- * NEVER lose the custom share-handling logic or fall back to default empty
- * MainActivity behavior.
- *
- * Share reliability contract enforced by this plugin:
- *
- *  1. persistShareToPrefs() — writes intent payload to SharedPreferences
- *     IMMEDIATELY on onCreate/onNewIntent, BEFORE any JS code runs.
- *     This is the deepest fail-safe: the share is safe even if JS crashes.
- *
- *  2. rewriteShareIntent() — converts ACTION_SEND to ACTION_VIEW with a
- *     synthetic lumio://share?... URI so React Native's getInitialURL()
- *     and Linking.addEventListener() can pick it up.
- *
- *  3. backfillRawUriInPrefs() — back-fills the encoded synthetic URI into
- *     the SharedPreferences entry written in step 1.
- *
- * The JS layer (ShareIngestionManager.recoverPendingSharesFromPrefs) drains
- * SharedPreferences on every startup to catch shares that were never promoted
- * to SQLite queue items.
+ * FEATURE FLAG: ENABLE_LEGACY_SHARE_BRIDGE
+ * When ENABLE_LEGACY_SHARE_BRIDGE = false (default for this and future releases),
+ * MainActivity does NOT intercept or rewrite ACTION_SEND intents.
+ * When set to true (fallback for 1 transition release if needed), the legacy
+ * in-process intent rewriting is restored.
  */
 
 const { withMainActivity } = require('@expo/config-plugins');
+
+const ENABLE_LEGACY_SHARE_BRIDGE = false;
 
 const SHARE_IMPORTS = `
 import android.content.Context
@@ -43,30 +30,36 @@ const COMPANION_OBJECT = `
   companion object {
     const val PREFS_NAME = "lumio_pending_shares"
     const val TAG = "Lumio"
+    const val ENABLE_LEGACY_SHARE_BRIDGE = ${ENABLE_LEGACY_SHARE_BRIDGE}
   }
 `;
 
-const ONCREATE_METHODS = `
+const ONCREATE_METHODS_LEGACY = `
     Log.d(TAG, "MAIN_ACTIVITY_CREATED action=\${intent?.action} data=\${intent?.dataString}")
 
-    if (intent != null) {
+    if (intent != null && ENABLE_LEGACY_SHARE_BRIDGE) {
       persistShareToPrefs(intent, "onCreate")
       rewriteShareIntent(intent, "onCreate")
     }
 `;
 
-const SHARE_BODY = `
+const ONCREATE_METHODS_DEFAULT = `
+    Log.d(TAG, "MAIN_ACTIVITY_CREATED action=\${intent?.action} data=\${intent?.dataString}")
+`;
+
+const SHARE_BODY_LEGACY = `
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
     Log.d(TAG, "MAIN_ACTIVITY_ON_NEW_INTENT action=\${intent.action} data=\${intent.dataString}")
-    persistShareToPrefs(intent, "onNewIntent")
-    rewriteShareIntent(intent, "onNewIntent")
+    if (ENABLE_LEGACY_SHARE_BRIDGE) {
+      persistShareToPrefs(intent, "onNewIntent")
+      rewriteShareIntent(intent, "onNewIntent")
+    }
   }
 
   /**
-   * STEP 1 — Persist the raw share payload to SharedPreferences immediately,
-   * before any JS code runs.  This is the unconditional fail-safe write.
+   * LEGACY STEP 1 — Persist the raw share payload to SharedPreferences.
    */
   private fun persistShareToPrefs(intent: Intent, caller: String) {
     val action = intent.action
@@ -89,281 +82,48 @@ const SHARE_BODY = `
       .putString("pending_share_\${id}_raw",   "__PENDING__")
       .apply()
 
-    Log.d(TAG, "SHARE_PREFS_PERSISTED id=$id caller=$caller" +
-      " textLen=\${extraText?.length ?: 0} mime=\${type ?: "(null)"}")
+    Log.d(TAG, "SHARE_PREFS_PERSISTED id=$id caller=$caller textLen=\${extraText?.length ?: 0}")
   }
 
   /**
-   * After the synthetic URI is built, back-fill the _raw SharedPreferences
-   * key so the JS recovery layer has the full payload.
-   */
-  private fun backfillRawUriInPrefs(syntheticUri: String) {
-    try {
-      val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      val all = prefs.all
-      var latestId: String? = null
-      var latestTs = 0L
-      for ((key, value) in all) {
-        if (key.endsWith("_raw") && value == "__PENDING__") {
-          val id = key.removePrefix("pending_share_").removeSuffix("_raw")
-          val ts = id.toLongOrNull() ?: 0L
-          if (ts > latestTs) {
-            latestTs = ts
-            latestId = id
-          }
-        }
-      }
-      if (latestId != null) {
-        prefs.edit()
-          .putString("pending_share_\${latestId}_raw", syntheticUri.take(2000))
-          .apply()
-        Log.d(TAG, "SHARE_PREFS_BACKFILLED id=$latestId uriLen=\${syntheticUri.length}")
-      }
-    } catch (e: Exception) {
-      Log.e(TAG, "SHARE_PREFS_BACKFILL_ERROR error=\${e.message}")
-    }
-  }
-
-  /**
-   * STEP 2 — Rewrite the ACTION_SEND into a synthetic lumio://share URI.
+   * LEGACY STEP 2 — Rewrite the ACTION_SEND into a synthetic lumio://share URI.
    */
   private fun rewriteShareIntent(intent: Intent, caller: String) {
     val action = intent.action
-    val type   = intent.type
-
-    Log.d(TAG, "SHARE_ROUTE_SOURCE caller=$caller action=$action type=$type data=\${intent.dataString}")
-
     val isShare = action == Intent.ACTION_SEND || action == Intent.ACTION_SEND_MULTIPLE
-    if (!isShare) {
-      Log.d(TAG, "SHARE_REWRITE_SKIPPED reason=NOT_ACTION_SEND action=$action")
-      return
-    }
+    if (!isShare) return
 
     val extraText    = intent.getStringExtra(Intent.EXTRA_TEXT)
     val extraSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
     val extraTitle   = intent.getStringExtra(Intent.EXTRA_TITLE)
-    val intentData   = intent.data
+    val type         = intent.type
 
-    val extraStreamSingle: Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-    } else {
-      @Suppress("DEPRECATION")
-      intent.getParcelableExtra(Intent.EXTRA_STREAM)
-    }
-    val extraStreamList: ArrayList<Uri>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-    } else {
-      @Suppress("DEPRECATION")
-      intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-    }
-
-    Log.d(TAG, "ACTION value=\"\${action ?: "(null)"}\"")
-    Log.d(TAG, "MIME_TYPE value=\"\${type ?: "(null)"}\"")
-    Log.d(TAG, "EXTRA_TEXT value=\"\${extraText?.take(300) ?: "(null)"}\"")
-    Log.d(TAG, "EXTRA_STREAM value=\"\${extraStreamSingle ?: (if (!extraStreamList.isNullOrEmpty()) extraStreamList.joinToString(",") else "(null)")}\"")
-    Log.d(TAG, "EXTRA_SUBJECT value=\"\${extraSubject?.take(200) ?: "(null)"}\"")
-    Log.d(TAG, "EXTRA_TITLE value=\"\${extraTitle?.take(200) ?: "(null)"}\"")
-    Log.d(TAG, "INTENT_DATA value=\"\${intentData?.toString() ?: "(null)"}\"")
-
-    val clip = intent.clipData
-    val clipItemCount = clip?.itemCount ?: 0
-    Log.d(TAG, "CLIP_DATA itemCount=$clipItemCount description=\"\${clip?.description?.label ?: "(null)"}\"")
-    for (i in 0 until clipItemCount) {
-      val item = clip!!.getItemAt(i)
-      val itemUri = item.uri
-      val itemText = item.text?.toString()
-      val itemMime = if (itemUri != null) {
-        try {
-          contentResolver?.getType(itemUri)
-        } catch (_: Exception) {
-          null
-        }
-      } else {
-        null
-      } ?: clip.description?.getMimeType(0) ?: "(null)"
-
-      Log.d(TAG, "CLIP_DATA[$i] uri=\"\${itemUri?.toString() ?: "(null)"}\" text=\"\${itemText?.take(200) ?: "(null)"}\" mime=\"$itemMime\"")
-    }
-
-    if (!extraStreamList.isNullOrEmpty()) {
-      extraStreamList.forEachIndexed { i, uri ->
-        Log.d(TAG, "EXTRA_STREAM_LIST[$i] uri=\"$uri\"")
-      }
-    }
-
-    Log.d(TAG, "PENDING_SHARE_RAW_CAPTURED" +
-      " action=$action" +
-      " type=$type" +
-      " textLen=\${extraText?.length ?: 0}" +
-      " clipItems=$clipItemCount" +
-      " streamList=\${extraStreamList?.size ?: 0}")
-
-    val bundle = intent.extras
-    if (bundle != null) {
-      val keys = bundle.keySet()?.joinToString(",") ?: "(none)"
-      Log.d(TAG, "BUNDLE_KEYS keys=\"$keys\"")
-    }
-
-    val collected = collectAllUrls(
-      extraText, clip, intentData,
-      extraStreamSingle, extraStreamList, extraSubject
-    )
-
-    Log.d(TAG, "SHARE_EXTRACT_RESULT" +
-      " urlCount=\${collected.urls.size}" +
-      " sources=\"\${collected.sources.joinToString(",")}\"" +
-      " text=\"\${collected.primaryText?.take(200) ?: "(null)"}\"")
-
-    if (collected.primaryText == null && collected.urls.isEmpty()) {
-      Log.w(TAG, "SHARE_REWRITE_SKIPPED reason=NO_CONTENT_FOUND caller=$caller" +
-        " – all sources null; intent will produce lumio:///")
-      return
-    }
+    if (extraText.isNullOrBlank() && extraSubject.isNullOrBlank()) return
 
     try {
-      val primaryText = collected.primaryText ?: collected.urls.firstOrNull() ?: ""
-      val encodedText    = URLEncoder.encode(primaryText,             StandardCharsets.UTF_8.name())
-      val encodedTitle   = if (extraTitle   != null) URLEncoder.encode(extraTitle,   StandardCharsets.UTF_8.name()) else ""
-      val encodedSubject = if (extraSubject != null) URLEncoder.encode(extraSubject, StandardCharsets.UTF_8.name()) else ""
-      val encodedMime    = if (type         != null) URLEncoder.encode(type,         StandardCharsets.UTF_8.name()) else ""
-
-      val urlsParam = collected.urls
-        .take(10)
-        .joinToString("|")
-        .take(2000)
-      val encodedUrls = URLEncoder.encode(urlsParam, StandardCharsets.UTF_8.name())
-
-      val encodedSrc = URLEncoder.encode(
-        collected.sources.joinToString(",").take(200),
-        StandardCharsets.UTF_8.name()
-      )
-
-      val syntheticUri = Uri.parse(
-        "lumio://share" +
-          "?text=$encodedText" +
-          "&title=$encodedTitle" +
-          "&subject=$encodedSubject" +
-          "&urls=$encodedUrls" +
-          "&src=$encodedSrc" +
-          "&mime=$encodedMime"
-      )
+      val primaryText = extraText ?: extraSubject ?: ""
+      val encodedText = URLEncoder.encode(primaryText, StandardCharsets.UTF_8.name())
+      val syntheticUri = Uri.parse("lumio://share?text=$encodedText&title=\${extraTitle ?: ""}&src=LEGACY_BRIDGE")
       intent.action = Intent.ACTION_VIEW
       intent.data   = syntheticUri
-
-      backfillRawUriInPrefs(syntheticUri.toString())
-
-      Log.d(TAG, "SHARE_REWRITE_SUCCESS" +
-        " urlCount=\${collected.urls.size}" +
-        " uri=\"\${syntheticUri.toString().take(300)}\"")
+      Log.d(TAG, "LEGACY_SHARE_REWRITE_SUCCESS uri=\${syntheticUri}")
     } catch (e: Exception) {
-      Log.e(TAG, "SHARE_REWRITE_SKIPPED reason=ENCODE_EXCEPTION caller=$caller error=\${e.message}" +
-        " – intent will produce lumio:///")
+      Log.e(TAG, "LEGACY_SHARE_REWRITE_FAILED error=\${e.message}")
     }
   }
-
-  private fun collectAllUrls(
-    extraText:       String?,
-    clip:            ClipData?,
-    intentData:      Uri?,
-    streamSingle:    Uri?,
-    streamList:      List<Uri>?,
-    extraSubject:    String?,
-  ): CollectionResult {
-    val seen   = LinkedHashSet<String>()
-    val sources = mutableListOf<String>()
-    var primaryText: String? = null
-
-    fun addUrl(url: String, source: String, diagEvent: String? = null) {
-      val clean = url.trim().trimEnd('.', ')', '>')
-      if (clean.startsWith("http") && seen.add(clean)) {
-        if (sources.lastOrNull() != source) sources.add(source)
-        if (diagEvent != null) {
-          Log.d(TAG, "$diagEvent url=\"\${clean.take(200)}\" source=$source")
-        }
-        Log.d(TAG, "SHARE_EXTRACT url=\"\${clean.take(200)}\" source=$source")
-      }
-    }
-
-    fun extractFromText(text: String, source: String, diagEvent: String? = null) {
-      val regex = Regex("""https?://[^\\s<>"{}|\\\\^\`\\[\\]]+""")
-      regex.findAll(text).forEach { match ->
-        addUrl(match.value, source, diagEvent)
-      }
-    }
-
-    // 1. EXTRA_TEXT
-    if (!extraText.isNullOrBlank()) {
-      primaryText = extraText.trim()
-      extractFromText(extraText, "EXTRA_TEXT")
-    }
-
-    // 2. ClipData text
-    if (clip != null) {
-      for (i in 0 until clip.itemCount) {
-        val item = clip.getItemAt(i)
-        val t = item.text?.toString()
-        if (!t.isNullOrBlank()) {
-          if (primaryText == null) primaryText = t.trim()
-          extractFromText(t, "CLIP_DATA_TEXT[$i]", "CLIPDATA_FOUND")
-        }
-      }
-    }
-
-    // 3. ClipData URI
-    if (clip != null) {
-      for (i in 0 until clip.itemCount) {
-        val item = clip.getItemAt(i)
-        val u = item.uri?.toString()
-        if (!u.isNullOrBlank()) {
-          if (primaryText == null) primaryText = u.trim()
-          addUrl(u, "CLIP_DATA_URI[$i]", "CLIPDATA_FOUND")
-        }
-      }
-    }
-
-    // 4. Intent.getData()
-    if (intentData != null) {
-      val d = intentData.toString()
-      if (primaryText == null) primaryText = d
-      addUrl(d, "INTENT_DATA", "DATA_URI_FOUND")
-      addUrl(d, "INTENT_DATA", "INTENT_URI_FOUND")
-    }
-
-    // 5. EXTRA_STREAM URI
-    if (streamSingle != null) {
-      val s = streamSingle.toString()
-      if (primaryText == null) primaryText = s
-      addUrl(s, "EXTRA_STREAM", "STREAM_URI_FOUND")
-    }
-    if (!streamList.isNullOrEmpty()) {
-      streamList.forEachIndexed { i, uri ->
-        val s = uri.toString()
-        if (primaryText == null) primaryText = s
-        addUrl(s, "EXTRA_STREAM_LIST[$i]", "STREAM_URI_FOUND")
-      }
-    }
-
-    // 6. EXTRA_SUBJECT
-    if (!extraSubject.isNullOrBlank()) {
-      if (primaryText == null) primaryText = extraSubject.trim()
-      extractFromText(extraSubject, "EXTRA_SUBJECT")
-    }
-
-    return CollectionResult(
-      urls        = seen.toList(),
-      primaryText = primaryText,
-      sources     = sources,
-    )
-  }
-
-  private data class CollectionResult(
-    val urls:        List<String>,
-    val primaryText: String?,
-    val sources:     List<String>,
-  )
 `;
 
-function withShareBridge(config) {
+const SHARE_BODY_DEFAULT = `
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    Log.d(TAG, "MAIN_ACTIVITY_ON_NEW_INTENT action=\${intent.action} data=\${intent.dataString}")
+  }
+`;
+
+function withShareBridge(config, options = {}) {
+  const isLegacyEnabled = options.enableLegacyShareBridge ?? ENABLE_LEGACY_SHARE_BRIDGE;
+
   return withMainActivity(config, (modConfig) => {
     let contents = modConfig.modResults.contents;
 
@@ -383,21 +143,21 @@ function withShareBridge(config) {
       );
     }
 
-    // 3. Inject onCreate rewrite call if not already present
-    if (!contents.includes('persistShareToPrefs(intent, "onCreate")')) {
+    // 3. Inject onCreate
+    if (!contents.includes('MAIN_ACTIVITY_CREATED')) {
       contents = contents.replace(
         /(super\.onCreate\(null\))/,
-        `$1\n${ONCREATE_METHODS}`
+        `$1\n${isLegacyEnabled ? ONCREATE_METHODS_LEGACY : ONCREATE_METHODS_DEFAULT}`
       );
     }
 
-    // 4. Inject onNewIntent and helper functions before class closing brace
-    if (!contents.includes('persistShareToPrefs(intent: Intent, caller: String)')) {
+    // 4. Inject onNewIntent
+    if (!contents.includes('MAIN_ACTIVITY_ON_NEW_INTENT')) {
       const lastBraceIndex = contents.lastIndexOf('}');
       if (lastBraceIndex !== -1) {
         contents =
           contents.slice(0, lastBraceIndex) +
-          SHARE_BODY +
+          (isLegacyEnabled ? SHARE_BODY_LEGACY : SHARE_BODY_DEFAULT) +
           '\n' +
           contents.slice(lastBraceIndex);
       }
@@ -409,3 +169,4 @@ function withShareBridge(config) {
 }
 
 module.exports = withShareBridge;
+module.exports.ENABLE_LEGACY_SHARE_BRIDGE = ENABLE_LEGACY_SHARE_BRIDGE;

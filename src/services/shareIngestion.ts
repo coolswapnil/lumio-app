@@ -281,7 +281,7 @@ export class ShareIngestionManager {
 
       diagLog.addEntry(
         'PENDING_SHARE_FOUND',
-        `recoverPendingShares: found ${pending.length} pending shares`
+        `Found ${pending.length} pending shares`
       );
 
       for (const share of pending) {
@@ -332,7 +332,7 @@ export class ShareIngestionManager {
             const itemId    = await enqueueCapture(resolvedUrl, { titleHint });
             diagLog.addEntry(
               'PENDING_SHARE_PROCESSED',
-              `recoverPendingShares: id=${share.id} itemId=${itemId} url="${resolvedUrl.slice(0, 80)}"`
+              `Recovered and enqueued share id=${share.id} itemId=${itemId} url="${resolvedUrl.slice(0, 80)}"`
             );
           }
 
