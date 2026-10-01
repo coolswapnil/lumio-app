@@ -47,7 +47,7 @@
             { "scheme": "lumio" }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
-        },
+        }
       ]
     },
     "web": {

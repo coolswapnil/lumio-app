@@ -47,55 +47,55 @@ if (fs.existsSync(APP_JSON_PATH)) {
   const appJsonContent = fs.readFileSync(APP_JSON_PATH, 'utf8');
   const appJson = JSON.parse(appJsonContent);
   const plugins = appJson.expo?.plugins || [];
-  const intentFilters = appJson.expo?.android?.intentFilters || [];
+
+  check(
+    'app.json withNativeShare plugin configured',
+    plugins.some((p) => (typeof p === 'string' ? p : p[0]).includes('withNativeShare'))
+  );
 
   check(
     'app.json withShareBridge plugin configured',
     plugins.some((p) => (typeof p === 'string' ? p : p[0]).includes('withShareBridge'))
   );
-
-  check(
-    'app.json SEND intent-filter configured',
-    intentFilters.some((f) => f.action === 'SEND')
-  );
 } else {
   check('app.json exists', false, 'File not found');
 }
 
-// 2. Check MainActivity.kt
-if (fs.existsSync(MAIN_ACTIVITY_PATH)) {
-  const mainActivity = fs.readFileSync(MAIN_ACTIVITY_PATH, 'utf8');
+// 2. Check NativeShare Plugin Source
+const NATIVE_SHARE_PLUGIN_PATH = path.join(ROOT_DIR, 'plugins/withNativeShare.js');
+if (fs.existsSync(NATIVE_SHARE_PLUGIN_PATH)) {
+  const pluginContent = fs.readFileSync(NATIVE_SHARE_PLUGIN_PATH, 'utf8');
 
-  check('MainActivity.kt exists', true);
+  check('plugins/withNativeShare.js exists', true);
   check(
-    'MainActivity.kt has onCreate() intent check',
-    mainActivity.includes('rewriteShareIntent(intent, "onCreate")')
+    'NativeShareActivity defined in plugin',
+    pluginContent.includes('class NativeShareActivity : Activity()')
   );
   check(
-    'MainActivity.kt has onNewIntent() override',
-    mainActivity.includes('override fun onNewIntent(')
+    'ShareWorker defined in plugin',
+    pluginContent.includes('class ShareWorker(')
   );
   check(
-    'MainActivity.kt has setIntent()',
-    mainActivity.includes('setIntent(intent)')
+    'ACTION_SEND configured for NativeShareActivity',
+    pluginContent.includes('android.intent.action.SEND')
   );
   check(
-    'MainActivity.kt has rewriteShareIntent() implementation',
-    mainActivity.includes('fun rewriteShareIntent(')
-  );
-  check(
-    'MainActivity.kt has fallback extraction',
-    mainActivity.includes('collectAllUrls(')
+    'ACTION_SEND_MULTIPLE configured for NativeShareActivity',
+    pluginContent.includes('android.intent.action.SEND_MULTIPLE')
   );
 } else {
-  console.log('ℹ️  MainActivity.kt not found (expected before expo prebuild).');
+  check('plugins/withNativeShare.js exists', false, 'File not found');
 }
 
 // 3. Check AndroidManifest.xml (if prebuilt)
 if (fs.existsSync(MANIFEST_PATH)) {
   const manifest = fs.readFileSync(MANIFEST_PATH, 'utf8');
   check(
-    'AndroidManifest.xml contains ACTION_SEND',
+    'AndroidManifest.xml contains NativeShareActivity',
+    manifest.includes('NativeShareActivity')
+  );
+  check(
+    'AndroidManifest.xml routes ACTION_SEND to NativeShareActivity',
     manifest.includes('android.intent.action.SEND')
   );
 }
