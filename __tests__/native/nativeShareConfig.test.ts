@@ -27,6 +27,13 @@ describe('withNativeShare Config Plugin', () => {
     expect(NATIVE_SHARE_ACTIVITY_KT).toContain('NATIVE_SHARE_RECEIVED');
     expect(NATIVE_SHARE_ACTIVITY_KT).toContain('NATIVE_SHARE_SAVED');
     expect(NATIVE_SHARE_ACTIVITY_KT).toContain('NATIVE_SHARE_FAILED');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('NATIVE_DB_WRITE_SUCCESS');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('NATIVE_DB_WRITE_FAILED');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('DB_PATH_RESOLVED');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('DB_OPEN_SUCCESS');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('DB_OPEN_FAILED');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('DB_INSERT_SUCCESS');
+    expect(NATIVE_SHARE_ACTIVITY_KT).toContain('DB_INSERT_FAILED');
   });
 
   it('generates valid Kotlin source for ShareWorker with WorkManager integration & diagnostics', () => {

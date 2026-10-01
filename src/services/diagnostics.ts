@@ -74,11 +74,21 @@ export type DiagEventType =
   | 'URL_EXTRACTED'
   | 'ROUTE_TO_SHARE_SCREEN'
   // ── Native Share & WorkManager diagnostics (always-on) ────────────────────
+  | 'NATIVE_SHARE_ACTIVITY_CREATED'
   | 'NATIVE_SHARE_RECEIVED'
   | 'NATIVE_SHARE_SAVED'
+  | 'NATIVE_DB_WRITE_SUCCESS'
+  | 'NATIVE_DB_WRITE_FAILED'
+  | 'DB_PATH_RESOLVED'
+  | 'DB_OPEN_SUCCESS'
+  | 'DB_OPEN_FAILED'
+  | 'DB_INSERT_SUCCESS'
+  | 'DB_INSERT_FAILED'
+  | 'WORKMANAGER_ENQUEUED'
   | 'WORKMANAGER_STARTED'
   | 'WORKMANAGER_COMPLETED'
   | 'NATIVE_SHARE_FAILED'
+  | 'PENDING_SHARE_FAILED'
   // ── Share URI rewrite diagnostics ─────────────────────────────────────────
   | 'SHARE_ROUTE_SOURCE'
   | 'SHARE_URI_RAW'
@@ -168,11 +178,21 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_TEXT',
   'URL_EXTRACTED',
   'ROUTE_TO_SHARE_SCREEN',
+  'NATIVE_SHARE_ACTIVITY_CREATED',
   'NATIVE_SHARE_RECEIVED',
   'NATIVE_SHARE_SAVED',
+  'NATIVE_DB_WRITE_SUCCESS',
+  'NATIVE_DB_WRITE_FAILED',
+  'DB_PATH_RESOLVED',
+  'DB_OPEN_SUCCESS',
+  'DB_OPEN_FAILED',
+  'DB_INSERT_SUCCESS',
+  'DB_INSERT_FAILED',
+  'WORKMANAGER_ENQUEUED',
   'WORKMANAGER_STARTED',
   'WORKMANAGER_COMPLETED',
   'NATIVE_SHARE_FAILED',
+  'PENDING_SHARE_FAILED',
   'SHARE_ROUTE_SOURCE',
   'SHARE_URI_RAW',
   'SHARE_URI_REWRITTEN',
@@ -350,6 +370,31 @@ class DiagnosticsLog {
     ].join('\n');
     if (this.entries.length === 0) return header + '(no entries recorded)';
 
+    // Append a native share proof block — always shown so it is visible even
+    // when no failure occurred and no FAILED_SHARE_CAPTURED entry exists.
+    const nativeProofEntries = this.entries.filter(
+      (e) =>
+        e.event === 'NATIVE_SHARE_ACTIVITY_CREATED' ||
+        e.event === 'NATIVE_SHARE_RECEIVED' ||
+        e.event === 'NATIVE_SHARE_SAVED'
+    );
+    let nativeProofBlock = '';
+    if (nativeProofEntries.length > 0) {
+      nativeProofBlock =
+        '\n=== Native Share Activity Proof ===\n' +
+        nativeProofEntries
+          .map((e) => `[${e.timestamp}] #${e.seq} ${e.event.padEnd(30)}  ${e.detail}`)
+          .join('\n') +
+        '\n===================================';
+    } else {
+      nativeProofBlock =
+        '\n=== Native Share Activity Proof ===\n' +
+        'NATIVE_SHARE_ACTIVITY_CREATED : NOT PRESENT — NativeShareActivity.onCreate() was never called this session.\n' +
+        'NATIVE_SHARE_RECEIVED         : NOT PRESENT\n' +
+        'NATIVE_SHARE_SAVED            : NOT PRESENT\n' +
+        '===================================';
+    }
+
     // Append a failure report block if a FAILED_SHARE_CAPTURED event exists.
     const failureEntries = this.entries.filter((e) => e.event === 'FAILED_SHARE_CAPTURED');
     let failureBlock = '';
@@ -380,6 +425,7 @@ class DiagnosticsLog {
       this.entries
         .map((e) => `[${e.timestamp}] #${e.seq} ${e.event.padEnd(26)}  ${e.detail}`)
         .join('\n') +
+      nativeProofBlock +
       failureBlock
     );
   }

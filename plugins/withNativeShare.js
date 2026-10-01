@@ -63,6 +63,24 @@ class NativeShareActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // ── Proof-of-execution: runs before any share logic ──────────────────
+        val proofId = UUID.randomUUID().toString()
+        val proofTs = getIsoTimestamp()
+        Log.d(TAG, "NATIVE_SHARE_ACTIVITY_CREATED id=$proofId ts=$proofTs action=\${intent?.action} type=\${intent?.type}")
+
+        // Visible toast so the user can confirm the activity was launched
+        Toast.makeText(applicationContext, "NativeShareActivity Started", Toast.LENGTH_LONG).show()
+
+        // Write proof row to pending_shares
+        writeProofToPendingShares(proofId, proofTs)
+
+        // Write proof row to failed_share_capture (diagnostic table)
+        writeProofToFailedShareCapture(proofId, proofTs)
+
+        // Write proof row to diagnostics table
+        writeProofToDiagnostics(proofId, proofTs)
+
         handleIncomingShare(intent)
     }
 
@@ -144,8 +162,10 @@ class NativeShareActivity : Activity() {
 
         if (dbPersisted) {
             Log.d(TAG, "NATIVE_SHARE_SAVED id=$shareId url=$primaryUrl")
+            Log.d(TAG, "NATIVE_DB_WRITE_SUCCESS id=$shareId")
         } else {
             Log.e(TAG, "NATIVE_SHARE_FAILED id=$shareId reason=SQLITE_INSERT_FAILED")
+            Log.e(TAG, "NATIVE_DB_WRITE_FAILED id=$shareId")
         }
 
         // 5. Schedule WorkManager task to guarantee processing persistence
@@ -228,20 +248,42 @@ class NativeShareActivity : Activity() {
         createdAt: String
     ): Boolean {
         var db: SQLiteDatabase? = null
+        val androidVer = Build.VERSION.RELEASE
+        val sdkInt = Build.VERSION.SDK_INT
+        val oem = "\${Build.MANUFACTURER} \${Build.MODEL}"
+
         return try {
             val dbFile = findDatabaseFile()
-            // Log the resolved path so it can be compared against expo-sqlite's
-            // defaultDatabaseDirectory constant (context.filesDir/SQLite/lumio.db).
-            Log.i(TAG, "SQLITE_DB_PATH resolved=\${dbFile?.absolutePath} exists=\${dbFile?.exists()}")
+            val dbPath = dbFile?.absolutePath ?: "null"
+            val dbExists = dbFile?.exists() == true
+            val parentFile = dbFile?.parentFile
+            val parentExists = parentFile?.exists() == true
+            val canWrite = if (dbExists) dbFile.canWrite() else (parentFile?.canWrite() == true)
+
+            Log.i(TAG, "SQLITE_DB_PATH resolved=$dbPath exists=$dbExists parentExists=$parentExists canWrite=$canWrite androidVer=$androidVer (SDK $sdkInt) oem=\"$oem\"")
+            Log.d(TAG, "DB_PATH_RESOLVED path=$dbPath exists=$dbExists parentExists=$parentExists canWrite=$canWrite")
+
             if (dbFile == null) {
                 Log.w(TAG, "SQLITE_DB_NOT_FOUND dbFile=null")
+                Log.e(TAG, "DB_OPEN_FAILED path=null reason=DB_FILE_NULL androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"")
                 return false
             }
 
-            db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
+            try {
+                db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
+                Log.d(TAG, "DB_OPEN_SUCCESS path=$dbPath")
+            } catch (openEx: Exception) {
+                Log.e(TAG, "DB_OPEN_FAILED path=$dbPath error=\${openEx.javaClass.name}: \${openEx.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", openEx)
+                return false
+            }
 
             // Match expo-sqlite WAL mode so reads from JS are never blocked by this writer
-            db.execSQL("PRAGMA journal_mode = WAL")
+            try {
+                db.execSQL("PRAGMA journal_mode = WAL")
+                Log.d(TAG, "SQLITE_WAL_STATUS wal_enabled=true")
+            } catch (walEx: Exception) {
+                Log.w(TAG, "SQLITE_WAL_STATUS wal_enabled=false error=\${walEx.message}")
+            }
 
             // Ensure table exists
             db.execSQL(
@@ -262,30 +304,37 @@ class NativeShareActivity : Activity() {
                 """.trimIndent()
             )
 
-            val statement = db.compileStatement(
-                """
-                INSERT OR REPLACE INTO pending_shares 
-                (id, text, url, title, subject, raw_path, extraction_source, mime, urls, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-                """.trimIndent()
-            )
+            try {
+                val statement = db.compileStatement(
+                    """
+                    INSERT OR REPLACE INTO pending_shares
+                    (id, text, url, title, subject, raw_path, extraction_source, mime, urls, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                    """.trimIndent()
+                )
 
-            statement.bindString(1, shareId)
-            statement.bindString(2, text)
-            statement.bindString(3, url)
-            if (title != null) statement.bindString(4, title) else statement.bindNull(4)
-            if (subject != null) statement.bindString(5, subject) else statement.bindNull(5)
-            statement.bindString(6, rawPath)
-            statement.bindString(7, extractionSource)
-            if (mime != null) statement.bindString(8, mime) else statement.bindNull(8)
-            statement.bindString(9, urlsParam)
-            statement.bindString(10, createdAt)
+                statement.bindString(1, shareId)
+                statement.bindString(2, text)
+                statement.bindString(3, url)
+                if (title != null) statement.bindString(4, title) else statement.bindNull(4)
+                if (subject != null) statement.bindString(5, subject) else statement.bindNull(5)
+                statement.bindString(6, rawPath)
+                statement.bindString(7, extractionSource)
+                if (mime != null) statement.bindString(8, mime) else statement.bindNull(8)
+                statement.bindString(9, urlsParam)
+                statement.bindString(10, createdAt)
 
-            statement.executeInsert()
-            Log.d(TAG, "SQLITE_INSERT_SUCCESS id=$shareId")
-            true
+                statement.executeInsert()
+                Log.d(TAG, "SQLITE_INSERT_SUCCESS id=$shareId")
+                Log.d(TAG, "DB_INSERT_SUCCESS id=$shareId")
+                true
+            } catch (insertEx: Exception) {
+                Log.e(TAG, "DB_INSERT_FAILED id=$shareId error=\${insertEx.javaClass.name}: \${insertEx.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", insertEx)
+                Log.e(TAG, "SQLITE_INSERT_ERROR error=\${insertEx.message}")
+                false
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "SQLITE_INSERT_ERROR error=\${e.message}")
+            Log.e(TAG, "SQLITE_EXCEPTION error=\${e.javaClass.name}: \${e.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", e)
             false
         } finally {
             try { db?.close() } catch (_: Exception) {}
@@ -421,6 +470,166 @@ class NativeShareActivity : Activity() {
         val primaryText: String?,
         val sources: List<String>
     )
+
+    // ── Proof-of-execution helpers ────────────────────────────────────────────
+
+    /** Write one row to pending_shares with status='proof' so it is visible in DB. */
+    private fun writeProofToPendingShares(id: String, ts: String) {
+        var db: SQLiteDatabase? = null
+        try {
+            val dbFile = findDatabaseFile()
+            if (dbFile == null) {
+                Log.w(TAG, "PROOF_PENDING_SHARES_SKIPPED reason=DB_NOT_FOUND")
+                return
+            }
+            db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
+            db.execSQL("PRAGMA journal_mode = WAL")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS pending_shares (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    text TEXT,
+                    url TEXT,
+                    title TEXT,
+                    subject TEXT,
+                    raw_path TEXT,
+                    extraction_source TEXT,
+                    mime TEXT,
+                    urls TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            val stmt = db.compileStatement(
+                "INSERT OR REPLACE INTO pending_shares (id,text,url,title,subject,raw_path,extraction_source,mime,urls,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+            )
+            stmt.bindString(1, id)
+            stmt.bindString(2, "NATIVE_SHARE_ACTIVITY_CREATED proof")
+            stmt.bindString(3, "")
+            stmt.bindString(4, "Proof: NativeShareActivity.onCreate() executed")
+            stmt.bindString(5, "")
+            stmt.bindString(6, "proof://NATIVE_SHARE_ACTIVITY_CREATED")
+            stmt.bindString(7, "PROOF")
+            stmt.bindNull(8)
+            stmt.bindString(9, "")
+            stmt.bindString(10, "proof")
+            stmt.bindString(11, ts)
+            stmt.executeInsert()
+            Log.d(TAG, "PROOF_PENDING_SHARES_WRITTEN id=$id")
+        } catch (e: Exception) {
+            Log.e(TAG, "PROOF_PENDING_SHARES_ERROR error=\${e.message}")
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** Write one row to failed_share_capture as a proof marker. */
+    private fun writeProofToFailedShareCapture(id: String, ts: String) {
+        var db: SQLiteDatabase? = null
+        try {
+            val dbFile = findDatabaseFile()
+            if (dbFile == null) {
+                Log.w(TAG, "PROOF_FAILED_CAPTURE_SKIPPED reason=DB_NOT_FOUND")
+                return
+            }
+            db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
+            db.execSQL("PRAGMA journal_mode = WAL")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS failed_share_capture (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    raw_path TEXT,
+                    extra_text TEXT,
+                    extra_subject TEXT,
+                    extra_title TEXT,
+                    extra_stream TEXT,
+                    clip_data_text TEXT,
+                    clip_data_uri TEXT,
+                    intent_data TEXT,
+                    mime_type TEXT,
+                    bundle_keys TEXT,
+                    urls_param TEXT,
+                    extraction_source TEXT,
+                    error_message TEXT,
+                    last_event TEXT,
+                    lifecycle_state TEXT,
+                    payload_summary TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            val stmt = db.compileStatement(
+                """INSERT OR REPLACE INTO failed_share_capture
+                   (id,raw_path,extra_text,extra_subject,extra_title,extra_stream,
+                    clip_data_text,clip_data_uri,intent_data,mime_type,bundle_keys,
+                    urls_param,extraction_source,error_message,last_event,lifecycle_state,
+                    payload_summary,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""".trimIndent()
+            )
+            stmt.bindString(1, id)
+            stmt.bindString(2, "proof://NATIVE_SHARE_ACTIVITY_CREATED")
+            stmt.bindString(3, "NATIVE_SHARE_ACTIVITY_CREATED proof")
+            stmt.bindString(4, "")
+            stmt.bindString(5, "Proof: NativeShareActivity.onCreate() executed")
+            stmt.bindString(6, "")
+            stmt.bindString(7, "")
+            stmt.bindString(8, "")
+            stmt.bindString(9, "")
+            stmt.bindNull(10)
+            stmt.bindString(11, "")
+            stmt.bindString(12, "")
+            stmt.bindString(13, "PROOF")
+            stmt.bindString(14, "NOT_AN_ERROR: proof-of-execution marker written by NativeShareActivity.onCreate()")
+            stmt.bindString(15, "NATIVE_SHARE_ACTIVITY_CREATED")
+            stmt.bindString(16, "native_share_launched")
+            stmt.bindString(17, "NativeShareActivity.onCreate() executed at \$ts")
+            stmt.bindString(18, ts)
+            stmt.executeInsert()
+            Log.d(TAG, "PROOF_FAILED_CAPTURE_WRITTEN id=$id")
+        } catch (e: Exception) {
+            Log.e(TAG, "PROOF_FAILED_CAPTURE_ERROR error=\${e.message}")
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
+
+    /** Write one row to diagnostics table as a proof marker. */
+    private fun writeProofToDiagnostics(id: String, ts: String) {
+        var db: SQLiteDatabase? = null
+        try {
+            val dbFile = findDatabaseFile()
+            if (dbFile == null) {
+                Log.w(TAG, "PROOF_DIAGNOSTICS_SKIPPED reason=DB_NOT_FOUND")
+                return
+            }
+            db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
+            db.execSQL("PRAGMA journal_mode = WAL")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS diagnostics (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    event TEXT NOT NULL,
+                    detail TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            val stmt = db.compileStatement(
+                "INSERT OR REPLACE INTO diagnostics (id,event,detail,created_at) VALUES (?,?,?,?)"
+            )
+            stmt.bindString(1, id)
+            stmt.bindString(2, "NATIVE_SHARE_ACTIVITY_CREATED")
+            stmt.bindString(3, "NativeShareActivity.onCreate() executed — proof id=\$id ts=\$ts")
+            stmt.bindString(4, ts)
+            stmt.executeInsert()
+            Log.d(TAG, "PROOF_DIAGNOSTICS_WRITTEN id=$id")
+        } catch (e: Exception) {
+            Log.e(TAG, "PROOF_DIAGNOSTICS_ERROR error=\${e.message}")
+        } finally {
+            try { db?.close() } catch (_: Exception) {}
+        }
+    }
 }
 `;
 

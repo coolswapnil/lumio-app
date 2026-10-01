@@ -359,6 +359,10 @@ export class ShareIngestionManager {
             payloadSummary: (share.text ?? share.subject ?? '').slice(0, 200),
           });
           diagLog.addEntry(
+            'PENDING_SHARE_FAILED',
+            `recoverPendingShares: id=${share.id} error=${errMsg}`
+          );
+          diagLog.addEntry(
             'SAVE_FAILED',
             `recoverPendingShares: id=${share.id} error=${errMsg}`
           );
