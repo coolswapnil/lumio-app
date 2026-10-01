@@ -20,7 +20,6 @@ import android.content.Context
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
