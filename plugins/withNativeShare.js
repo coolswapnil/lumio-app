@@ -258,14 +258,14 @@ class NativeShareActivity : Activity() {
             val dbExists = dbFile?.exists() == true
             val parentFile = dbFile?.parentFile
             val parentExists = parentFile?.exists() == true
-            val canWrite = if (dbExists) dbFile.canWrite() else (parentFile?.canWrite() == true)
+            val canWrite = if (dbExists) (dbFile?.canWrite() == true) else (parentFile?.canWrite() == true)
 
-            Log.i(TAG, "SQLITE_DB_PATH resolved=$dbPath exists=$dbExists parentExists=$parentExists canWrite=$canWrite androidVer=$androidVer (SDK $sdkInt) oem=\"$oem\"")
+            Log.i(TAG, "SQLITE_DB_PATH resolved=$dbPath exists=$dbExists parentExists=$parentExists canWrite=$canWrite androidVer=$androidVer (SDK $sdkInt) oem=\\"$oem\\"")
             Log.d(TAG, "DB_PATH_RESOLVED path=$dbPath exists=$dbExists parentExists=$parentExists canWrite=$canWrite")
 
             if (dbFile == null) {
                 Log.w(TAG, "SQLITE_DB_NOT_FOUND dbFile=null")
-                Log.e(TAG, "DB_OPEN_FAILED path=null reason=DB_FILE_NULL androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"")
+                Log.e(TAG, "DB_OPEN_FAILED path=null reason=DB_FILE_NULL androidVer=$androidVer sdk=$sdkInt oem=\\"$oem\\"")
                 return false
             }
 
@@ -273,7 +273,7 @@ class NativeShareActivity : Activity() {
                 db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY)
                 Log.d(TAG, "DB_OPEN_SUCCESS path=$dbPath")
             } catch (openEx: Exception) {
-                Log.e(TAG, "DB_OPEN_FAILED path=$dbPath error=\${openEx.javaClass.name}: \${openEx.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", openEx)
+                Log.e(TAG, "DB_OPEN_FAILED path=$dbPath error=\${openEx.javaClass.name}: \${openEx.message} androidVer=$androidVer sdk=$sdkInt oem=\\"$oem\\"", openEx)
                 return false
             }
 
@@ -329,12 +329,12 @@ class NativeShareActivity : Activity() {
                 Log.d(TAG, "DB_INSERT_SUCCESS id=$shareId")
                 true
             } catch (insertEx: Exception) {
-                Log.e(TAG, "DB_INSERT_FAILED id=$shareId error=\${insertEx.javaClass.name}: \${insertEx.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", insertEx)
+                Log.e(TAG, "DB_INSERT_FAILED id=$shareId error=\${insertEx.javaClass.name}: \${insertEx.message} androidVer=$androidVer sdk=$sdkInt oem=\\"$oem\\"", insertEx)
                 Log.e(TAG, "SQLITE_INSERT_ERROR error=\${insertEx.message}")
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "SQLITE_EXCEPTION error=\${e.javaClass.name}: \${e.message} androidVer=$androidVer sdk=$sdkInt oem=\"$oem\"", e)
+            Log.e(TAG, "SQLITE_EXCEPTION error=\${e.javaClass.name}: \${e.message} androidVer=$androidVer sdk=$sdkInt oem=\\"$oem\\"", e)
             false
         } finally {
             try { db?.close() } catch (_: Exception) {}
