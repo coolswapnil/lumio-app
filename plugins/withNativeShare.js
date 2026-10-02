@@ -171,7 +171,7 @@ class NativeShareActivity : Activity() {
         scheduleWorkManager(shareId, primaryUrl, primaryText, extraTitle, extraSubject)
 
         // 6. Native Feedback & finish — single consolidated toast, no technical wording
-        val message = if (dbPersisted) "✅ Saved to Lumio\nAnalyzing in background…" else "✅ Saved to Lumio"
+        val message = if (dbPersisted) "✅ Saved to Lumio\\\\nAnalyzing in background…" else "✅ Saved to Lumio"
         Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
 
         Log.d(TAG, "NATIVE_SHARE_COMPLETE id=$shareId finishing activity")
