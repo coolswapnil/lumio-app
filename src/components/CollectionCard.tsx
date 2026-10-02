@@ -40,41 +40,122 @@ function CollectionCardBase({ collection, items, topics }: CollectionCardProps) 
               <Ionicons name="lock-closed-outline" size={13} color={paper.colors.onSurfaceVariant} style={styles.lockIcon} />
             )}
           </View>
-          <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{insights.itemCount === 1 ? '1 item' : `${insights.itemCount} items`}</Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color={paper.colors.onSurfaceVariant} />
       </View>
-      {insights.itemCount > 0 ? <View style={styles.details}>
-        <Detail icon="pricetags-outline" label="Top topic" value={insights.mostActiveTopic?.label ?? 'Building knowledge'} color={paper.colors.secondary} />
-        <Detail icon="logo-rss" label="Top source" value={source ?? '—'} color={paper.colors.primary} />
-        <Detail icon="time-outline" label="Updated" value={insights.lastAddedAt ? dayjs(insights.lastAddedAt).fromNow() : '—'} color={paper.colors.onSurfaceVariant} />
-        {visibleTopics.length > 0 && (
-          <View style={styles.topicChips}>
-            {visibleTopics.map((topic) => (
-              <Pressable
-                key={topic.id}
-                onPress={() => router.push(`/collection/${collection.id}/topic/${topic.id}`)}
-                style={[styles.topicChip, { backgroundColor: paper.colors.secondaryContainer }]}
-                accessibilityRole="button"
-                accessibilityLabel={`Topic: ${topic.label}, ${topic.itemCount} items`}
-              >
-                <Text style={[styles.topicChipText, { color: paper.colors.onSecondaryContainer }]} numberOfLines={1}>{topic.label}</Text>
-              </Pressable>
-            ))}
+
+      {insights.itemCount > 0 ? (
+        <>
+          {/* ── Dashboard stat cards ─────────────────────────────── */}
+          <View style={styles.statGrid}>
+            <StatCard
+              icon="layers-outline"
+              label="Items"
+              value={String(insights.itemCount)}
+              color={collection.color}
+              bg={paper.colors.surfaceContainerHigh}
+            />
+            <StatCard
+              icon="pricetags-outline"
+              label="Top Topic"
+              value={insights.mostActiveTopic?.label ?? '—'}
+              color={paper.colors.secondary}
+              bg={paper.colors.secondaryContainer}
+            />
+            <StatCard
+              icon="logo-rss"
+              label="Top Source"
+              value={source ?? '—'}
+              color={paper.colors.primary}
+              bg={paper.colors.primaryContainer}
+            />
+            <StatCard
+              icon="time-outline"
+              label="Updated"
+              value={insights.lastAddedAt ? dayjs(insights.lastAddedAt).fromNow() : '—'}
+              color={paper.colors.onSurfaceVariant}
+              bg={paper.colors.surfaceContainerHigh}
+            />
           </View>
-        )}
-        <View style={styles.bottomRow}><View style={[styles.health, { backgroundColor: healthColor + '20' }]}><View style={[styles.healthDot, { backgroundColor: healthColor }]} /><Text style={{ color: healthColor, fontSize: 12, fontWeight: '700' }}>{insights.health}</Text></View>{insights.reviewItems.length > 0 && <Text style={{ color: paper.colors.error, fontSize: 12, fontWeight: '700' }}>Review: {insights.reviewItems.length} {insights.reviewItems.length === 1 ? 'item' : 'items'}</Text>}</View>
-      </View> : <View style={[styles.emptySuggestion, { backgroundColor: paper.colors.secondaryContainer }]}><Ionicons name="sparkles-outline" size={14} color={paper.colors.onSecondaryContainer} /><Text style={{ color: paper.colors.onSecondaryContainer, fontSize: 12, flex: 1 }}>Suggested content: {collection.name}</Text></View>}
+
+          {/* Topic chips */}
+          {visibleTopics.length > 0 && (
+            <View style={styles.topicChips}>
+              {visibleTopics.map((topic) => (
+                <Pressable
+                    key={topic.id}
+                    onPress={() => router.push(`/collection/${collection.id}/topic/${topic.id}`)}
+                    style={[styles.topicChip, { backgroundColor: paper.colors.secondaryContainer }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Topic: ${topic.label}, ${topic.itemCount} items`}
+                  >
+                    <Text style={[styles.topicChipText, { color: paper.colors.onSecondaryContainer }]} numberOfLines={1}>
+                      {topic.label}{topic.itemCount > 0 ? ` (${topic.itemCount})` : ''}
+                    </Text>
+                  </Pressable>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.bottomRow}>
+            <View style={[styles.health, { backgroundColor: healthColor + '20' }]}>
+              <View style={[styles.healthDot, { backgroundColor: healthColor }]} />
+              <Text style={{ color: healthColor, fontSize: 12, fontWeight: '700' }}>{insights.health}</Text>
+            </View>
+            {insights.reviewItems.length > 0 && (
+              <Text style={{ color: paper.colors.error, fontSize: 12, fontWeight: '700' }}>
+                Review: {insights.reviewItems.length} {insights.reviewItems.length === 1 ? 'item' : 'items'}
+              </Text>
+            )}
+          </View>
+        </>
+      ) : (
+        <View style={[styles.emptySuggestion, { backgroundColor: paper.colors.secondaryContainer }]}>
+          <Ionicons name="sparkles-outline" size={14} color={paper.colors.onSecondaryContainer} />
+          <Text style={{ color: paper.colors.onSecondaryContainer, fontSize: 12, flex: 1 }}>Suggested content: {collection.name}</Text>
+        </View>
+      )}
     </Card>
   );
 }
 
-function Detail({ icon, label, value, color }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; value: string; color: string }) {
-  return <View style={styles.detail}><Ionicons name={icon} size={14} color={color} /><Text style={[styles.detailLabel, { color }]}>{label}</Text><Text numberOfLines={1} style={styles.detailValue}>{value}</Text></View>;
+function StatCard({ icon, label, value, color, bg }: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  value: string;
+  color: string;
+  bg: string;
+}) {
+  return (
+    <View style={[styles.statCard, { backgroundColor: bg }]}>
+      <Ionicons name={icon} size={14} color={color} style={styles.statIcon} />
+      <Text style={[styles.statValue, { color }]} numberOfLines={1}>{value}</Text>
+      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  card: { marginBottom: 10, borderRadius: 16 }, content: { padding: 14 }, topRow: { flexDirection: 'row', alignItems: 'center', gap: 12 }, iconContainer: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, info: { flex: 1 }, nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 }, nameText: { flexShrink: 1 }, lockIcon: { marginTop: 1 }, details: { marginTop: 12, gap: 7 }, detail: { flexDirection: 'row', alignItems: 'center', gap: 6 }, detailLabel: { fontSize: 12, fontWeight: '700', width: 72 }, detailValue: { flex: 1, color: '#1f2328', fontSize: 13 }, topicChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 2 }, topicChip: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, maxWidth: 120 }, topicChipText: { fontSize: 11, fontWeight: '600' }, bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }, health: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 }, healthDot: { width: 6, height: 6, borderRadius: 3 }, emptySuggestion: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, padding: 10, borderRadius: 10 },
+  card: { marginBottom: 10, borderRadius: 16 },
+  content: { padding: 14 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconContainer: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  info: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  nameText: { flexShrink: 1 },
+  lockIcon: { marginTop: 1 },
+  statGrid: { flexDirection: 'row', gap: 6, marginTop: 12, flexWrap: 'wrap' },
+  statCard: { flex: 1, minWidth: '40%', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  statIcon: { marginBottom: 2 },
+  statValue: { fontSize: 13, fontWeight: '700' },
+  statLabel: { fontSize: 10, fontWeight: '600', color: '#57606a', textTransform: 'uppercase', letterSpacing: 0.4 },
+  topicChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 8 },
+  topicChip: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, maxWidth: 120 },
+  topicChipText: { fontSize: 11, fontWeight: '600' },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  health: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
+  healthDot: { width: 6, height: 6, borderRadius: 3 },
+  emptySuggestion: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, padding: 10, borderRadius: 10 },
 });
 
 const CollectionCard = React.memo(CollectionCardBase, (prev, next) => prev.collection === next.collection && prev.items === next.items && prev.topics === next.topics);

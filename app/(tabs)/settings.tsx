@@ -242,6 +242,39 @@ function ConnectionStatusBadge({ status }: { status: AIConnectionStatus }) {
   );
 }
 
+// ─── AI Health Tile sub-component ────────────────────────────────────────────
+
+function HealthTile({ label, value, icon, iconColor, bg, textColor }: {
+  label: string;
+  value: string;
+  icon: IconName;
+  iconColor: string;
+  bg: string;
+  textColor: string;
+}) {
+  const paper = useAppTheme();
+  return (
+    <View style={[healthTileStyles.tile, { backgroundColor: bg }]}>
+      <Ionicons name={icon} size={16} color={iconColor} />
+      <Text style={[healthTileStyles.value, { color: textColor }]} numberOfLines={1}>{value}</Text>
+      <Text style={[healthTileStyles.label, { color: paper.colors.onSurfaceVariant }]}>{label}</Text>
+    </View>
+  );
+}
+
+const healthTileStyles = StyleSheet.create({
+  tile: {
+    flex: 1,
+    alignItems: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 3,
+    borderRadius: 8,
+  },
+  value: { fontSize: 13, fontWeight: '700' },
+  label: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
+});
+
 // ─── Animated collapsible section card ───────────────────────────────────────
 
 interface SectionCardProps {
@@ -799,6 +832,47 @@ export default function SettingsScreen() {
               </React.Fragment>
             ))}
           </View>
+
+          <View style={[styles.fullDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+
+          {/* Share Behavior */}
+          <View style={styles.subSection}>
+            <Text variant="labelSmall" style={[styles.groupLabel, { color: paper.colors.onSurfaceVariant }]}>
+              SHARE BEHAVIOR
+            </Text>
+            {([
+              { value: 'stay',       label: 'Stay in source app',    icon: 'arrow-back-circle-outline',  description: 'Lumio saves in the background; you stay where you are.' },
+              { value: 'open_lumio', label: 'Open Lumio after share', icon: 'sparkles-outline',           description: 'Switch to Lumio immediately after saving.' },
+            ] as const).map((opt, i, arr) => {
+              const isSelected = (settings.shareBehavior ?? 'stay') === opt.value;
+              return (
+                <React.Fragment key={opt.value}>
+                  <TouchableOpacity
+                    onPress={() => updateSettings({ shareBehavior: opt.value })}
+                    style={[styles.row, { minHeight: layout.touchTarget }]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
+                  >
+                    <View style={styles.rowLeft}>
+                      <Ionicons
+                        name={opt.icon}
+                        size={20}
+                        color={isSelected ? paper.colors.primary : paper.colors.onSurfaceVariant}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text variant="bodyLarge" style={{ color: paper.colors.onSurface }}>{opt.label}</Text>
+                        <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, marginTop: 2 }}>{opt.description}</Text>
+                      </View>
+                    </View>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={22} color={paper.colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  {i < arr.length - 1 && <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant }]} />}
+                </React.Fragment>
+              );
+            })}
+          </View>
         </SectionCard>
 
         {/* ── 2. AI & INTELLIGENCE ─────────────────────────────────────── */}
@@ -872,57 +946,97 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ── AI STATUS CARD ────────────────────────────────────────── */}
+          {/* ── AI HEALTH CARD ─────────────────────────────────────────── */}
           <View style={[styles.fullDivider, { backgroundColor: paper.colors.outlineVariant }]} />
           <View style={styles.subSection}>
             <Text variant="labelSmall" style={[styles.groupLabel, { color: paper.colors.onSurfaceVariant }]}>
-              AI STATUS
+              AI HEALTH
             </Text>
 
-            {/* Status overview card */}
-            <View style={[styles.statusCard, {
+            {/* Unavailable banner — shown when offline/unknown with no last success */}
+            {(health?.status === 'offline' || (health?.status === 'unknown' && !health?.lastSuccessfulCheck)) && (
+              <View style={[styles.healthUnavailableBanner, {
+                backgroundColor: paper.colors.errorContainer,
+                borderColor: paper.colors.error + '40',
+                borderRadius: innerRadius,
+                marginBottom: 10,
+              }]}>
+                <Ionicons name="warning" size={18} color={paper.colors.onErrorContainer} />
+                <View style={{ flex: 1 }}>
+                  <Text variant="labelMedium" style={{ color: paper.colors.onErrorContainer, fontWeight: '700' }}>
+                    ⚠ Provider Unavailable
+                  </Text>
+                  <Text variant="bodySmall" style={{ color: paper.colors.onErrorContainer, marginTop: 2 }}>
+                    {health?.lastErrorMessage ?? 'Could not reach the AI provider.'}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Main health card — 4 stat tiles */}
+            <View style={[styles.healthCard, {
               backgroundColor: paper.colors.surfaceContainerHigh,
               borderColor: paper.colors.outlineVariant,
               borderRadius: innerRadius,
             }]}>
-              {/* Provider / Model row */}
-              {[
-                { label: 'Provider', value: isLocalProvider ? `Local LLM · ${selectedLocalSource.name}` : selectedProvider.name },
-                { label: 'Model',    value: aiSettings.model?.trim() || (isLocalProvider ? selectedLocalSource.modelPlaceholder : (selectedProvider.modelPlaceholder ?? '—')) },
-              ].map((row, i) => (
-                <React.Fragment key={row.label}>
-                  <View style={styles.metaRow}>
-                    <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>{row.label}</Text>
-                    <Text variant="bodyMedium" style={{ color: paper.colors.onSurface, fontWeight: '500', flexShrink: 1 }} numberOfLines={1}>
-                      {row.value}
-                    </Text>
-                  </View>
-                  {i === 0 && <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />}
-                </React.Fragment>
-              ))}
-
-              <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
-
-              {/* Connection status row */}
-              <View style={styles.metaRow}>
-                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Status</Text>
-                <ConnectionStatusBadge status={health?.status ?? 'unknown'} />
+              {/* Row 1: Provider + Status */}
+              <View style={styles.healthCardRow}>
+                <HealthTile
+                  label="Provider"
+                  value={isLocalProvider ? selectedLocalSource.name : selectedProvider.name}
+                  icon="sparkles-outline"
+                  iconColor={paper.colors.primary}
+                  bg={paper.colors.primaryContainer}
+                  textColor={paper.colors.onSurface}
+                />
+                <View style={[styles.healthTileDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+                <HealthTile
+                  label="Status"
+                  value={
+                    health?.status === 'connected' ? '🟢 Connected' :
+                    health?.status === 'limited'   ? '🟡 Limited'   :
+                    health?.status === 'offline'   ? '🔴 Offline'   :
+                    '⚪ Unknown'
+                  }
+                  icon={health?.status === 'connected' ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+                  iconColor={health?.status === 'connected' ? colors.success : health?.status === 'limited' ? colors.warning : paper.colors.onSurfaceVariant}
+                  bg={health?.status === 'connected' ? colors.success + '18' : health?.status === 'limited' ? colors.warning + '18' : paper.colors.surfaceContainerHigh}
+                  textColor={paper.colors.onSurface}
+                />
               </View>
 
-              <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+              <View style={[styles.healthCardDivider, { backgroundColor: paper.colors.outlineVariant }]} />
 
-              {/* Last checked */}
-              <View style={styles.metaRow}>
-                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Last Check</Text>
-                <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>
-                  {formatRelativeTime(health?.lastSuccessfulCheck)}
-                </Text>
+              {/* Row 2: Last Success + Quota */}
+              <View style={styles.healthCardRow}>
+                <HealthTile
+                  label="Last Success"
+                  value={formatRelativeTime(health?.lastSuccessfulCheck)}
+                  icon="time-outline"
+                  iconColor={paper.colors.secondary}
+                  bg={paper.colors.secondaryContainer}
+                  textColor={paper.colors.onSurface}
+                />
+                <View style={[styles.healthTileDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+                <HealthTile
+                  label="Quota"
+                  value={
+                    health?.status === 'limited' && !health?.rateLimit ? 'Exceeded' :
+                    health?.rateLimit ? `Retry in ${health.rateLimit.retryAfterSeconds}s` :
+                    health?.status === 'connected' ? 'Available' :
+                    '—'
+                  }
+                  icon={health?.status === 'limited' ? 'alert-circle-outline' : 'server-outline'}
+                  iconColor={health?.status === 'limited' ? paper.colors.error : colors.success}
+                  bg={health?.status === 'limited' ? paper.colors.errorContainer : colors.success + '18'}
+                  textColor={paper.colors.onSurface}
+                />
               </View>
 
               {/* Response time — only when connected */}
               {health?.responseTimeMs !== undefined && health.status === 'connected' && (
                 <>
-                  <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+                  <View style={[styles.healthCardDivider, { backgroundColor: paper.colors.outlineVariant }]} />
                   <View style={styles.metaRow}>
                     <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant, flex: 1 }}>Response Time</Text>
                     <Text variant="bodySmall" style={{ color: paper.colors.onSurfaceVariant }}>{health.responseTimeMs} ms</Text>
@@ -930,10 +1044,21 @@ export default function SettingsScreen() {
                 </>
               )}
 
-              {/* Error message — only when not connected */}
-              {health?.lastErrorMessage && health.status !== 'connected' && (
+              {/* Rate-limit / error detail */}
+              {health?.rateLimit && health.status === 'limited' && (
                 <>
-                  <View style={[styles.hairline, { backgroundColor: paper.colors.outlineVariant, marginVertical: 4 }]} />
+                  <View style={[styles.healthCardDivider, { backgroundColor: paper.colors.outlineVariant }]} />
+                  <View style={[styles.inlineAlert, { backgroundColor: paper.colors.secondaryContainer, borderRadius: innerRadius }]}>
+                    <Ionicons name="timer-outline" size={14} color={paper.colors.onSecondaryContainer} />
+                    <Text variant="bodySmall" style={{ color: paper.colors.onSecondaryContainer, flex: 1, marginLeft: 6 }}>
+                      Rate limited · Retrying in {health.rateLimit.retryAfterSeconds}s
+                    </Text>
+                  </View>
+                </>
+              )}
+              {health?.lastErrorMessage && health.status !== 'connected' && !health?.rateLimit && (
+                <>
+                  <View style={[styles.healthCardDivider, { backgroundColor: paper.colors.outlineVariant }]} />
                   <View style={[styles.inlineAlert, { backgroundColor: paper.colors.errorContainer, borderRadius: innerRadius }]}>
                     <Ionicons name="alert-circle" size={14} color={paper.colors.onErrorContainer} />
                     <Text variant="bodySmall" style={{ color: paper.colors.onErrorContainer, flex: 1, marginLeft: 6 }}>
@@ -944,26 +1069,7 @@ export default function SettingsScreen() {
               )}
             </View>
 
-            {/* Rate-limit warning */}
-            {health?.rateLimit && health.status === 'limited' && (
-              <View style={[styles.warningBanner, {
-                backgroundColor: paper.colors.secondaryContainer,
-                borderRadius: innerRadius,
-                marginTop: 8,
-              }]}>
-                <Ionicons name="timer-outline" size={16} color={paper.colors.onSecondaryContainer} />
-                <View style={{ flex: 1, marginLeft: 8 }}>
-                  <Text variant="labelMedium" style={{ color: paper.colors.onSecondaryContainer, fontWeight: '700' }}>
-                    ⚠ Rate Limited
-                  </Text>
-                  <Text variant="bodySmall" style={{ color: paper.colors.onSecondaryContainer, marginTop: 2 }}>
-                    {`Retry in ${health.rateLimit.retryAfterSeconds}s`}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* Quota exceeded warning */}
+            {/* Quota exceeded action row */}
             {health?.status === 'limited' && !health.rateLimit && (
               <View style={[styles.warningBanner, {
                 backgroundColor: paper.colors.errorContainer,
@@ -2348,6 +2454,29 @@ const styles = StyleSheet.create({
 
   // AI Status Card
   statusCard: {
+    padding: 12,
+    borderWidth: 1,
+  },
+  // AI Health Card
+  healthCard: {
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  healthCardRow: {
+    flexDirection: 'row',
+    gap: 0,
+  },
+  healthCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 12,
+  },
+  healthTileDivider: {
+    width: StyleSheet.hairlineWidth,
+  },
+  healthUnavailableBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
     padding: 12,
     borderWidth: 1,
   },

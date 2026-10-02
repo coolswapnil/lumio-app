@@ -230,6 +230,9 @@ export interface AIHealthStatus {
 
 export type AppearanceStyle = 'classic' | 'material-you' | 'expressive';
 
+/** What happens after a successful share into Lumio. */
+export type ShareBehavior = 'stay' | 'open_lumio';
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   appearanceStyle?: AppearanceStyle;
@@ -244,6 +247,8 @@ export interface AppSettings {
   largeTouchTargets?: boolean;
   highContrast?: boolean;
   defaultCollection?: string;
+  /** Controls what happens after an item is shared into Lumio. Default: 'stay'. */
+  shareBehavior?: ShareBehavior;
   aiSettings?: AISettings;
   mapDefaultLat?: number;
   mapDefaultLng?: number;

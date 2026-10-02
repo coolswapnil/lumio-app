@@ -69,8 +69,7 @@ class NativeShareActivity : Activity() {
         val proofTs = getIsoTimestamp()
         Log.d(TAG, "NATIVE_SHARE_ACTIVITY_CREATED id=$proofId ts=$proofTs action=\${intent?.action} type=\${intent?.type}")
 
-        // Visible toast so the user can confirm the activity was launched
-        Toast.makeText(applicationContext, "NativeShareActivity Started", Toast.LENGTH_LONG).show()
+        // Toast is shown after successful DB write (see handleIncomingShare) — not here.
 
         // Write proof row to pending_shares
         writeProofToPendingShares(proofId, proofTs)
@@ -171,8 +170,8 @@ class NativeShareActivity : Activity() {
         // 5. Schedule WorkManager task to guarantee processing persistence
         scheduleWorkManager(shareId, primaryUrl, primaryText, extraTitle, extraSubject)
 
-        // 6. Native Feedback & finish
-        val message = if (dbPersisted) "Saved to Lumio" else "Saved to Lumio (pending sync)"
+        // 6. Native Feedback & finish — single consolidated toast, no technical wording
+        val message = if (dbPersisted) "✅ Saved to Lumio\nAnalyzing in background…" else "✅ Saved to Lumio"
         Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
 
         Log.d(TAG, "NATIVE_SHARE_COMPLETE id=$shareId finishing activity")

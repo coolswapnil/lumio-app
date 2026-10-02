@@ -355,15 +355,17 @@ export default function ShareScreen() {
             </TouchableOpacity>
             <View style={styles.headerCenter}>
               <Ionicons name="share-social" size={18} color={colors.textSecondary} />
-              <Text style={[styles.headerTitle, { color: colors.text }]}>Capturing…</Text>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>Saved</Text>
             </View>
             <View style={{ width: 54 }} />
           </View>
           <View style={styles.captureOverlay}>
-            <PaperActivityIndicator size="large" color={paper.colors.primary} />
-            <Text style={[styles.captureLabel, { color: colors.text }]}>Saved!</Text>
+            <View style={[styles.savedBadge, { backgroundColor: paper.colors.primaryContainer }]}>
+              <Ionicons name="checkmark-circle" size={36} color={paper.colors.primary} />
+            </View>
+            <Text style={[styles.captureLabel, { color: colors.text }]}>✅ Saved to Lumio</Text>
             <Text style={[styles.captureSub, { color: colors.textMuted }]}>
-              Enrichment is running in the background.{'\n'}Check the banner at the bottom of the screen.
+              Analyzing in background…{'\n'}Check the banner at the bottom of the screen.
             </Text>
           </View>
         </View>
@@ -536,6 +538,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 16,
     paddingHorizontal: 32,
+  },
+  savedBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
   captureLabel: { fontSize: 22, fontWeight: '800' },
   captureSub: { fontSize: 14, textAlign: 'center', lineHeight: 20 },

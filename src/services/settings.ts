@@ -18,6 +18,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   largeTouchTargets: false,
   highContrast: false,
   diagnosticsEnabled: false,
+  shareBehavior: 'stay',
 };
 
 export async function getAppSettings(): Promise<AppSettings> {
