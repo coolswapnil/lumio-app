@@ -352,6 +352,10 @@ export function ProcessingBanner() {
 
   // Track previous activeCount to detect the transition to 0 (all done)
   const prevActiveCountRef = useRef(activeCount);
+  // Track previous queue length to detect new item arrivals
+  const prevQueueLengthRef = useRef(queue.length);
+  // Ref for the auto-collapse timer so we can cancel it if the user taps
+  const autoCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const justFinished =
@@ -368,6 +372,28 @@ export function ProcessingBanner() {
     }
     prevActiveCountRef.current = activeCount;
   }, [activeCount, completedCount, queue.length]); // eslint-disable-line
+
+  // FIX 6: Auto-expand for 2 s when a new item arrives in the queue
+  useEffect(() => {
+    const newItemArrived = queue.length > prevQueueLengthRef.current && activeCount > 0;
+    prevQueueLengthRef.current = queue.length;
+
+    if (newItemArrived) {
+      // Cancel any pending auto-collapse before starting a fresh one
+      if (autoCollapseTimerRef.current) clearTimeout(autoCollapseTimerRef.current);
+      setExpanded(true);
+      autoCollapseTimerRef.current = setTimeout(() => {
+        setExpanded(false);
+        autoCollapseTimerRef.current = null;
+      }, 2000);
+    }
+    return () => {
+      if (autoCollapseTimerRef.current) {
+        clearTimeout(autoCollapseTimerRef.current);
+        autoCollapseTimerRef.current = null;
+      }
+    };
+  }, [queue.length, activeCount]); // eslint-disable-line
 
   // Auto-hide completed queue entries after a delay
   useEffect(() => {

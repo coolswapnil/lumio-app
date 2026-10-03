@@ -1,8 +1,26 @@
 import * as SecureStore from 'expo-secure-store';
+import { NativeModules, Platform } from 'react-native';
 import type { AISettings, AppSettings } from '../types';
 
 const SETTINGS_KEY = 'lumio_app_settings';
 const AI_KEY = 'lumio_ai_settings';
+
+/**
+ * Mirror shareBehavior to native SharedPreferences ("lumio_share_settings")
+ * so NativeShareActivity can read it without decrypting expo-secure-store.
+ * Fire-and-forget — never throws, never blocks.
+ */
+function _mirrorShareBehaviorToNative(behavior: string): void {
+  if (Platform.OS !== 'android') return;
+  try {
+    const mod = NativeModules.LumioSharedPrefs;
+    if (mod?.set) {
+      mod.set('lumio_share_settings', 'shareBehavior', behavior, () => {});
+    }
+  } catch {
+    // Non-critical — native read will fall back to 'stay'
+  }
+}
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'system',
@@ -33,6 +51,8 @@ export async function getAppSettings(): Promise<AppSettings> {
 
 export async function saveAppSettings(settings: AppSettings): Promise<void> {
   await SecureStore.setItemAsync(SETTINGS_KEY, JSON.stringify(settings));
+  // Mirror shareBehavior so NativeShareActivity can read it directly
+  _mirrorShareBehaviorToNative(settings.shareBehavior ?? 'stay');
 }
 
 export async function getAISettings(): Promise<AISettings | null> {

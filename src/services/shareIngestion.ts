@@ -784,4 +784,6 @@ async function _removePrefsEntry(
 interface _SharedPrefsbridge {
   getAll(prefsName: string): Promise<Record<string, string>>;
   remove(prefsName: string, key: string): Promise<void>;
+  /** Added for FIX 2: mirror shareBehavior to native prefs without SecureStore. */
+  set(prefsName: string, key: string, value: string, callback: () => void): void;
 }

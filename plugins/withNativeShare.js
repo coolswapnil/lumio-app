@@ -43,6 +43,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -59,6 +62,7 @@ class NativeShareActivity : Activity() {
     companion object {
         private const val TAG = "LumioNativeShare"
         private const val PREFS_NAME = "lumio_pending_shares"
+        private const val SHARE_SETTINGS_PREFS = "lumio_share_settings"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -170,9 +174,21 @@ class NativeShareActivity : Activity() {
         // 5. Schedule WorkManager task to guarantee processing persistence
         scheduleWorkManager(shareId, primaryUrl, primaryText, extraTitle, extraSubject)
 
-        // 6. Native Feedback & finish — single consolidated toast, no technical wording
-        val message = if (dbPersisted) "✅ Saved to Lumio\\\\nAnalyzing in background…" else "✅ Saved to Lumio"
-        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+        // 6. Native Feedback — two-line custom toast (FIX 1)
+        showMultilineToast(dbPersisted)
+
+        // 7. Open-after-share (FIX 2): launch MainActivity when shareBehavior == "open_lumio"
+        val shareBehavior = readShareBehavior()
+        Log.d(TAG, "OPEN_AFTER_SHARE_ENABLED shareBehavior=$shareBehavior dbPersisted=$dbPersisted")
+        if (dbPersisted && shareBehavior == "open_lumio") {
+            Log.d(TAG, "OPEN_AFTER_SHARE_TRIGGERED id=$shareId")
+            val mainIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("from_share", true)
+                putExtra("share_id", shareId)
+            }
+            startActivity(mainIntent)
+        }
 
         Log.d(TAG, "NATIVE_SHARE_COMPLETE id=$shareId finishing activity")
         finish()
@@ -378,6 +394,63 @@ class NativeShareActivity : Activity() {
             Log.d(TAG, "WORKMANAGER_ENQUEUED id=$id")
         } catch (e: Exception) {
             Log.w(TAG, "WORKMANAGER_SCHEDULE_FAILED error=\${e.message}")
+        }
+    }
+
+    /**
+     * FIX 1: Two-line toast.
+     * Android Toast renders \\n as a literal on API >= 30. Build a custom
+     * two-TextView layout so the line break is real.
+     */
+    private fun showMultilineToast(analyzing: Boolean) {
+        try {
+            val ctx = applicationContext
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(40, 24, 40, 24)
+            }
+            val line1 = TextView(ctx).apply {
+                text = "✅ Saved to Lumio"
+                textSize = 15f
+                setTextColor(0xFFFFFFFF.toInt())
+            }
+            container.addView(line1)
+            if (analyzing) {
+                val line2 = TextView(ctx).apply {
+                    text = "Analyzing in background…"
+                    textSize = 13f
+                    setTextColor(0xCCFFFFFF.toInt())
+                    setPadding(0, 4, 0, 0)
+                }
+                container.addView(line2)
+            }
+            val toast = Toast(ctx)
+            @Suppress("DEPRECATION")
+            toast.view = container
+            toast.duration = Toast.LENGTH_SHORT
+            toast.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 200)
+            toast.show()
+        } catch (e: Exception) {
+            // Fallback for API 35+ where custom toast views are blocked
+            val fallback = if (analyzing) "✅ Saved to Lumio — Analyzing…" else "✅ Saved to Lumio"
+            @Suppress("DEPRECATION")
+            Toast.makeText(applicationContext, fallback, Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "TOAST_CUSTOM_VIEW_FAILED using fallback: \${e.message}")
+        }
+    }
+
+    /**
+     * FIX 2: Read shareBehavior from lumio_share_settings SharedPreferences.
+     * JS settings service writes this mirror on every saveAppSettings() call.
+     * Native side cannot decrypt expo-secure-store, so we use a separate file.
+     */
+    private fun readShareBehavior(): String {
+        return try {
+            val prefs = getSharedPreferences(SHARE_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            prefs.getString("shareBehavior", "stay") ?: "stay"
+        } catch (e: Exception) {
+            Log.w(TAG, "READ_SHARE_BEHAVIOR_FAILED defaulting to stay: \${e.message}")
+            "stay"
         }
     }
 
@@ -697,6 +770,18 @@ class LumioSharedPrefsModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("PREFS_REMOVE_ERROR", e.message, e)
+        }
+    }
+
+    /** FIX 2: Write a single value so JS can mirror settings for native reads. */
+    @ReactMethod
+    fun set(prefsName: String, key: String, value: String, promise: Promise) {
+        try {
+            val prefs = reactApplicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+            prefs.edit().putString(key, value).apply()
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("PREFS_SET_ERROR", e.message, e)
         }
     }
 }

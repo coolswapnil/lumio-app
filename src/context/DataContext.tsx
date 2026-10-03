@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 
 // FIX M-18: prevent expo-router from auto-hiding the splash until DB is ready
@@ -10,6 +10,7 @@ import { resetLifecycleState } from '../services/lifecycleState';
 import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
 import { syncWidgetCount } from '../services/widget_bridge';
+import { startPendingSharesWatcher, stopPendingSharesWatcher } from '../services/pendingSharesWatcher';
 import type { SavedItem, Collection, FilterOption, SortOption } from '../types';
 
 interface DataContextValue {
@@ -73,6 +74,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await Promise.all([refreshItems(), refreshCollections()]);
   }, [refreshItems, refreshCollections]);
 
+  // Stable ref for refreshAll so the watcher closure captures the latest version.
+  const refreshAllRef = useRef(refreshAll);
+  useEffect(() => { refreshAllRef.current = refreshAll; }, [refreshAll]);
+
+  // FIX 3: Queue-active ref injected by CaptureQueueContext after mount.
+  // DataContext cannot import CaptureQueueContext (circular dep), so we expose
+  // a setter that CaptureQueueContext calls once it mounts.
+  const _isQueueActiveRef = useRef<() => boolean>(() => false);
+  // Exposed for CaptureQueueContext to wire up.
+  (DataProvider as unknown as { _setQueueActiveRef: (fn: () => boolean) => void })
+    ._setQueueActiveRef = (fn: () => boolean) => { _isQueueActiveRef.current = fn; };
+
   // Initial load — runs once per mount (which includes background→foreground remounts).
   //
   // resetReadinessGate() MUST be the first call so that ingest() calls arriving
@@ -107,13 +120,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                   setIsLoading(false);
                   signalDataProviderReady();
                   SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
+
+                  // FIX 3: Start the live pending_shares watcher now that the DB is ready.
+                  startPendingSharesWatcher(
+                    () => refreshAllRef.current(),
+                    () => _isQueueActiveRef.current(),
+                  );
                 }
               });
             }
           });
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      stopPendingSharesWatcher();
+    };
   // eslint-disable-next-line -- intentional: runs once on mount; refreshAll is stable
   }, []);
 

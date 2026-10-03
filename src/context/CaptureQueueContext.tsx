@@ -12,11 +12,12 @@ import {
   subscribeQueue,
   enqueueCapture,
   clearFinishedEntries,
+  getQueue,
   type CaptureEntry,
 } from '../services/captureQueue';
 import { getAppSettings, saveAppSettings } from '../services/settings';
 import { signalCaptureQueueReady } from '../services/serviceReadiness';
-import { useData } from './DataContext';
+import { DataProvider, useData } from './DataContext';
 
 interface CaptureQueueContextValue {
   /** Live queue entries. */
@@ -56,8 +57,16 @@ export function CaptureQueueProvider({ children }: { children: React.ReactNode }
   const { refreshAll } = useData();
 
   // Subscribe to the service's reactive state and signal readiness.
+  // Also wire the queue-active callback into DataProvider for FIX 3.
   useEffect(() => {
     signalCaptureQueueReady();
+    // Wire the isQueueActive callback so pendingSharesWatcher slows its poll
+    // while enrichment is running (avoids hammering the DB during AI calls).
+    (DataProvider as unknown as { _setQueueActiveRef?: (fn: () => boolean) => void })
+      ._setQueueActiveRef?.(() => {
+        const q = getQueue();
+        return q.some((e) => e.status === 'queued' || e.status === 'processing');
+      });
     const unsub = subscribeQueue(setQueue);
     return unsub;
   }, []);

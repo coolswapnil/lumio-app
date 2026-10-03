@@ -149,6 +149,10 @@ export async function enqueueCapture(
     // Invalid URL at this point — continue with defaults
   }
 
+  // ── FIX 5: Record enqueue timestamp for queue duration measurement ───────
+  const enqueueTs = Date.now();
+  diagLog.addEntry('QUEUE_ITEM_CREATED', `captureQueue: NATIVE_SHARE_RECEIVED→QUEUE_ITEM_CREATED ts=${enqueueTs} url="${cleanUrl.slice(0, 80)}"`);
+
   // ── Step 1: Persist skeleton item immediately ────────────────────────────
   const itemId = generateId();
   const now = new Date().toISOString();
@@ -191,7 +195,7 @@ export async function enqueueCapture(
   _queue = [..._queue, entry];
   notify();
 
-  diagLog.addEntry('QUEUE_ITEM_CREATED', `captureQueue: id=${itemId} url="${cleanUrl.slice(0, 80)}" contentType=${contentType} source=${source ?? 'unknown'}`);
+  diagLog.addEntry('QUEUE_ITEM_CREATED', `captureQueue: id=${itemId} url="${cleanUrl.slice(0, 80)}" contentType=${contentType} source=${source ?? 'unknown'} enqueuedAt=${enqueueTs}`);
 
   // ── Step 3: Start background enrichment (fire-and-forget) ────────────────
   _runEnrichment(entry, opts).catch((err) => {
@@ -470,12 +474,14 @@ async function _runEnrichment(
     // Refresh the global data context
     if (opts.onRefresh) await opts.onRefresh();
 
+    const completedAt = Date.now();
+    const queueDurationMs = completedAt - entry.enqueuedAt;
     updateEntry(itemId, {
       status: 'completed',
       currentStep: undefined,
-      completedAt: Date.now(),
+      completedAt,
     });
-    diagLog.addEntry('QUEUE_ITEM_COMPLETED', `captureQueue: enrichment completed for ${itemId}`);
+    diagLog.addEntry('QUEUE_ITEM_COMPLETED', `captureQueue: enrichment completed for ${itemId} queueDuration=${queueDurationMs}ms enqueuedAt=${entry.enqueuedAt} completedAt=${completedAt}`);
     diagLog.addEntry('SAVE_COMPLETED', `captureQueue: enrichment done for ${itemId}`);
 
   } catch (err) {

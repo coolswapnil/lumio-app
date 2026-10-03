@@ -17,6 +17,12 @@ declare module 'react-native' {
       getAll(prefsName: string): Promise<Record<string, string>>;
       /** Removes a single key from the named SharedPreferences file. */
       remove(prefsName: string, key: string): Promise<void>;
+      /**
+       * Writes a single string value to the named SharedPreferences file.
+       * Added for FIX 2: mirror shareBehavior so NativeShareActivity can read
+       * it without decrypting expo-secure-store.
+       */
+      set(prefsName: string, key: string, value: string, callback: () => void): void;
     } | undefined;
   }
 }

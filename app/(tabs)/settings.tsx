@@ -167,6 +167,8 @@ const DIAG_EVENT_ROLES: Record<import('../../src/services/diagnostics').DiagEven
   SAVE_FAILED:            'error',
   FORM_UPDATE_STARTED:    'surface',
   FORM_UPDATE_COMPLETED:  'surface',
+  LIBRARY_REFRESH_TRIGGERED: 'secondary',
+  LIBRARY_REFRESH_COMPLETED: 'tertiary',
 };
 
 function getDiagBadgeColors(

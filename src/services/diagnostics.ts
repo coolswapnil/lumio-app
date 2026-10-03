@@ -120,6 +120,9 @@ export type DiagEventType =
   | 'NAVIGATION_ERROR'
   | 'ROUTE_REDIRECT_START'
   | 'ROUTE_REDIRECT_COMPLETE'
+  // ── Live library refresh (FIX 3) ──────────────────────────────────────────
+  | 'LIBRARY_REFRESH_TRIGGERED'
+  | 'LIBRARY_REFRESH_COMPLETED'
   // ── Opt-in events ─────────────────────────────────────────────────────────
   | 'SHARE_URL_EXTRACTED'
   | 'SHARE_SCREEN_OPENED'
