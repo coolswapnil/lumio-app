@@ -197,7 +197,7 @@ class NativeShareActivity : Activity() {
                 Log.e(TAG, "MAIN_ACTIVITY_LAUNCH_FAILED id=$shareId reason=INTENT_NOT_RESOLVED")
             }
         } else {
-            val skipReason = if (!dbPersisted) \\"dbPersisted=false\\" else \\"shareBehavior=$shareBehavior\\"
+            val skipReason = if (!dbPersisted) "dbPersisted=false" else "shareBehavior=$shareBehavior"
             Log.d(TAG, "OPEN_AFTER_SHARE_SKIPPED id=$shareId reason=$skipReason")
         }
 
