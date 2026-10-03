@@ -174,8 +174,8 @@ class NativeShareActivity : Activity() {
         // 5. Schedule WorkManager task to guarantee processing persistence
         scheduleWorkManager(shareId, primaryUrl, primaryText, extraTitle, extraSubject)
 
-        // 6. Native Feedback — two-line custom toast (FIX 1)
-        showMultilineToast(dbPersisted)
+        // 6. Native Feedback — single-line toast (Saved to Lumio)
+        showSavedToast()
 
         // 7. Open-after-share (FIX 2): launch MainActivity when shareBehavior == "open_lumio"
         val shareBehavior = readShareBehavior()
@@ -187,7 +187,17 @@ class NativeShareActivity : Activity() {
                 putExtra("from_share", true)
                 putExtra("share_id", shareId)
             }
-            startActivity(mainIntent)
+            // Verify intent can be resolved
+            val resolved = mainIntent.resolveActivity(packageManager)
+            Log.d(TAG, "MAIN_ACTIVITY_LAUNCH_REQUESTED id=$shareId flags=NEW_TASK|CLEAR_TOP extras=from_share=true,share_id=$shareId resolved=${resolved != null}")
+            if (resolved != null) {
+                startActivity(mainIntent)
+                Log.d(TAG, "MAIN_ACTIVITY_LAUNCHED id=$shareId")
+            } else {
+                Log.e(TAG, "MAIN_ACTIVITY_LAUNCH_FAILED id=$shareId reason=INTENT_NOT_RESOLVED")
+            }
+        } else {
+            Log.d(TAG, "OPEN_AFTER_SHARE_SKIPPED id=$shareId reason=${if (!dbPersisted) "dbPersisted=false" else "shareBehavior=$shareBehavior"}")
         }
 
         Log.d(TAG, "NATIVE_SHARE_COMPLETE id=$shareId finishing activity")
@@ -398,11 +408,10 @@ class NativeShareActivity : Activity() {
     }
 
     /**
-     * FIX 1: Two-line toast.
-     * Android Toast renders \\n as a literal on API >= 30. Build a custom
-     * two-TextView layout so the line break is real.
+     * Single-line toast: "✅ Saved to Lumio"
+     * Processing status is communicated exclusively through ProcessingBanner.
      */
-    private fun showMultilineToast(analyzing: Boolean) {
+    private fun showSavedToast() {
         try {
             val ctx = applicationContext
             val container = LinearLayout(ctx).apply {
@@ -415,15 +424,6 @@ class NativeShareActivity : Activity() {
                 setTextColor(0xFFFFFFFF.toInt())
             }
             container.addView(line1)
-            if (analyzing) {
-                val line2 = TextView(ctx).apply {
-                    text = "Analyzing in background…"
-                    textSize = 13f
-                    setTextColor(0xCCFFFFFF.toInt())
-                    setPadding(0, 4, 0, 0)
-                }
-                container.addView(line2)
-            }
             val toast = Toast(ctx)
             @Suppress("DEPRECATION")
             toast.view = container
@@ -432,9 +432,8 @@ class NativeShareActivity : Activity() {
             toast.show()
         } catch (e: Exception) {
             // Fallback for API 35+ where custom toast views are blocked
-            val fallback = if (analyzing) "✅ Saved to Lumio — Analyzing…" else "✅ Saved to Lumio"
             @Suppress("DEPRECATION")
-            Toast.makeText(applicationContext, fallback, Toast.LENGTH_SHORT).show()
+            Toast.makeText(applicationContext, "✅ Saved to Lumio", Toast.LENGTH_SHORT).show()
             Log.w(TAG, "TOAST_CUSTOM_VIEW_FAILED using fallback: \${e.message}")
         }
     }
@@ -447,7 +446,9 @@ class NativeShareActivity : Activity() {
     private fun readShareBehavior(): String {
         return try {
             val prefs = getSharedPreferences(SHARE_SETTINGS_PREFS, Context.MODE_PRIVATE)
-            prefs.getString("shareBehavior", "stay") ?: "stay"
+            val value = prefs.getString("shareBehavior", "stay") ?: "stay"
+            Log.d(TAG, "SHARE_BEHAVIOR_READ prefs=$SHARE_SETTINGS_PREFS key=shareBehavior value=$value")
+            value
         } catch (e: Exception) {
             Log.w(TAG, "READ_SHARE_BEHAVIOR_FAILED defaulting to stay: \${e.message}")
             "stay"

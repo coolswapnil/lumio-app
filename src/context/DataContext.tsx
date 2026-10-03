@@ -11,6 +11,7 @@ import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
 import { syncWidgetCount } from '../services/widget_bridge';
 import { startPendingSharesWatcher, stopPendingSharesWatcher } from '../services/pendingSharesWatcher';
+import { diagLog } from '../services/diagnostics';
 import type { SavedItem, Collection, FilterOption, SortOption } from '../types';
 
 interface DataContextValue {
@@ -59,11 +60,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       getAllItems(filter, sort, searchQuery),
       getItemCounts(),
     ]);
+    // Detect newly appeared items
+    const existingIds = new Set(items.map((i) => i.id));
+    const newItems = fetchedItems.filter((i) => !existingIds.has(i.id));
+    if (newItems.length > 0) {
+      diagLog.addEntry(
+        'LIBRARY_ITEM_APPEARED',
+        `DataContext: ${newItems.length} new item(s) appeared — ${newItems.map((i) => i.id).join(', ')}`
+      );
+    }
     setItems(fetchedItems);
     setCounts(fetchedCounts);
     // Keep Android widget count in sync
     syncWidgetCount(fetchedCounts.all ?? 0);
-  }, [filter, sort, searchQuery]);
+  }, [filter, sort, searchQuery, items]);
 
   const refreshCollections = useCallback(async () => {
     const fetchedCollections = await getAllCollections();
@@ -71,7 +81,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const refreshAll = useCallback(async () => {
+    diagLog.addEntry('LIBRARY_REFRESH_TRIGGERED', 'DataContext: refreshAll called');
     await Promise.all([refreshItems(), refreshCollections()]);
+    diagLog.addEntry('LIBRARY_REFRESH_COMPLETED', 'DataContext: refreshAll completed');
   }, [refreshItems, refreshCollections]);
 
   // Stable ref for refreshAll so the watcher closure captures the latest version.
@@ -117,6 +129,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             if (!cancelled) {
               refreshAll().finally(() => {
                 if (!cancelled) {
+                  // Register refresh callback for native share ingestion pipeline
+                  ShareIngestionManager.registerRefreshCallback(() => refreshAllRef.current());
+
                   setIsLoading(false);
                   signalDataProviderReady();
                   SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
@@ -135,6 +150,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       stopPendingSharesWatcher();
+      ShareIngestionManager.clearRefreshCallback();
     };
   // eslint-disable-next-line -- intentional: runs once on mount; refreshAll is stable
   }, []);

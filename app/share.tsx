@@ -364,9 +364,6 @@ export default function ShareScreen() {
               <Ionicons name="checkmark-circle" size={36} color={paper.colors.primary} />
             </View>
             <Text style={[styles.captureLabel, { color: colors.text }]}>✅ Saved to Lumio</Text>
-            <Text style={[styles.captureSub, { color: colors.textMuted }]}>
-              Analyzing in background…{'\n'}Check the banner at the bottom of the screen.
-            </Text>
           </View>
         </View>
       </SafeAreaView>

@@ -233,6 +233,17 @@ export class ShareIngestionManager {
       );
       await this._clearPrefsEntry(path);
 
+      // Trigger library refresh so new items appear immediately
+      if (this._refreshCallback) {
+        diagLog.addEntry('LIBRARY_REFRESH_TRIGGERED', 'ShareIngestionManager.ingest: calling refresh callback');
+        try {
+          await this._refreshCallback();
+          diagLog.addEntry('LIBRARY_REFRESH_COMPLETED', 'ShareIngestionManager.ingest: refresh callback completed');
+        } catch (e) {
+          diagLog.addEntry('LIBRARY_REFRESH_COMPLETED', `ShareIngestionManager.ingest: refresh callback error — ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
       return { itemIds, wasProcessed: true };
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -738,6 +749,17 @@ export class ShareIngestionManager {
     if (params.subject)   _extractUrlsFromText(params.subject).forEach(add);
 
     return out;
+  }
+
+  /** Callback to trigger library refresh after ingestion. Set by DataContext on mount. */
+  private static _refreshCallback: (() => Promise<void>) | null = null;
+
+  static registerRefreshCallback(cb: () => Promise<void>): void {
+    this._refreshCallback = cb;
+  }
+
+  static clearRefreshCallback(): void {
+    this._refreshCallback = null;
   }
 }
 

@@ -172,6 +172,7 @@ export async function enqueueCapture(
 
   await saveItem(skeletonItem);
   diagLog.addEntry('SAVE_COMPLETED', `captureQueue: skeleton saved id=${itemId} url="${cleanUrl.slice(0, 80)}"`);
+  diagLog.addEntry('LIBRARY_ITEM_APPEARED', `captureQueue: skeleton item created id=${itemId} url="${cleanUrl.slice(0, 80)}" — triggering refresh`);
 
   // Notify caller that item is in the DB (so they can navigate away)
   opts.onItemSaved?.(itemId);

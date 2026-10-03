@@ -123,6 +123,7 @@ export type DiagEventType =
   // ── Live library refresh (FIX 3) ──────────────────────────────────────────
   | 'LIBRARY_REFRESH_TRIGGERED'
   | 'LIBRARY_REFRESH_COMPLETED'
+  | 'LIBRARY_ITEM_APPEARED'
   // ── Opt-in events ─────────────────────────────────────────────────────────
   | 'SHARE_URL_EXTRACTED'
   | 'SHARE_SCREEN_OPENED'
@@ -177,6 +178,7 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'SHARE_INTENT_RECEIVED',
   'SHARE_ACTION',
   'SHARE_MIME_TYPE',
+  'LIBRARY_ITEM_APPEARED',
   'SHARE_PAYLOAD',
   'SHARE_TEXT',
   'URL_EXTRACTED',
