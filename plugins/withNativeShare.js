@@ -189,7 +189,7 @@ class NativeShareActivity : Activity() {
             }
             // Verify intent can be resolved
             val resolved = mainIntent.resolveActivity(packageManager)
-            Log.d(TAG, "MAIN_ACTIVITY_LAUNCH_REQUESTED id=$shareId flags=NEW_TASK|CLEAR_TOP extras=from_share=true,share_id=$shareId resolved=${resolved != null}")
+            Log.d(TAG, "MAIN_ACTIVITY_LAUNCH_REQUESTED id=$shareId flags=NEW_TASK|CLEAR_TOP extras=from_share=true,share_id=$shareId resolved=\${resolved != null}")
             if (resolved != null) {
                 startActivity(mainIntent)
                 Log.d(TAG, "MAIN_ACTIVITY_LAUNCHED id=$shareId")
@@ -197,7 +197,8 @@ class NativeShareActivity : Activity() {
                 Log.e(TAG, "MAIN_ACTIVITY_LAUNCH_FAILED id=$shareId reason=INTENT_NOT_RESOLVED")
             }
         } else {
-            Log.d(TAG, "OPEN_AFTER_SHARE_SKIPPED id=$shareId reason=${if (!dbPersisted) "dbPersisted=false" else "shareBehavior=$shareBehavior"}")
+            val skipReason = if (!dbPersisted) \\"dbPersisted=false\\" else \\"shareBehavior=$shareBehavior\\"
+            Log.d(TAG, "OPEN_AFTER_SHARE_SKIPPED id=$shareId reason=$skipReason")
         }
 
         Log.d(TAG, "NATIVE_SHARE_COMPLETE id=$shareId finishing activity")

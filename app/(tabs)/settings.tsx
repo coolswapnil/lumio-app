@@ -169,6 +169,7 @@ const DIAG_EVENT_ROLES: Record<import('../../src/services/diagnostics').DiagEven
   FORM_UPDATE_COMPLETED:  'surface',
   LIBRARY_REFRESH_TRIGGERED: 'secondary',
   LIBRARY_REFRESH_COMPLETED: 'tertiary',
+  LIBRARY_ITEM_APPEARED:     'tertiary',
 };
 
 function getDiagBadgeColors(
