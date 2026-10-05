@@ -42,10 +42,18 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 export async function getAppSettings(): Promise<AppSettings> {
   try {
     const raw = await SecureStore.getItemAsync(SETTINGS_KEY);
-    if (raw) return { ...DEFAULT_APP_SETTINGS, ...(JSON.parse(raw) as AppSettings) };
+    if (raw) {
+      const merged = { ...DEFAULT_APP_SETTINGS, ...(JSON.parse(raw) as AppSettings) };
+      // Mirror on every read so native side always has the current value,
+      // including the first launch where saveAppSettings() may never have run.
+      _mirrorShareBehaviorToNative(merged.shareBehavior ?? 'stay');
+      return merged;
+    }
   } catch {
     // Return defaults on error
   }
+  // Mirror the default on fresh install so NativeShareActivity reads 'stay' correctly
+  _mirrorShareBehaviorToNative(DEFAULT_APP_SETTINGS.shareBehavior ?? 'stay');
   return DEFAULT_APP_SETTINGS;
 }
 

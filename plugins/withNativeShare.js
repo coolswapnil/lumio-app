@@ -43,9 +43,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.view.Gravity
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -177,19 +174,26 @@ class NativeShareActivity : Activity() {
         // 6. Native Feedback — single-line toast (Saved to Lumio)
         showSavedToast()
 
-        // 7. Open-after-share (FIX 2): launch MainActivity when shareBehavior == "open_lumio"
+        // 7. Open-after-share: launch MainActivity when shareBehavior == "open_lumio".
+        //    Emit native share-saved event regardless so the NativeEventEmitter bridge
+        //    can trigger an immediate library refresh.
+        ShareEventManager.emitShareSaved(applicationContext, shareId, primaryUrl)
+
         val shareBehavior = readShareBehavior()
+        Log.d(TAG, "SHARE_BEHAVIOR_READ prefs=\$SHARE_SETTINGS_PREFS key=shareBehavior value=\$shareBehavior")
         Log.d(TAG, "OPEN_AFTER_SHARE_ENABLED shareBehavior=$shareBehavior dbPersisted=$dbPersisted")
-        if (dbPersisted && shareBehavior == "open_lumio") {
+        if (shareBehavior == "open_lumio") {
             Log.d(TAG, "OPEN_AFTER_SHARE_TRIGGERED id=$shareId")
             val mainIntent = Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("from_share", true)
                 putExtra("share_id", shareId)
             }
             // Verify intent can be resolved
             val resolved = mainIntent.resolveActivity(packageManager)
-            Log.d(TAG, "MAIN_ACTIVITY_LAUNCH_REQUESTED id=$shareId flags=NEW_TASK|CLEAR_TOP extras=from_share=true,share_id=$shareId resolved=\${resolved != null}")
+            Log.d(TAG, "MAIN_ACTIVITY_LAUNCH_REQUESTED id=$shareId flags=NEW_TASK|CLEAR_TOP|SINGLE_TOP extras=from_share=true,share_id=$shareId resolved=\${resolved != null}")
             if (resolved != null) {
                 startActivity(mainIntent)
                 Log.d(TAG, "MAIN_ACTIVITY_LAUNCHED id=$shareId")
@@ -410,32 +414,21 @@ class NativeShareActivity : Activity() {
 
     /**
      * Single-line toast: "✅ Saved to Lumio"
-     * Processing status is communicated exclusively through ProcessingBanner.
+     *
+     * Custom Toast.setView() is deprecated as of Android 11 (API 30) and
+     * throws WindowManager\$BadTokenException / IllegalStateException on
+     * Android 12+ (API 31+) when called from a transparent/trampoline
+     * Activity (Theme.Translucent.NoTitleBar) that has no valid window token.
+     * This is the confirmed startup crash on Xiaomi HyperOS / Android 16.
+     *
+     * Use Toast.makeText() exclusively — the only safe API for all
+     * supported API levels (24–36) and all OEM skins.
      */
     private fun showSavedToast() {
         try {
-            val ctx = applicationContext
-            val container = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(40, 24, 40, 24)
-            }
-            val line1 = TextView(ctx).apply {
-                text = "✅ Saved to Lumio"
-                textSize = 15f
-                setTextColor(0xFFFFFFFF.toInt())
-            }
-            container.addView(line1)
-            val toast = Toast(ctx)
-            @Suppress("DEPRECATION")
-            toast.view = container
-            toast.duration = Toast.LENGTH_SHORT
-            toast.setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 200)
-            toast.show()
-        } catch (e: Exception) {
-            // Fallback for API 35+ where custom toast views are blocked
-            @Suppress("DEPRECATION")
             Toast.makeText(applicationContext, "✅ Saved to Lumio", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "TOAST_CUSTOM_VIEW_FAILED using fallback: \${e.message}")
+        } catch (e: Exception) {
+            Log.w(TAG, "TOAST_SHOW_FAILED: \${e.message}")
         }
     }
 
@@ -789,6 +782,143 @@ class LumioSharedPrefsModule(reactContext: ReactApplicationContext) :
 }
 `;
 
+const SHARE_EVENT_MANAGER_KT = `package com.lumio.savelater
+
+import android.content.Context
+import android.util.Log
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
+/**
+ * ShareEventManager — Native Event bridge for share-pipeline events.
+ *
+ * Emits RCTDeviceEventEmitter events to React Native's NativeEventEmitter so
+ * the JS layer can react immediately without polling.
+ */
+object ShareEventManager {
+
+    private const val TAG = "LumioShareEvent"
+
+    const val EVENT_SHARE_SAVED       = "NATIVE_SHARE_SAVED"
+    const val EVENT_QUEUE_CREATED     = "QUEUE_ITEM_CREATED"
+    const val EVENT_QUEUE_COMPLETED   = "QUEUE_ITEM_COMPLETED"
+    const val EVENT_QUEUE_FAILED      = "QUEUE_ITEM_FAILED"
+
+    @Volatile
+    private var _reactContext: ReactApplicationContext? = null
+
+    fun setReactContext(ctx: ReactApplicationContext) {
+        _reactContext = ctx
+        Log.d(TAG, "SHARE_EVENT_MANAGER_READY")
+    }
+
+    fun emitShareSaved(context: Context, shareId: String, url: String) {
+        val ts = isoTimestamp()
+        Log.d(TAG, "NATIVE_EVENT_EMITTED event=\$EVENT_SHARE_SAVED shareId=\$shareId ts=\$ts")
+        emit(EVENT_SHARE_SAVED, shareId, url, ts)
+    }
+
+    fun emitQueueItemCreated(shareId: String, url: String) {
+        val ts = isoTimestamp()
+        Log.d(TAG, "NATIVE_EVENT_EMITTED event=\$EVENT_QUEUE_CREATED shareId=\$shareId ts=\$ts")
+        emit(EVENT_QUEUE_CREATED, shareId, url, ts)
+    }
+
+    fun emitQueueItemCompleted(shareId: String, itemId: String) {
+        val ts = isoTimestamp()
+        Log.d(TAG, "NATIVE_EVENT_EMITTED event=\$EVENT_QUEUE_COMPLETED shareId=\$shareId itemId=\$itemId ts=\$ts")
+        val params = Arguments.createMap().apply {
+            putString("shareId", shareId)
+            putString("itemId", itemId)
+            putString("timestamp", ts)
+        }
+        _reactContext?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            ?.emit(EVENT_QUEUE_COMPLETED, params)
+    }
+
+    fun emitQueueItemFailed(shareId: String, reason: String) {
+        val ts = isoTimestamp()
+        Log.d(TAG, "NATIVE_EVENT_EMITTED event=\$EVENT_QUEUE_FAILED shareId=\$shareId reason=\$reason ts=\$ts")
+        val params = Arguments.createMap().apply {
+            putString("shareId", shareId)
+            putString("reason", reason)
+            putString("timestamp", ts)
+        }
+        _reactContext?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            ?.emit(EVENT_QUEUE_FAILED, params)
+    }
+
+    private fun emit(event: String, shareId: String, url: String, ts: String) {
+        val ctx = _reactContext ?: run {
+            Log.d(TAG, "NATIVE_EVENT_BRIDGE_UNAVAILABLE event=\$event shareId=\$shareId — polling watcher is fallback")
+            return
+        }
+        try {
+            val params = Arguments.createMap().apply {
+                putString("shareId", shareId)
+                putString("url", url)
+                putString("timestamp", ts)
+            }
+            ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                ?.emit(event, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "NATIVE_EVENT_EMIT_ERROR event=\$event error=\${e.message}")
+        }
+    }
+
+    private fun isoTimestamp(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
+        return sdf.format(Date())
+    }
+}
+
+/**
+ * ReactNativeModule that wires ShareEventManager into the React bridge.
+ * Registered via ShareEventPackage in MainApplication.
+ */
+class ShareEventModule(private val reactContext: ReactApplicationContext) :
+    ReactContextBaseJavaModule(reactContext) {
+
+    override fun getName(): String = "LumioShareEvent"
+
+    override fun initialize() {
+        super.initialize()
+        ShareEventManager.setReactContext(reactContext)
+    }
+
+    @ReactMethod fun addListener(eventName: String) {}
+    @ReactMethod fun removeListeners(count: Int) {}
+}
+`;
+
+const SHARE_EVENT_PACKAGE_KT = `package com.lumio.savelater
+
+import android.view.View
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ReactShadowNode
+import com.facebook.react.uimanager.ViewManager
+
+class ShareEventPackage : ReactPackage {
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        return listOf(ShareEventModule(reactContext))
+    }
+
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<View, ReactShadowNode<*>>> {
+        return emptyList()
+    }
+}
+`;
+
 const LUMIO_SHARED_PREFS_PACKAGE_KT = `package com.lumio.savelater
 
 import android.view.View
@@ -873,6 +1003,8 @@ function withNativeShareManifest(config) {
 function withNativeShareGradle(config) {
   return withAppBuildGradle(config, (modConfig) => {
     let contents = modConfig.modResults.contents;
+
+    // 1. WorkManager dependency
     const workManagerDep = `implementation "androidx.work:work-runtime-ktx:2.9.0"`;
     if (!contents.includes('androidx.work:work-runtime-ktx')) {
       contents = contents.replace(
@@ -880,6 +1012,15 @@ function withNativeShareGradle(config) {
         `dependencies {\n    ${workManagerDep}`
       );
     }
+
+    // 2. Switch ProGuard base file from proguard-android.txt to
+    //    proguard-android-optimize.txt — required for React Native release
+    //    builds; the non-optimize variant is missing critical keep rules.
+    contents = contents.replace(
+      /getDefaultProguardFile\("proguard-android\.txt"\)/g,
+      'getDefaultProguardFile("proguard-android-optimize.txt")'
+    );
+
     modConfig.modResults.contents = contents;
     return modConfig;
   });
@@ -921,6 +1062,16 @@ function withNativeShareSourceFiles(config) {
         fs.writeFileSync(
           path.join(packageDir, 'LumioSharedPrefsPackage.kt'),
           LUMIO_SHARED_PREFS_PACKAGE_KT,
+          'utf8'
+        );
+        fs.writeFileSync(
+          path.join(packageDir, 'ShareEventManager.kt'),
+          SHARE_EVENT_MANAGER_KT,
+          'utf8'
+        );
+        fs.writeFileSync(
+          path.join(packageDir, 'ShareEventPackage.kt'),
+          SHARE_EVENT_PACKAGE_KT,
           'utf8'
         );
       }

@@ -120,10 +120,14 @@ export type DiagEventType =
   | 'NAVIGATION_ERROR'
   | 'ROUTE_REDIRECT_START'
   | 'ROUTE_REDIRECT_COMPLETE'
-  // ── Live library refresh (FIX 3) ──────────────────────────────────────────
+  // ── Live library refresh ──────────────────────────────────────────────────
   | 'LIBRARY_REFRESH_TRIGGERED'
   | 'LIBRARY_REFRESH_COMPLETED'
   | 'LIBRARY_ITEM_APPEARED'
+  // ── Native event bridge (Issue 3) ─────────────────────────────────────────
+  | 'NATIVE_EVENT_EMITTED'
+  | 'NATIVE_EVENT_RECEIVED'
+  | 'LIBRARY_REFRESH_FROM_EVENT'
   // ── Opt-in events ─────────────────────────────────────────────────────────
   | 'SHARE_URL_EXTRACTED'
   | 'SHARE_SCREEN_OPENED'
@@ -227,6 +231,13 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   'NAVIGATION_ERROR',
   'ROUTE_REDIRECT_START',
   'ROUTE_REDIRECT_COMPLETE',
+  // Live library refresh — always written so every share failure produces a trace
+  'LIBRARY_REFRESH_TRIGGERED',
+  'LIBRARY_REFRESH_COMPLETED',
+  // Native event bridge — always written for timestamp correlation
+  'NATIVE_EVENT_EMITTED',
+  'NATIVE_EVENT_RECEIVED',
+  'LIBRARY_REFRESH_FROM_EVENT',
 ]);
 
 export interface DiagEntry {

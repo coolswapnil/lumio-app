@@ -11,6 +11,7 @@ import { getAllItems, getItemCounts } from '../database/items';
 import { getAllCollections } from '../database/collections';
 import { syncWidgetCount } from '../services/widget_bridge';
 import { startPendingSharesWatcher, stopPendingSharesWatcher } from '../services/pendingSharesWatcher';
+import { startShareEventListener, stopShareEventListener } from '../services/shareEventManager';
 import { diagLog } from '../services/diagnostics';
 import type { SavedItem, Collection, FilterOption, SortOption } from '../types';
 
@@ -136,11 +137,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                   signalDataProviderReady();
                   SplashScreen.hideAsync().catch(() => {}); // FIX M-18: dismiss splash after DB init
 
-                  // FIX 3: Start the live pending_shares watcher now that the DB is ready.
+                  // Start the live pending_shares watcher (polling fallback, always on).
                   startPendingSharesWatcher(
                     () => refreshAllRef.current(),
                     () => _isQueueActiveRef.current(),
                   );
+                  // Start native-event-driven refresh listener (Issue 3).
+                  // useNativeShareEvents feature flag is false by default for RC;
+                  // when false startShareEventListener is a no-op.
+                  startShareEventListener(() => refreshAllRef.current());
                 }
               });
             }
@@ -150,6 +155,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       stopPendingSharesWatcher();
+      stopShareEventListener();
       ShareIngestionManager.clearRefreshCallback();
     };
   // eslint-disable-next-line -- intentional: runs once on mount; refreshAll is stable
