@@ -3,6 +3,7 @@ import { signalDatabaseInitialized } from '../services/serviceReadiness';
 import { runLegacyCollectionMigration } from './migrations';
 
 let db: SQLite.SQLiteDatabase | null = null;
+let _initialized = false;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!db) {
@@ -12,6 +13,13 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 }
 
 export async function initDatabase(): Promise<void> {
+  // Guard: DDL must only run once per process lifetime.
+  // pendingSharesWatcher calls initDatabase() every poll cycle — without this
+  // guard every call re-runs all ALTER TABLE statements on a WAL-locked DB,
+  // which causes Hermes to throw "JS Functions are not convertible to dynamic"
+  // and kills the mqt_native_modules thread on every app launch.
+  if (_initialized) return;
+  _initialized = true;
   const database = await getDatabase();
 
   // Enable WAL mode for better concurrent-read performance.

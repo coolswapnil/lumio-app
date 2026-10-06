@@ -23,7 +23,7 @@
  */
 
 import { AppState, type AppStateStatus } from 'react-native';
-import { getDatabase, initDatabase } from '../database/db';
+import { getDatabase } from '../database/db';
 import { ShareIngestionManager } from './shareIngestion';
 import { diagLog } from './diagnostics';
 
@@ -87,7 +87,6 @@ function _schedulePoll(delayMs: number) {
 async function _poll() {
   if (!_running) return;
   try {
-    await initDatabase();
     const db = await getDatabase();
     const rows = await db.getAllAsync<{ id: string }>(
       `SELECT id FROM pending_shares WHERE status = 'pending' LIMIT ?`,
@@ -114,7 +113,6 @@ async function _poll() {
 
 async function _seedKnownIds() {
   try {
-    await initDatabase();
     const db = await getDatabase();
     const rows = await db.getAllAsync<{ id: string }>(
       `SELECT id FROM pending_shares LIMIT ?`, [MAX_ROWS_PER_POLL]
