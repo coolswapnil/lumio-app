@@ -3,7 +3,52 @@ import { signalDatabaseInitialized } from '../services/serviceReadiness';
 import { runLegacyCollectionMigration } from './migrations';
 
 let db: SQLite.SQLiteDatabase | null = null;
-let _initialized = false;
+
+// ─── Init-promise guard ───────────────────────────────────────────────────────
+// Replaces the old `_initialized` boolean flag.
+//
+// Problem the old flag had:
+//   On a fresh install with a cold-share start, Expo Router calls
+//   redirectSystemPath() (→ ShareIngestionManager.ingest() → initDatabase())
+//   at ~125 ms into JS execution, while libexpo-sqlite.so JSI bindings are
+//   still being registered.  SQLite.openDatabaseAsync() at that moment throws
+//   "JS Functions are not convertible to dynamic" on the mqt_native_modules
+//   thread (confirmed: bugreport-nuwa_in-BP2A.250605.031.A3-2026-10-07,
+//   PID 25016/25280/25283/26214/26164).
+//
+// Fix:
+//   1. Store the in-flight Promise instead of a boolean flag.  All concurrent
+//      callers (DataContext, shareIngestion, pendingSharesWatcher) await the
+//      same single Promise — DDL runs exactly once, no race possible.
+//   2. openDatabaseAsync is retried with a 150 ms backoff (up to 5 attempts) to
+//      survive the JSI-not-yet-registered window on cold-start shares.
+let _initPromise: Promise<void> | null = null;
+
+/** JSI-safe database open: retries with backoff if expo-sqlite is not yet registered. */
+async function openDatabaseWithRetry(): Promise<SQLite.SQLiteDatabase> {
+  const MAX_ATTEMPTS = 5;
+  const BACKOFF_MS   = 150;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      if (!db) {
+        db = await SQLite.openDatabaseAsync('lumio.db');
+      }
+      return db;
+    } catch (err) {
+      lastErr = err;
+      // Only retry on the JSI-not-ready error pattern.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('not convertible') && !msg.includes('JSI') && !msg.includes('dynamic')) {
+        throw err;
+      }
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise<void>((r) => setTimeout(r, BACKOFF_MS));
+      }
+    }
+  }
+  throw lastErr;
+}
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!db) {
@@ -14,13 +59,16 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 
 export async function initDatabase(): Promise<void> {
   // Guard: DDL must only run once per process lifetime.
-  // pendingSharesWatcher calls initDatabase() every poll cycle — without this
-  // guard every call re-runs all ALTER TABLE statements on a WAL-locked DB,
-  // which causes Hermes to throw "JS Functions are not convertible to dynamic"
-  // and kills the mqt_native_modules thread on every app launch.
-  if (_initialized) return;
-  _initialized = true;
-  const database = await getDatabase();
+  // All callers (DataContext, shareIngestion.ingest, pendingSharesWatcher) await
+  // the same in-flight Promise — DDL executes exactly once even on concurrent
+  // cold-start calls, and no call races the expo-sqlite JSI registration window.
+  if (_initPromise) return _initPromise;
+  _initPromise = _runInit();
+  return _initPromise;
+}
+
+async function _runInit(): Promise<void> {
+  const database = await openDatabaseWithRetry();
 
   // Enable WAL mode for better concurrent-read performance.
   await database.execAsync('PRAGMA journal_mode = WAL;');
