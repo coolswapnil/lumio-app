@@ -124,6 +124,10 @@ export type DiagEventType =
   | 'LIBRARY_REFRESH_TRIGGERED'
   | 'LIBRARY_REFRESH_COMPLETED'
   | 'LIBRARY_ITEM_APPEARED'
+  | 'ITEM_VISIBLE'
+  | 'ITEM_ENRICHMENT_STARTED'
+  | 'ITEM_ENRICHMENT_COMPLETED'
+  | 'LIBRARY_UPDATED'
   // ── Native event bridge (Issue 3) ─────────────────────────────────────────
   | 'NATIVE_EVENT_EMITTED'
   | 'NATIVE_EVENT_RECEIVED'
@@ -234,6 +238,10 @@ const ALWAYS_ON_EVENTS = new Set<DiagEventType>([
   // Live library refresh — always written so every share failure produces a trace
   'LIBRARY_REFRESH_TRIGGERED',
   'LIBRARY_REFRESH_COMPLETED',
+  'ITEM_VISIBLE',
+  'ITEM_ENRICHMENT_STARTED',
+  'ITEM_ENRICHMENT_COMPLETED',
+  'LIBRARY_UPDATED',
   // Native event bridge — always written for timestamp correlation
   'NATIVE_EVENT_EMITTED',
   'NATIVE_EVENT_RECEIVED',

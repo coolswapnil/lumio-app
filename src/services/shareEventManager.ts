@@ -26,8 +26,8 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import { diagLog } from './diagnostics';
 
 // ── Feature flag ─────────────────────────────────────────────────────────────
-// Default false for RC. Flip to true to enable native-event-driven refresh.
-export const USE_NATIVE_SHARE_EVENTS = false;
+// Default true for live native-event-driven refresh.
+export const USE_NATIVE_SHARE_EVENTS = true;
 
 // ── Event names (must match ShareEventManager.kt constants) ─────────────────
 export const EVENT_NATIVE_SHARE_SAVED   = 'NATIVE_SHARE_SAVED';

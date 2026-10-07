@@ -172,6 +172,7 @@ export async function enqueueCapture(
 
   await saveItem(skeletonItem);
   diagLog.addEntry('SAVE_COMPLETED', `captureQueue: skeleton saved id=${itemId} url="${cleanUrl.slice(0, 80)}"`);
+  diagLog.addEntry('ITEM_VISIBLE', `captureQueue: minimal skeleton visible in DB id=${itemId} title="${(titleHint || cleanUrl).slice(0, 60)}" status=queued`);
   diagLog.addEntry('LIBRARY_ITEM_APPEARED', `captureQueue: skeleton item created id=${itemId} url="${cleanUrl.slice(0, 80)}" — triggering refresh`);
 
   // Notify caller that item is in the DB (so they can navigate away)
@@ -223,6 +224,7 @@ async function _runEnrichment(
 ) {
   const { itemId, url, contentType: entryContentType } = entry;
 
+  diagLog.addEntry('ITEM_ENRICHMENT_STARTED', `captureQueue: background enrichment started for itemId=${itemId} url="${url.slice(0, 80)}"`);
   updateEntry(itemId, { status: 'processing', currentStep: 'source' });
 
   // Collect the DB updates — apply them in a single updateItem call at the end
@@ -482,6 +484,7 @@ async function _runEnrichment(
       currentStep: undefined,
       completedAt,
     });
+    diagLog.addEntry('ITEM_ENRICHMENT_COMPLETED', `captureQueue: enrichment pipeline finished for itemId=${itemId} duration=${queueDurationMs}ms`);
     diagLog.addEntry('QUEUE_ITEM_COMPLETED', `captureQueue: enrichment completed for ${itemId} queueDuration=${queueDurationMs}ms enqueuedAt=${entry.enqueuedAt} completedAt=${completedAt}`);
     diagLog.addEntry('SAVE_COMPLETED', `captureQueue: enrichment done for ${itemId}`);
 

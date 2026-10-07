@@ -27,6 +27,7 @@ const {
   withAndroidManifest,
   withDangerousMod,
   withAppBuildGradle,
+  withMainApplication,
 } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
@@ -1080,10 +1081,34 @@ function withNativeShareSourceFiles(config) {
   ]);
 }
 
+function withNativeShareMainApplication(config) {
+  return withMainApplication(config, (modConfig) => {
+    let contents = modConfig.modResults.contents;
+
+    // Ensure packages list in MainApplication registers LumioSharedPrefsPackage and ShareEventPackage
+    if (!contents.includes('LumioSharedPrefsPackage')) {
+      contents = contents.replace(
+        /val packages = PackageList\(this\)\.packages\.toMutableList\(\)/,
+        `val packages = PackageList(this).packages.toMutableList()`
+      );
+      if (!contents.includes('toMutableList()')) {
+        contents = contents.replace(
+          /val packages = PackageList\(this\)\.packages/,
+          `val packages = PackageList(this).packages.toMutableList()\n            packages.add(LumioSharedPrefsPackage())\n            packages.add(ShareEventPackage())`
+        );
+      }
+    }
+
+    modConfig.modResults.contents = contents;
+    return modConfig;
+  });
+}
+
 module.exports = function withNativeShare(config) {
   config = withNativeShareManifest(config);
   config = withNativeShareGradle(config);
   config = withNativeShareSourceFiles(config);
+  config = withNativeShareMainApplication(config);
   return config;
 };
 module.exports.NATIVE_SHARE_ACTIVITY_KT = NATIVE_SHARE_ACTIVITY_KT;

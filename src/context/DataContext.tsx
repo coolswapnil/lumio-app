@@ -69,6 +69,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         'LIBRARY_ITEM_APPEARED',
         `DataContext: ${newItems.length} new item(s) appeared — ${newItems.map((i) => i.id).join(', ')}`
       );
+      diagLog.addEntry(
+        'LIBRARY_UPDATED',
+        `DataContext: library updated with ${newItems.length} new item(s) (total=${fetchedItems.length})`
+      );
     }
     setItems(fetchedItems);
     setCounts(fetchedCounts);
